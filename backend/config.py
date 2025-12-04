@@ -28,18 +28,35 @@ def get_api_key_from_db(key_name: str) -> Optional[str]:
         # Import here to avoid circular dependency
         from db.database import SessionLocal
         from sqlalchemy import text
+        from services.encryption import encryption_service
 
-        with SessionLocal() as db:
-            # Check if api_keys table exists and query it
-            result = db.execute(
-                text("SELECT key_value FROM api_keys WHERE key_name = :key_name AND is_active = true"),
-                {"key_name": key_name}
-            ).fetchone()
+        # Map key_name to the provider name used in api_keys JSONB
+        # e.g., "openai_api_key" -> "openai"
+        provider_map = {
+            "openai_api_key": "openai",
+            "anthropic_api_key": "anthropic",
+            "google_api_key": "google",
+            "cohere_api_key": "cohere",
+            "replicate_api_key": "replicate",
+        }
+        provider = provider_map.get(key_name)
 
-            if result and result[0]:
-                return result[0]
+        if provider:
+            with SessionLocal() as db:
+                # Query the settings table's api_keys JSONB column
+                # Use ->> operator to extract as text (not JSON)
+                result = db.execute(
+                    text(f"SELECT api_keys->>'{provider}' FROM settings WHERE id = 1")
+                ).fetchone()
+
+                if result and result[0]:
+                    # Keys are stored encrypted - decrypt before returning
+                    encrypted_key = result[0]
+                    decrypted_key = encryption_service.decrypt(encrypted_key)
+                    if decrypted_key:
+                        return decrypted_key
     except Exception as e:
-        # Table doesn't exist or database not available - use .env
+        # Database not available or error - fall back to .env
         pass
 
     # Fall back to .env file - try uppercase version
