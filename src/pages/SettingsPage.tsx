@@ -19,12 +19,19 @@ export default function SettingsView() {
   const [isLoading, setIsLoading] = useState(true);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // API Keys state
+  // API Keys state - separate "is set" status from user input
   const [apiKeys, setApiKeys] = useState({
     anthropic: '',
     openai: '',
     google: '',
   });
+  const [apiKeyStatus, setApiKeyStatus] = useState({
+    anthropic: false,
+    openai: false,
+    google: false,
+  });
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeySaveMessage, setApiKeySaveMessage] = useState<string | null>(null);
 
   // Theme state
   const [currentTheme, setCurrentTheme] = useState<ThemeName>('dark');
@@ -115,13 +122,19 @@ export default function SettingsView() {
 
   const loadSettings = async () => {
     try {
-      // Load API keys
+      // Load API keys status (don't load masked keys into inputs!)
       const keysResponse = await apiClient.getApiKeys();
-      const keys = keysResponse.data || {};
+      const keys = keysResponse.data || [];
+      setApiKeyStatus({
+        anthropic: keys.find((k: any) => k.provider === 'anthropic')?.is_set || false,
+        openai: keys.find((k: any) => k.provider === 'openai')?.is_set || false,
+        google: keys.find((k: any) => k.provider === 'google')?.is_set || false,
+      });
+      // Keep input fields empty - user types new key to update
       setApiKeys({
-        anthropic: keys.find((k: any) => k.provider === 'anthropic')?.masked_key || '',
-        openai: keys.find((k: any) => k.provider === 'openai')?.masked_key || '',
-        google: keys.find((k: any) => k.provider === 'google')?.masked_key || '',
+        anthropic: '',
+        openai: '',
+        google: '',
       });
 
       // Load general settings
@@ -600,45 +613,173 @@ export default function SettingsView() {
           <div>
             <SettingsSection
               title="API Keys & Providers"
-              description="Configure your AI provider API keys. These are required for agent execution. Keys are stored in PostgreSQL database and persist across restarts."
+              description="Configure your AI provider API keys. These are required for agent execution. Keys are encrypted and stored in the database."
               icon="key"
             >
               <div className="space-y-4">
-                <SettingsInput
-                  label="Anthropic API Key"
-                  type="password"
-                  value={apiKeys.anthropic}
-                  onChange={(value) => {
-                    setApiKeys({ ...apiKeys, anthropic: value });
-                    autoSave('api-keys');
-                  }}
-                  placeholder="sk-ant-..."
-                  description="Required for Claude models (claude-sonnet-4-5, claude-haiku-4-5, etc.)"
-                />
+                {/* Anthropic */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      Anthropic API Key
+                    </label>
+                    {apiKeyStatus.anthropic ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 rounded-full">
+                        <span className="material-symbols-outlined text-xs">check_circle</span>
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-500/20 text-gray-600 dark:text-gray-400 rounded-full">
+                        Not set
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKeys.anthropic}
+                    onChange={(e) => setApiKeys({ ...apiKeys, anthropic: e.target.value })}
+                    placeholder={apiKeyStatus.anthropic ? "Enter new key to replace existing" : "sk-ant-..."}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    Required for Claude models (claude-sonnet-4-5, claude-haiku-4-5, etc.)
+                  </p>
+                </div>
 
-                <SettingsInput
-                  label="OpenAI API Key"
-                  type="password"
-                  value={apiKeys.openai}
-                  onChange={(value) => {
-                    setApiKeys({ ...apiKeys, openai: value });
-                    autoSave('api-keys');
-                  }}
-                  placeholder="sk-..."
-                  description="Required for GPT models (gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.)"
-                />
+                {/* OpenAI */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      OpenAI API Key
+                    </label>
+                    {apiKeyStatus.openai ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 rounded-full">
+                        <span className="material-symbols-outlined text-xs">check_circle</span>
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-500/20 text-gray-600 dark:text-gray-400 rounded-full">
+                        Not set
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKeys.openai}
+                    onChange={(e) => setApiKeys({ ...apiKeys, openai: e.target.value })}
+                    placeholder={apiKeyStatus.openai ? "Enter new key to replace existing" : "sk-..."}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    Required for GPT models (gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.)
+                  </p>
+                </div>
 
-                <SettingsInput
-                  label="Google API Key"
-                  type="password"
-                  value={apiKeys.google}
-                  onChange={(value) => {
-                    setApiKeys({ ...apiKeys, google: value });
-                    autoSave('api-keys');
-                  }}
-                  placeholder="AIza..."
-                  description="Required for Gemini models (gemini-2.5-pro, gemini-2.5-flash, etc.)"
-                />
+                {/* Google */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      Google API Key
+                    </label>
+                    {apiKeyStatus.google ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 rounded-full">
+                        <span className="material-symbols-outlined text-xs">check_circle</span>
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-500/20 text-gray-600 dark:text-gray-400 rounded-full">
+                        Not set
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKeys.google}
+                    onChange={(e) => setApiKeys({ ...apiKeys, google: e.target.value })}
+                    placeholder={apiKeyStatus.google ? "Enter new key to replace existing" : "AIza..."}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    Required for Gemini models (gemini-2.5-pro, gemini-2.5-flash, etc.)
+                  </p>
+                </div>
+
+                {/* Save Button and Status */}
+                <div className="pt-4 border-t border-gray-200 dark:border-border-dark">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        // Only save keys that have been entered (non-empty)
+                        const keysToSave: Record<string, string> = {};
+                        if (apiKeys.anthropic) keysToSave.anthropic_api_key = apiKeys.anthropic;
+                        if (apiKeys.openai) keysToSave.openai_api_key = apiKeys.openai;
+                        if (apiKeys.google) keysToSave.google_api_key = apiKeys.google;
+
+                        if (Object.keys(keysToSave).length === 0) {
+                          setApiKeySaveMessage('Enter at least one API key to save');
+                          setTimeout(() => setApiKeySaveMessage(null), 3000);
+                          return;
+                        }
+
+                        setApiKeySaving(true);
+                        setApiKeySaveMessage(null);
+                        try {
+                          await apiClient.setApiKeys(keysToSave);
+                          // Update status for saved keys
+                          setApiKeyStatus({
+                            anthropic: apiKeyStatus.anthropic || !!apiKeys.anthropic,
+                            openai: apiKeyStatus.openai || !!apiKeys.openai,
+                            google: apiKeyStatus.google || !!apiKeys.google,
+                          });
+                          // Clear input fields after successful save
+                          setApiKeys({ anthropic: '', openai: '', google: '' });
+                          setApiKeySaveMessage('API keys saved successfully!');
+                          setTimeout(() => setApiKeySaveMessage(null), 3000);
+                        } catch (error) {
+                          console.error('Failed to save API keys:', error);
+                          setApiKeySaveMessage('Failed to save API keys. Please try again.');
+                          setTimeout(() => setApiKeySaveMessage(null), 5000);
+                        } finally {
+                          setApiKeySaving(false);
+                        }
+                      }}
+                      disabled={apiKeySaving || (!apiKeys.anthropic && !apiKeys.openai && !apiKeys.google)}
+                      className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {apiKeySaving ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-base">save</span>
+                          Save API Keys
+                        </>
+                      )}
+                    </button>
+                    {apiKeySaveMessage && (
+                      <span className={`text-sm ${apiKeySaveMessage.includes('successfully') ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {apiKeySaveMessage}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Only non-empty fields will be saved. Leave a field empty to keep the existing key.
+                  </p>
+                </div>
               </div>
             </SettingsSection>
 
