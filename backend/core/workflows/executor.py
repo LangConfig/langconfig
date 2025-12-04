@@ -1186,6 +1186,11 @@ class SimpleWorkflowExecutor:
             graph.add_edge(START, first_node_id)
             logger.info(f"✓ Workflow entry point: START -> {first_node_id}")
 
+        # Build set of regular node IDs for validation
+        regular_node_ids = {n["id"] for n in nodes 
+                          if n.get("type", n.get("data", {}).get("label", "default")) 
+                          not in ['START_NODE', 'END_NODE']}
+
         # Group edges by source node to build routing maps for control nodes
         edges_by_source = {}
         for edge in edges:
