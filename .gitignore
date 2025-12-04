@@ -1,0 +1,94 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+*.log
+
+# Build artifacts
+dist/
+build/
+src-tauri/target/
+
+# IDE
+.vscode/
+.DS_Store
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Export folder
+core-workflow-export/
+nul
+backend/nul
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDE
+.idea/
+*.iml
+
+# Archive directory (local development docs)
+archive/
+
+# Temporary migration/fix scripts
+fix_*.py
+fix_*.ts
+migrate_*.ps1
+migrate_*.py
+update_*.ts
+update_*.py
+
+# Backend storage
+backend/backups/
+backend/storage/
+
+# Personal AI assistant folders (not for public repo)
+.agent/
+.ai-plans/
+.claude/
+
+# Temporary build/debug files
+build_errors*.txt
+tsc_output*.txt
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tauri build outputs (distribution artifacts)
+src-tauri/*.dmg
+src-tauri/*.app
+src-tauri/*.exe
+src-tauri/*.AppImage
+src-tauri/*.deb
+src-tauri/*.msi
+src-tauri/release/
+src-tauri/bundle/
+
+# Code signing certificates (CRITICAL - never commit!)
+*.p12
+*.pfx
+*.key
+*.pem
+*.crt
+*.cert
+*.cer
+*.provisionprofile
+/backend/outputs/
+
+# Internal documentation (keep docs/ folder but ignore contents)
+docs/*
+!docs/.gitkeep

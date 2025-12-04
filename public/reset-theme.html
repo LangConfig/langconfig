@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Reset Theme</title>
+</head>
+<body>
+  <h1>Resetting theme...</h1>
+  <script>
+    localStorage.removeItem('langconfig-theme');
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 500);
+  </script>
+</body>
+</html>

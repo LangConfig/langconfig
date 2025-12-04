@@ -1,0 +1,535 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2E5C8A;
+  --color-background-light: #F5F9FC;
+  --color-background-dark: #D8EDF5;
+  --color-panel-dark: #E3F0F5;
+  --color-border-dark: #2E5C8A;
+  --color-text-muted: #4A6B8A;
+  --color-text-primary: #1a2332;
+
+  --font-family-display: Inter, sans-serif;
+  --font-family-sans: Manrope, system-ui, -apple-system, sans-serif;
+}
+
+/* Global resets */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure all interactive elements show pointer cursor */
+button,
+a,
+[role="button"],
+[onclick],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+select {
+  cursor: pointer;
+}
+
+.frosted-glass {
+  background-color: rgba(221, 225, 230, 0.7);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 8px 32px 0 rgba(0, 0, 0, 0.1),
+    inset 1px 1px 0px rgba(255, 255, 255, 0.6),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.1);
+}
+
+.dark .frosted-glass {
+  background-color: rgba(47, 53, 66, 0.5);
+  border: 1px solid rgba(100, 100, 100, 0.3);
+  box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.1), inset -1px -1px 0px rgba(0, 0, 0, 0.3);
+}
+
+.button-90s {
+  border: 1px solid black;
+  box-shadow: inset -1px -1px 0px #000000, inset 1px 1px 0px #ffffff, inset -2px -2px 0px #808080, inset 2px 2px 0px #dddddd;
+  transition: all 0.1s ease;
+  cursor: pointer;
+}
+
+.button-90s:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: inset -1px -1px 0px #000000, inset 1px 1px 0px #ffffff, inset -2px -2px 0px #808080, inset 2px 2px 0px #eeeeee;
+}
+
+.button-90s:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 1px 1px 0px #000000, inset -1px -1px 0px #ffffff, inset 2px 2px 0px #808080, inset -2px -2px 0px #dddddd;
+}
+
+.button-90s:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.shadow-inner-90s {
+  box-shadow: inset 2px 2px 0px #ffffff, inset -2px -2px 0px #808080;
+}
+
+.shadow-soft {
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Workflow execution animations */
+@keyframes blink {
+
+  from,
+  to {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-slow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    border-width: 2px;
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    border-width: 3px;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* Organic breathing animation for thinking icons */
+@keyframes breathe {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+/* Smooth fade-in-up for toast appearance */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform: translateZ(0);
+  /* Force hardware acceleration */
+  backface-visibility: hidden;
+  /* Prevent flickering */
+}
+
+/* Node ripple effect for anime.js animations */
+.node-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* React Flow overrides */
+/* .react-flow__node removed to avoid empty ruleset lint warning */
+
+.react-flow__handle {
+  background-color: var(--color-primary);
+  border: 2px solid white;
+}
+
+.react-flow__edge-path {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-primary);
+}
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Textured Theme Styles - Light Pastel Mode */
+.textured-theme .frosted-glass {
+  background: linear-gradient(135deg, rgba(235, 244, 248, 0.95) 0%, rgba(227, 240, 245, 0.9) 100%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(46, 92, 138, 0.4);
+  box-shadow:
+    0 8px 32px 0 rgba(91, 155, 213, 0.1),
+    inset 1px 1px 0px rgba(255, 255, 255, 0.8),
+    inset -1px -1px 0px rgba(46, 92, 138, 0.15);
+}
+
+.textured-theme.dark .frosted-glass {
+  background: linear-gradient(135deg, rgba(227, 240, 245, 0.9) 0%, rgba(235, 244, 248, 0.85) 100%);
+  border: 1px solid rgba(46, 92, 138, 0.35);
+  box-shadow:
+    0 8px 32px 0 rgba(91, 155, 213, 0.12),
+    inset 1px 1px 0px rgba(255, 255, 255, 0.9),
+    inset -1px -1px 0px rgba(46, 92, 138, 0.2);
+}
+
+/* Textured panels with subtle patterns - Light Pastel */
+.textured-theme aside,
+.textured-theme .bg-background-light,
+.textured-theme .bg-panel-dark,
+.textured-theme .bg-background-dark {
+  position: relative;
+  background: linear-gradient(180deg, rgba(245, 249, 252, 1) 0%, rgba(235, 244, 248, 1) 100%);
+}
+
+.textured-theme aside::before,
+.textured-theme .bg-background-light::before,
+.textured-theme .bg-panel-dark::before,
+.textured-theme .bg-background-dark::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(91, 155, 213, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(46, 92, 138, 0.08) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.textured-theme.dark aside::before,
+.textured-theme.dark .bg-background-light::before,
+.textured-theme.dark .bg-panel-dark::before,
+.textured-theme.dark .bg-background-dark::before {
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(91, 155, 213, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(46, 92, 138, 0.1) 0%, transparent 50%);
+}
+
+/* Textured borders with gradient - Light Pastel */
+.textured-theme .border-gray-200,
+.textured-theme .border-border-dark {
+  border-color: rgba(46, 92, 138, 0.4);
+  border-image: linear-gradient(90deg,
+      rgba(46, 92, 138, 0.25) 0%,
+      rgba(46, 92, 138, 0.35) 50%,
+      rgba(46, 92, 138, 0.25) 100%) 1;
+}
+
+/* Enhanced buttons for textured theme - Light Pastel */
+/* Removed global button hover effect - was causing sweeping colors across all buttons */
+
+/* Pastel background for main containers */
+.textured-theme header {
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.textured-theme main {
+  background: linear-gradient(135deg, rgba(245, 249, 252, 1) 0%, rgba(240, 247, 250, 1) 100%) !important;
+}
+
+/* Override dark mode styles for textured theme */
+.textured-theme .bg-gray-50,
+.textured-theme .dark\:bg-background-dark,
+.textured-theme .dark\:bg-panel-dark {
+  background: linear-gradient(180deg, rgba(245, 249, 252, 1) 0%, rgba(235, 244, 248, 1) 100%) !important;
+}
+
+.textured-theme .bg-white,
+.textured-theme .dark\:bg-gray-800,
+.textured-theme .dark\:bg-gray-900 {
+  background: rgba(255, 255, 255, 0.8) !important;
+}
+
+.textured-theme .dark\:bg-gray-700 {
+  background: rgba(240, 245, 250, 0.9) !important;
+}
+
+.textured-theme .text-gray-900,
+.textured-theme .dark\:text-white {
+  color: #2c3e50 !important;
+}
+
+.textured-theme .text-gray-600,
+.textured-theme .dark\:text-gray-400 {
+  color: #5a6c7d !important;
+}
+
+.textured-theme .border-gray-200,
+.textured-theme .dark\:border-border-dark {
+  border-color: rgba(46, 92, 138, 0.3) !important;
+}
+
+/* Search input in textured theme */
+.textured-theme input[type="text"],
+.textured-theme input[type="search"] {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(46, 92, 138, 0.4) !important;
+  color: #2c3e50 !important;
+}
+
+.textured-theme input::placeholder {
+  color: rgba(46, 92, 138, 0.5) !important;
+}
+
+/* Agent cards with better borders */
+.textured-theme .divide-y>* {
+  border-color: rgba(46, 92, 138, 0.25) !important;
+}
+
+.textured-theme button[style*="border-left"] {
+  border-left-color: rgba(46, 92, 138, 0.7) !important;
+  transition: all 0.2s ease;
+}
+
+.textured-theme button[style*="border-left"]:hover {
+  background: linear-gradient(90deg, rgba(46, 92, 138, 0.12) 0%, rgba(46, 92, 138, 0.06) 100%) !important;
+  border-left-color: rgba(46, 92, 138, 0.9) !important;
+}
+
+/* Enhanced logo with depth and glow */
+.textured-theme header img[alt="LangConfig Logo"] {
+  filter: drop-shadow(0 2px 4px rgba(46, 92, 138, 0.3)) drop-shadow(0 4px 8px rgba(46, 92, 138, 0.2)) brightness(1.05) contrast(1.1);
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(46, 92, 138, 0.1) 100%);
+  padding: 8px 16px;
+  border-radius: 12px;
+  box-shadow:
+    0 2px 8px rgba(46, 92, 138, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.textured-theme header img[alt="LangConfig Logo"]:hover {
+  filter: drop-shadow(0 3px 6px rgba(46, 92, 138, 0.4)) drop-shadow(0 6px 12px rgba(46, 92, 138, 0.3)) brightness(1.08) contrast(1.15);
+  transform: translateY(-1px);
+}
+
+/* Slide-in animation for sidebars/panels */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Syntax highlighting for code blocks - Google-inspired */
+.code-snippet {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #1f2937 !important;
+}
+
+.code-snippet .token.comment,
+.code-snippet .token.prolog,
+.code-snippet .token.doctype,
+.code-snippet .token.cdata {
+  color: #34A853;
+  font-style: italic;
+}
+
+.code-snippet .token.punctuation {
+  color: #5f6368;
+}
+
+.code-snippet .token.property,
+.code-snippet .token.tag,
+.code-snippet .token.boolean,
+.code-snippet .token.constant,
+.code-snippet .token.symbol {
+  color: #EA4335;
+}
+
+.code-snippet .token.number {
+  color: #FBBC04;
+}
+
+.code-snippet .token.selector,
+.code-snippet .token.attr-name,
+.code-snippet .token.string,
+.code-snippet .token.char,
+.code-snippet .token.builtin {
+  color: #34A853;
+}
+
+.code-snippet .token.operator,
+.code-snippet .token.entity,
+.code-snippet .token.url,
+.code-snippet .token.variable {
+  color: #4285F4;
+}
+
+.code-snippet .token.atrule,
+.code-snippet .token.attr-value,
+.code-snippet .token.keyword {
+  color: #EA4335;
+  font-weight: 600;
+}
+
+.code-snippet .token.function,
+.code-snippet .token.class-name {
+  color: #4285F4;
+  font-weight: 600;
+}
+
+.code-snippet .token.regex,
+.code-snippet .token.important {
+  color: #EA4335;
+}
+
+.code-snippet .token.important,
+.code-snippet .token.bold {
+  font-weight: bold;
+}
+
+.code-snippet .token.italic {
+  font-style: italic;
+}
+
+/* Agent character image styling */
+.agent-character-img {
+  transition: all 0.3s ease;
+}
+
+.agent-character-img:hover {
+  transform: scale(1.02);
+  filter: drop-shadow(0 0 30px var(--color-primary)) brightness(1.1);
+}

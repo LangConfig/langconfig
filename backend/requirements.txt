@@ -1,0 +1,73 @@
+# Core Framework
+fastapi==0.115.0
+uvicorn[standard]==0.31.0
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-multipart
+
+# Database
+sqlalchemy==2.0.35
+alembic==1.13.3
+psycopg[binary]>=3.2.0
+psycopg-pool>=3.2.0
+
+# LangChain v1.0 + LangGraph (latest versions)
+langchain
+langchain-core
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+langchain-community==0.4.1  # Pinned version for stability
+langchain-postgres
+langgraph
+langgraph-checkpoint-postgres
+tiktoken>=0.5.0
+langchain-text-splitters  # Advanced text splitting capabilities
+
+# LlamaIndex + Vector Stores
+llama-index
+llama-index-vector-stores-postgres
+llama-index-embeddings-huggingface
+llama-index-embeddings-openai
+sentence-transformers==3.2.0
+pgvector
+numpy
+
+# Document Processing
+# Using LangChain Community loaders instead of direct libraries
+unstructured[all-docs]>=0.10.0  # Universal document loader (PDF, DOCX, etc.) with OCR
+python-docx>=1.1.0  # Word document generation for export functionality
+# Note: PyPDF2 and python-docx still available as fallbacks via langchain-community
+beautifulsoup4>=4.12.0
+python-magic-bin>=0.4.14; platform_system=="Windows"  # File type detection on Windows
+
+# MCP Protocol Support
+fastapi-mcp>=0.1.0
+
+# DeepAgents - Agent harness (requires Python >=3.11)
+deepagents>=0.2.4
+
+# Real-time Monitoring (SSE for desktop app streaming)
+sse-starlette>=2.1.3
+
+# Note: Redis NOT needed for desktop app
+# Event streaming handled by in-memory asyncio.Queue (services/event_bus.py)
+# Redis only needed if deploying as multi-instance cloud service
+
+# Browser Automation
+playwright>=1.48.0  # For browser tool (requires: python -m playwright install chromium)
+
+# Security & Utilities
+cryptography
+python-dotenv==1.0.1
+httpx==0.27.2
+aiofiles==24.1.0
+python-json-logger
+deepdiff>=7.0.0  # Phase 2: Deep comparison for workflow version diffs
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+asyncpg
