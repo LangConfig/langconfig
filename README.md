@@ -45,47 +45,30 @@ git clone https://github.com/langconfig/langconfig.git
 cd langconfig
 ```
 
-**2. Install Dependencies**
+**2. Install Frontend Dependencies**
 ```bash
-# Frontend
 npm install
-
-# Backend
-cd backend
-pip install -r requirements.txt
-cd ..
 ```
 
-**3. Start PostgreSQL with pgvector**
+**3. Run Backend Setup Script**
 ```bash
-docker-compose up -d postgres
+python backend/scripts/setup.py
 ```
 
-This starts PostgreSQL 16 with pgvector extension on port 5433. The `init_postgres.sql` script automatically enables pgvector and creates the vector_documents table.
+This automated script will:
+- Check Python 3.11+ and Docker prerequisites
+- Create `.env` from `.env.example`
+- Install backend Python dependencies
+- Start PostgreSQL via Docker
+- Initialize the database and seed agent templates
 
-**4. Configure Environment**
-```bash
-cp .env.example .env
-```
+**4. Add Your API Keys**
 
 Edit `.env` and add your API keys:
 ```env
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AIza...
-```
-
-**5. Initialize Database**
-```bash
-cd backend
-
-# Run migrations to create all tables
-alembic upgrade head
-
-# Seed agent templates (optional)
-python db/init_deepagents.py
-
-cd ..
 ```
 
 ---
