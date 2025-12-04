@@ -170,8 +170,8 @@ def init_database():
         from models import custom_tool, execution_event, local_model, background_task
         
         # Import and run init_db
-        from db.database import init_db, engine
-        from sqlalchemy import text
+        from db.database import Base, engine
+        from sqlalchemy import text, inspect
         
         # Create extensions first
         with engine.begin() as conn:
@@ -179,8 +179,26 @@ def init_database():
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""))
         print_success("PostgreSQL extensions enabled (pgvector, uuid-ossp)")
         
-        # Create all tables
-        init_db()
+        # Check if this looks like a fresh install or existing data
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        
+        if existing_tables:
+            # Tables exist - drop them for clean setup using CASCADE
+            print_warning("Existing tables found - dropping for clean setup...")
+            with engine.begin() as conn:
+                # Drop all tables with CASCADE to handle foreign key dependencies
+                conn.execute(text("DROP SCHEMA public CASCADE"))
+                conn.execute(text("CREATE SCHEMA public"))
+                conn.execute(text("GRANT ALL ON SCHEMA public TO langconfig"))
+                conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+                # Re-enable extensions after schema drop
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""))
+            print_success("Old tables dropped")
+        
+        # Create all tables fresh
+        Base.metadata.create_all(bind=engine)
         print_success("Database tables created")
         
         # Mark migrations as applied (so alembic doesn't try to re-run them)
