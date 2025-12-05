@@ -1328,17 +1328,17 @@ class SimpleWorkflowExecutor:
             logger.debug(f"📊 EDGE VALIDATION: {len(edges)} edges processed")
         else:
             # No edges defined - this is also an error for multi-node workflows
-            if len(regular_node_ids) > 1:
+            if len(regular_nodes) > 1:
                 logger.error("❌ WORKFLOW ERROR: Multiple nodes but no edges defined!")
                 logger.error("   Workflows need edges connecting nodes.")
                 logger.error("   Please connect your nodes in the workflow canvas.")
                 raise ValueError(
-                    f"Workflow has {len(regular_node_ids)} nodes but no edges. "
+                    f"Workflow has {len(regular_nodes)} nodes but no edges. "
                     f"Please connect your nodes in the canvas."
                 )
-            elif len(regular_node_ids) == 1:
+            elif len(regular_nodes) == 1:
                 # Single node workflow - auto-connect to END is acceptable
-                single_node_id = list(regular_node_ids)[0]
+                single_node_id = regular_nodes[0]["id"]
                 graph.add_edge(single_node_id, END)
                 logger.info(f"✓ Single-node workflow: {single_node_id} → END")
 
