@@ -141,46 +141,6 @@ const CONTROL_NODES: Agent[] = [
     tags: ['control', 'system', 'end']
   },
   {
-    id: 'CHECKPOINT_NODE',
-    name: 'Checkpoint',
-    description: 'State persistence point. Saves workflow state for recovery and resume capabilities.',
-    icon: 'bookmark',
-    model: 'none',
-    fallback_models: [],
-    temperature: 0,
-    system_prompt: 'CHECKPOINT node: Persists workflow state for recovery.',
-    native_tools: [],
-    cli_tools: [],
-    timeout_seconds: 0,
-    max_retries: 0,
-    enable_model_routing: false,
-    enable_parallel_tools: false,
-    enable_memory: false,
-    enable_rag: false,
-    requires_human_approval: false,
-    tags: ['control', 'system', 'persistence']
-  },
-  {
-    id: 'OUTPUT_NODE',
-    name: 'Output',
-    description: 'Output handler. Formats and returns workflow results to the user.',
-    icon: 'output',
-    model: 'none',
-    fallback_models: [],
-    temperature: 0,
-    system_prompt: 'OUTPUT node: Formats and returns workflow results.',
-    native_tools: [],
-    cli_tools: [],
-    timeout_seconds: 0,
-    max_retries: 0,
-    enable_model_routing: false,
-    enable_parallel_tools: false,
-    enable_memory: false,
-    enable_rag: false,
-    requires_human_approval: false,
-    tags: ['control', 'system', 'output']
-  },
-  {
     id: 'CONDITIONAL_NODE',
     name: 'Conditional',
     description: 'Branching logic. Routes workflow based on conditions or validation results.',
@@ -590,11 +550,10 @@ export default function ModernAgentLibrary({ onSelectAgent, onSelectRecipe }: Mo
                   <button
                     key={recipe.recipe_id}
                     onClick={() => handleRecipeClick(recipe)}
-                    className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${
-                      selectedRecipe?.recipe_id === recipe.recipe_id
+                    className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${selectedRecipe?.recipe_id === recipe.recipe_id
                         ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
                         : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50 hover:shadow-md'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start gap-3">
                       <span className="material-symbols-outlined text-primary text-lg mt-0.5">
@@ -963,7 +922,7 @@ export default function ModernAgentLibrary({ onSelectAgent, onSelectRecipe }: Mo
                 <div>
                   <p className="text-xs font-medium text-primary mb-1">Experimental Feature</p>
                   <p className="text-xs" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-                    This will insert all {selectedRecipe.node_count} nodes and their connections to your canvas. 
+                    This will insert all {selectedRecipe.node_count} nodes and their connections to your canvas.
                     You can customize each node individually after insertion.
                   </p>
                 </div>
