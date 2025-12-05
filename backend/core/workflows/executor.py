@@ -1092,15 +1092,19 @@ class SimpleWorkflowExecutor:
         for node in nodes:
             node_id = node["id"]
             # Database stores config at top level: node["config"]
-            agent_type = node.get("type", "default")
+            node_type = node.get("type", "default")
+
+            # CRITICAL: Also check node.data.agentType as fallback (same as main loop below)
+            node_data = node.get("data", {})
+            data_agent_type = node_data.get("agentType", "")
+            agent_type = node_type if node_type != "default" else (data_agent_type or "default")
 
             # Get the actual display label:
             # 1. Try node data label (saved by frontend when user creates node)
             # 2. Fallback to type with underscores replaced by spaces and title cased
-            node_data = node.get("data", {})
             agent_label = node_data.get("label") or agent_type.replace('_', ' ').title()
 
-            # Skip special control nodes
+            # Skip non-executable control nodes (START and END are handled specially)
             if agent_type not in ['START_NODE', 'END_NODE']:
                 # Normalize config to ensure backward compatibility with V1/V2 schemas
                 raw_config = node.get("config", {})
@@ -1125,7 +1129,19 @@ class SimpleWorkflowExecutor:
             # Database stores config at top level: node["config"]
             # NOT nested in node["data"]["config"]
             node_type = node.get("type", "default")
-            agent_type = node_type
+
+            # CRITICAL FIX: Also check node.data.agentType as fallback
+            # Frontend saves agentType in node.data.agentType, and type at top level
+            # But some edge cases may only have one or the other
+            node_data = node.get("data", {})
+            data_agent_type = node_data.get("agentType", "")
+
+            # Use the first valid: node.type (if not default), then node.data.agentType
+            agent_type = node_type if node_type != "default" else (data_agent_type or "default")
+
+            # DEBUG: Log ALL node type info to diagnose END_NODE detection
+            data_label = node_data.get("label", "NO_LABEL")
+            logger.info(f"[NODE TYPE DEBUG] {node_id}: type={node_type}, data.agentType={data_agent_type}, resolved_type={agent_type}, label={data_label}")
 
             # Handle special START_NODE - don't add as node, use as entry point
             if agent_type == 'START_NODE':
@@ -1140,14 +1156,14 @@ class SimpleWorkflowExecutor:
             # Handle special END_NODE - don't add as node, LangGraph END is sufficient
             if agent_type == 'END_NODE':
                 terminal_nodes.append(node_id)
-                logger.info(f"Detected END_NODE: {node_id} - will redirect connections to LangGraph END")
+                logger.info(f"✓ Detected END_NODE: {node_id} - will redirect connections to LangGraph END")
                 continue  # Skip adding END_NODE as actual node
 
             # Create node executor function for all other node types
             node_executor = self._create_node_executor(node_id, agent_type, node)
             graph.add_node(node_id, node_executor)
 
-            logger.debug(f"Added node: {node_id} (type: {agent_type})")
+            logger.info(f"Added node to graph: {node_id} (type: {agent_type})")
 
         # Set entry point (use START_NODE if specified, otherwise find node with no incoming edges)
         if nodes:
@@ -1287,16 +1303,23 @@ class SimpleWorkflowExecutor:
 
                     # Handle edges TO END_NODE
                     target_node_data = next((n for n in nodes if n["id"] == target), {})
-                    target_type = target_node_data.get("type", target_node_data.get("data", {}).get("label", "default"))
+
+                    # Check both node.type and node.data.agentType for END_NODE
+                    target_node_type = target_node_data.get("type", "default")
+                    target_data_agent_type = target_node_data.get("data", {}).get("agentType", "")
+                    target_type = target_node_type if target_node_type != "default" else (target_data_agent_type or "default")
+
+                    # DEBUG: Log target resolution for END_NODE detection
+                    logger.info(f"[EDGE DEBUG] source={source_id}, target={target}, target_type={target_type}, node.type={target_node_type}, data.agentType={target_data_agent_type}")
 
                     if target_type == 'END_NODE' or target == "__END__":
                         target_node = END
-                        logger.debug(f"Edge redirected to LangGraph END: {source_id} -> END")
+                        logger.info(f"✓ Edge redirected to LangGraph END: {source_id} -> END")
                     else:
                         target_node = target
 
                     graph.add_edge(source_id, target_node)
-                    logger.debug(f"Added edge: {source_id} -> {target_node}")
+                    logger.info(f"Added edge: {source_id} -> {target_node}")
 
         # Validate workflow structure - check for nodes with no outgoing edges
         # This is CRITICAL for catching workflow configuration issues
