@@ -1154,10 +1154,25 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
       setNodeWarnings(warningsMap);
 
-      // Check for errors in the events
-      const errorEvent = workflowEvents.find(e => e.type === 'error');
-      if (errorEvent) {
-        console.error('[WorkflowCanvas] Workflow error:', errorEvent.data);
+      // Check for errors in the events (for logging only - errors are displayed in LiveExecutionPanel)
+      const errorEvents = workflowEvents.filter(e => e.type === 'error');
+      if (errorEvents.length > 0) {
+        const latestError = errorEvents[errorEvents.length - 1];
+        console.error('[WorkflowCanvas] Workflow error detected:', latestError.data);
+      }
+
+      // Check for complete event with error status - stop execution spinner
+      const completeEvent = workflowEvents.find(e => e.type === 'complete');
+      if (completeEvent?.data?.status === 'error') {
+        console.log('[WorkflowCanvas] Workflow completed with error status');
+        // Stop execution state if still running
+        if (executionStatus.state === 'running') {
+          setExecutionStatus({
+            state: 'idle' as const,
+            nodeStates: {},
+            errorMessage: completeEvent.data?.error || 'Workflow failed'
+          });
+        }
       }
 
       // Check for warnings (e.g., short agent outputs)

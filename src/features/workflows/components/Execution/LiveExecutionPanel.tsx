@@ -300,6 +300,26 @@ export default function LiveExecutionPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'tool_call' | 'thinking' | 'output'>('all');
   const [isFullScreen, setIsFullScreen] = useState(false); // New Full Screen State
+  const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set()); // Track dismissed error IDs
+
+  // Extract workflow errors from events for prominent display
+  const workflowErrors = useMemo(() => {
+    const errorEvents = events.filter(e => e.type === 'error');
+    return errorEvents.map(e => ({
+      id: e.idempotency_key || `error-${e.timestamp}`,
+      message: e.data?.error || e.data?.message || 'Unknown error occurred',
+      errorType: e.data?.error_type || 'Error',
+      timestamp: e.timestamp,
+      workflowId: e.data?.workflow_id,
+      taskId: e.data?.task_id
+    })).filter(e => !dismissedErrors.has(e.id));
+  }, [events, dismissedErrors]);
+
+  // Check if workflow completed with error status
+  const workflowFailed = useMemo(() => {
+    const completeEvent = events.find(e => e.type === 'complete');
+    return completeEvent?.data?.status === 'error';
+  }, [events]);
 
   // Knowledge tips that rotate when panel is idle
   const knowledgeTips = [
@@ -461,7 +481,7 @@ export default function LiveExecutionPanel({
               break;
             }
           }
-          
+
           const toolName = event.data?.tool_name || event.data?.name || 'Unknown Tool';
           const input = event.data?.input || (event.data as any)?.inputs || event.data?.input_preview || '';
           section.items.push({
@@ -888,6 +908,57 @@ export default function LiveExecutionPanel({
           </div>
         </div>
       </div >
+
+      {/* Error Banner - Prominent dismissable error display */}
+      {workflowErrors.length > 0 && (
+        <div className="flex-shrink-0 px-4 py-3 space-y-2" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          {workflowErrors.map((error) => (
+            <div
+              key={error.id}
+              className="flex items-start gap-3 p-3 rounded-lg"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)'
+              }}
+            >
+              <XCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm" style={{ color: '#fca5a5' }}>
+                  Workflow {error.errorType}
+                </div>
+                <div className="text-sm mt-1 break-words" style={{ color: 'var(--color-text-primary)' }}>
+                  {error.message}
+                </div>
+              </div>
+              <button
+                onClick={() => setDismissedErrors(prev => new Set([...prev, error.id]))}
+                className="p-1 rounded hover:bg-red-500/20 transition-colors flex-shrink-0"
+                title="Dismiss error"
+              >
+                <X className="w-4 h-4" style={{ color: '#fca5a5' }} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Workflow Failed Banner - Shows when workflow completed with error status */}
+      {workflowFailed && workflowErrors.length === 0 && (
+        <div className="flex-shrink-0 px-4 py-3" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <div
+            className="flex items-center gap-3 p-3 rounded-lg"
+            style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.4)'
+            }}
+          >
+            <XCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#ef4444' }} />
+            <div className="text-sm font-medium" style={{ color: '#fca5a5' }}>
+              Workflow execution failed. Check the logs above for details.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       < div

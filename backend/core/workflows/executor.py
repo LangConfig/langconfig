@@ -148,6 +148,21 @@ class SimpleWorkflowExecutor:
                     "type": "error",
                     "data": {
                         "error": error_msg,
+                        "error_type": "ToolValidationError",
+                        "workflow_id": workflow.id,
+                        "task_id": task_id,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
+                # Emit complete event so UI stops spinner
+                await event_bus.publish(channel, {
+                    "type": "complete",
+                    "data": {
+                        "status": "error",
+                        "error": error_msg,
+                        "error_type": "ToolValidationError",
+                        "workflow_id": workflow.id,
+                        "task_id": task_id,
                         "timestamp": datetime.utcnow().isoformat()
                     }
                 })
@@ -1029,6 +1044,20 @@ class SimpleWorkflowExecutor:
                         "timestamp": datetime.utcnow().isoformat()
                     }
                 })
+
+            # ALWAYS emit complete event so UI knows workflow has finished
+            # This ensures the spinner stops even on errors
+            await event_bus.publish(channel, {
+                "type": "complete",
+                "data": {
+                    "status": "error",
+                    "error": error_msg,
+                    "error_type": error_type,
+                    "workflow_id": workflow.id,
+                    "task_id": task_id,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
 
             return {
                 "error": error_msg,
