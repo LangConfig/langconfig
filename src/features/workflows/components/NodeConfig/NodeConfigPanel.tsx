@@ -58,16 +58,31 @@ interface NodeConfigPanelProps {
   };
 }
 
-// Available middleware types (LangChain v1.0) - matches backend middleware_presets.py
+// Available middleware types (LangChain 1.1) - matches backend middleware/core.py
 const MIDDLEWARE_TYPES = [
+  // Context Enhancement
   { id: 'timestamp', name: 'Timestamp Injection', description: 'Inject current time into agent context', category: 'Context' },
   { id: 'project_context', name: 'Project Context', description: 'Add project-specific context', category: 'Context' },
+
+  // Monitoring & Debugging
   { id: 'logging', name: 'Request Logging', description: 'Log inputs and outputs for debugging', category: 'Monitoring' },
-  { id: 'validation', name: 'Input Validation', description: 'Validate inputs and outputs', category: 'Security' },
   { id: 'cost_tracking', name: 'Cost Tracking', description: 'Track token usage and API costs', category: 'Monitoring' },
+
+  // Reliability (LangChain 1.1)
+  { id: 'model_retry', name: 'Model Retry', description: 'Retry failed model calls with exponential backoff', category: 'Reliability' },
+  { id: 'model_fallback', name: 'Model Fallback', description: 'Fall back to cheaper models on failure', category: 'Reliability' },
   { id: 'tool_retry', name: 'Tool Retry Logic', description: 'Automatically retry failed tool calls', category: 'Reliability' },
+
+  // Security
+  { id: 'validation', name: 'Input Validation', description: 'Validate inputs and outputs', category: 'Security' },
   { id: 'pii', name: 'PII Detection', description: 'Redact sensitive information from logs', category: 'Security' },
+  { id: 'content_moderation', name: 'Content Moderation', description: 'OpenAI moderation for unsafe content', category: 'Security' },
+
+  // Control
   { id: 'hitl', name: 'Human-in-Loop', description: 'Require human approval for actions', category: 'Control' },
+
+  // Optimization (LangChain 1.1)
+  { id: 'context_summarization', name: 'Dynamic Summarization', description: 'Auto-summarize at 80% context window', category: 'Optimization' },
   { id: 'summarization', name: 'Response Summarization', description: 'Summarize long conversations', category: 'Optimization' },
 ];
 
@@ -348,7 +363,7 @@ const NodeConfigPanel = ({
       setConditionExpression(selectedNode.condition || '');
       setMaxLoopIterations(selectedNode.max_iterations || 10);
       setLoopExitCondition(selectedNode.exit_condition || '');
-      setRecursionLimit(selectedNode.recursion_limit || 75);
+      setRecursionLimit(selectedNode.recursion_limit || 300);
       setEnableParallelTools((selectedNode as any).enable_parallel_tools ?? true);
 
       // LangGraph HITL parameters

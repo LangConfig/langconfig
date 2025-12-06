@@ -1232,8 +1232,8 @@ class SimpleWorkflowExecutor:
             logger.info(f"✓ Workflow entry point: START -> {first_node_id}")
 
         # Build set of regular node IDs for validation
-        regular_node_ids = {n["id"] for n in nodes 
-                          if n.get("type", n.get("data", {}).get("label", "default")) 
+        regular_node_ids = {n["id"] for n in nodes
+                          if n.get("type", n.get("data", {}).get("label", "default"))
                           not in ['START_NODE', 'END_NODE']}
 
         # Group edges by source node to build routing maps for control nodes
@@ -1474,8 +1474,14 @@ class SimpleWorkflowExecutor:
                     except Exception as e:
                         logger.warning(f"[Node: {node_id}] Could not load vector store: {e}")
 
-                # Check if this should be a DeepAgent (based on config flag)
+                # Check if this should be a DeepAgent (based on config flag OR if subagents exist)
                 use_deepagents = agent_config.get("use_deepagents", False)
+                subagents_list = agent_config.get("subagents", [])
+                # Auto-enable DeepAgents if subagents are configured
+                if subagents_list and not use_deepagents:
+                    logger.info(f"[{display_name}] Auto-enabling DeepAgents (subagents configured)")
+                    use_deepagents = True
+                logger.info(f"[{display_name}] DeepAgent check: use_deepagents={use_deepagents}, subagents={len(subagents_list)}")
 
                 if use_deepagents:
                     logger.info(f"[{display_name}] Creating DeepAgent with harness")
@@ -1573,9 +1579,8 @@ When your work is complete, deliver the final result and END."""
                         "metadata": {"node_id": node_id},
                         # Also add as tag for fallback lookup
                         "tags": [node_id],
-                        # RECURSION LIMIT: Configurable per-node in frontend
-                        # Get from agent config or use defaults
-                        "recursion_limit": agent_config.get("recursion_limit", 75 if use_deepagents else 50)
+                        # RECURSION LIMIT: Default 300 accounts for middleware overhead (~6 steps per iteration)
+                        "recursion_limit": agent_config.get("recursion_limit", 300)
                     }
 
                     # Combine callbacks from parent workflow AND agent factory

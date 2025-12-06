@@ -390,7 +390,7 @@ function AppContent() {
               temperature: selectedNodeData.temperature ?? selectedNodeData.config?.temperature ?? 0.7,
               max_tokens: selectedNodeData.max_tokens || selectedNodeData.config?.max_tokens || 4000,
               max_retries: selectedNodeData.max_retries || selectedNodeData.config?.max_retries || 3,
-              recursion_limit: selectedNodeData.recursion_limit || selectedNodeData.config?.recursion_limit || 75,
+              recursion_limit: selectedNodeData.recursion_limit || selectedNodeData.config?.recursion_limit || 300,
               tools: selectedNodeData.tools || selectedNodeData.config?.tools || [],
               native_tools: selectedNodeData.native_tools || selectedNodeData.config?.native_tools || [],
               custom_tools: selectedNodeData.custom_tools || selectedNodeData.config?.custom_tools || [],

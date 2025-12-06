@@ -1186,6 +1186,69 @@ def create_middleware_from_config(middleware_config: Dict[str, Any]) -> AgentMid
             store_mappings=middleware_config.get("store_mappings", False)
         )
 
+    # =========================================================================
+    # LangChain 1.1 Built-in Middleware
+    # =========================================================================
+
+    elif middleware_type == "model_retry":
+        # LangChain 1.1: ModelRetryMiddleware for retrying failed model calls
+        try:
+            from langchain.agents.middleware import ModelRetryMiddleware
+            return ModelRetryMiddleware(
+                max_retries=middleware_config.get("max_retries", 3),
+                backoff_factor=middleware_config.get("backoff_factor", 2.0),
+                initial_delay=middleware_config.get("initial_delay", 1.0),
+                on_failure=middleware_config.get("on_failure", "continue"),
+            )
+        except ImportError:
+            logger.warning("ModelRetryMiddleware not available, falling back to ToolRetryMiddleware")
+            return ToolRetryMiddleware(
+                max_retries=middleware_config.get("max_retries", 3),
+                backoff_factor=middleware_config.get("backoff_factor", 2.0)
+            )
+
+    elif middleware_type == "model_fallback":
+        # LangChain 1.1: ModelFallbackMiddleware for falling back to cheaper models
+        try:
+            from langchain.agents.middleware import ModelFallbackMiddleware
+            fallback_models = middleware_config.get("models", [])
+            if fallback_models:
+                return ModelFallbackMiddleware(*fallback_models)
+            else:
+                raise ValueError("model_fallback requires 'models' list in config")
+        except ImportError:
+            logger.warning("ModelFallbackMiddleware not available in this LangChain version")
+            raise ValueError("model_fallback middleware requires LangChain 1.1+")
+
+    elif middleware_type == "content_moderation":
+        # LangChain 1.1: ContentModerationMiddleware for OpenAI moderation
+        try:
+            from langchain.agents.middleware import ContentModerationMiddleware
+            return ContentModerationMiddleware(
+                block_input=middleware_config.get("block_input", True),
+                block_output=middleware_config.get("block_output", False),
+            )
+        except ImportError:
+            logger.warning("ContentModerationMiddleware not available in this LangChain version")
+            raise ValueError("content_moderation middleware requires LangChain 1.1+")
+
+    elif middleware_type == "context_summarization":
+        # LangChain 1.1: SummarizationMiddleware with dynamic trigger
+        try:
+            from langchain.agents.middleware import SummarizationMiddleware as LC11SummarizationMiddleware
+            return LC11SummarizationMiddleware(
+                model=middleware_config.get("model", "gpt-4o-mini"),
+                trigger=middleware_config.get("trigger", ("fraction", 0.8)),
+                keep=middleware_config.get("keep", ("messages", 10)),
+            )
+        except ImportError:
+            # Fall back to our local SummarizationMiddleware
+            return SummarizationMiddleware(
+                model=middleware_config.get("model", "gpt-4o-mini"),
+                max_tokens_before_summary=middleware_config.get("max_tokens_before_summary", 1000),
+                keep_last_n_messages=middleware_config.get("keep_last_n_messages", 5)
+            )
+
     else:
         raise ValueError(f"Unknown middleware type: {middleware_type}")
 
