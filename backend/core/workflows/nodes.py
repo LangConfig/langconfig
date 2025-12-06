@@ -399,7 +399,8 @@ async def execute_code_node(
 
         # Execute without custom callbacks for compatibility
         # Get recursion limit from agent config or use default
-        recursion_limit = agent_config.get("recursion_limit", 50)
+        # NOTE: Default 300 accounts for middleware overhead (~6 steps per agent iteration)
+        recursion_limit = node_agent_config.get("recursion_limit", 300)
         agent_result = await agent_graph.ainvoke(
             {"messages": [HumanMessage(content=directive)]},
             config={"recursion_limit": recursion_limit}
@@ -533,7 +534,8 @@ Your goal is to validate the work done by the previous agent.
     try:
         # Execute without custom callbacks for compatibility
         # Get recursion limit from agent config or use default
-        recursion_limit = agent_config.get("recursion_limit", 50)
+        # NOTE: Default 300 accounts for middleware overhead (~6 steps per agent iteration)
+        recursion_limit = critic_agent_config.get("recursion_limit", 300)
         critic_result = await critic_graph.ainvoke(
             {"messages": [HumanMessage(content=directive)]},
             config={"recursion_limit": recursion_limit}

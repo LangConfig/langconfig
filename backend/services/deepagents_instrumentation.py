@@ -63,7 +63,27 @@ class InstrumentedFilesystemMiddleware:
         return await self.middleware.read_file(path, **kwargs)
 
     async def write_file(self, path: str, content: str, **kwargs):
-        """Write file with event emission."""
+        """Write file with event emission and path sanitization."""
+        from pathlib import Path as PathLib
+
+        # SECURITY: Sanitize path to prevent dangerous directory creation
+        original_path = path
+        filename = PathLib(path).name  # Extract just the filename
+
+        # Check for dangerous patterns
+        dangerous_patterns = [
+            'langconfig', 'backend', 'src', 'node_modules', '.git',
+            'frontend', 'api', 'core', 'services', 'models', 'Users'
+        ]
+        path_lower = path.lower()
+        for pattern in dangerous_patterns:
+            if pattern in path_lower:
+                logger.warning(f"[SECURITY] Blocked dangerous path: {path} (contains '{pattern}')")
+                logger.info(f"[SECURITY] Sanitized path: {path} -> outputs/{filename}")
+                # Rewrite to safe path
+                path = f"outputs/{filename}"
+                break
+
         await self._emit_operation_event("write", path)
         return await self.middleware.write_file(path, content, **kwargs)
 

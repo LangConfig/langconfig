@@ -132,13 +132,13 @@ class AgentTemplate(BaseModel):
         description="Enable default hooks (timestamp, project context, logging). DEPRECATED - use middleware instead."
     )
 
-    # Middleware (NEW: LangGraph v1.0)
+    # Middleware (LangChain 1.1: Now supports ModelRetryMiddleware, ModelFallbackMiddleware, SummarizationMiddleware, etc.)
     middleware: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="LangGraph v1.0 middleware for enhanced agent capabilities (logging, cost tracking, validation, etc.)"
+        description="LangChain 1.1 middleware pipeline. Supports: retry, fallback, summarization, moderation, etc."
     )
 
-    # Structured Outputs (NEW: LangChain v1-alpha)
+    # Structured Outputs (LangChain 1.1: ProviderStrategy for auto-detection)
     output_schema_name: Optional[str] = Field(
         None,
         description="Name of structured output schema to use (e.g., 'code_review', 'sql_query')"
@@ -146,6 +146,20 @@ class AgentTemplate(BaseModel):
     enable_structured_output: bool = Field(
         default=False,
         description="Enable type-safe Pydantic output schemas"
+    )
+    output_strategy: str = Field(
+        default="auto",
+        description="LangChain 1.1 ProviderStrategy: 'auto' (detect from model profile), 'native' (JSON mode), 'tool_calling'"
+    )
+    strict_schema: bool = Field(
+        default=True,
+        description="LangChain 1.1: Enable strict structured output mode (OpenAI strict mode)"
+    )
+
+    # Prompt Caching (LangChain 1.1: SystemMessage cache_control)
+    enable_prompt_caching: bool = Field(
+        default=False,
+        description="LangChain 1.1: Enable prompt caching via SystemMessage cache_control (Anthropic/OpenAI)"
     )
 
     # Guardrails (Chapter 13/18 - Safety & HITL)
@@ -156,7 +170,11 @@ class AgentTemplate(BaseModel):
 
     # Additional Settings
     timeout_seconds: int = Field(default=600)
-    max_retries: int = Field(default=3)  # Increased from 2 to allow for transient failures
+    max_retries: int = Field(default=3)  # Used by ModelRetryMiddleware in 1.1
+    retry_backoff_factor: float = Field(
+        default=2.0,
+        description="LangChain 1.1: Backoff factor for ModelRetryMiddleware exponential backoff"
+    )
     enable_context: bool = Field(default=True)
     context_limit: int = Field(default=5)
 
@@ -188,12 +206,18 @@ class AgentTemplate(BaseModel):
             "enable_rag": self.enable_rag,
             "model_hooks": self.model_hooks,  # DEPRECATED: Use middleware
             "enable_default_hooks": self.enable_default_hooks,  # DEPRECATED: Use middleware
-            "middleware": self.middleware,  # NEW: LangGraph v1.0 middleware
-            "output_schema_name": self.output_schema_name,  # NEW: Structured outputs
+            "middleware": self.middleware,  # LangChain 1.1 middleware pipeline
+            "output_schema_name": self.output_schema_name,
             "enable_structured_output": self.enable_structured_output,
-            "requires_human_approval": self.requires_human_approval,  # NEW: HITL
+            # LangChain 1.1: ProviderStrategy and strict mode
+            "output_strategy": self.output_strategy,
+            "strict_schema": self.strict_schema,
+            # LangChain 1.1: Prompt caching
+            "enable_prompt_caching": self.enable_prompt_caching,
+            "requires_human_approval": self.requires_human_approval,  # HITL
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
+            "retry_backoff_factor": self.retry_backoff_factor,  # LangChain 1.1
             "enable_context": self.enable_context,
             "context_limit": self.context_limit,
             # Metadata

@@ -966,7 +966,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   // Workflow Settings
   const [checkpointerEnabled, setCheckpointerEnabled] = useState(false);
-  const [globalRecursionLimit, setGlobalRecursionLimit] = useState(50);
+  const [globalRecursionLimit, setGlobalRecursionLimit] = useState(300);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Per-node token costs stored by node label (persists across node deletions/recreations)
@@ -2285,6 +2285,9 @@ if __name__ == "__main__":
             enable_memory: selectedAgent.enable_memory,
             enable_rag: selectedAgent.enable_rag || false,
             requires_human_approval: selectedAgent.requires_human_approval || false,
+            // DeepAgent configuration
+            use_deepagents: (selectedAgent as any).use_deepagents || false,
+            subagents: (selectedAgent as any).subagents || [],
             // Tool Node configuration (instance-specific)
             tool_type: null,
             tool_id: null,
@@ -2667,7 +2670,10 @@ if __name__ == "__main__":
             recursion_limit: n.data.config?.recursion_limit,
             // Pass pause settings
             pauseBefore: n.data.config?.pauseBefore ?? false,
-            pauseAfter: n.data.config?.pauseAfter ?? false
+            pauseAfter: n.data.config?.pauseAfter ?? false,
+            // DeepAgent support: pass use_deepagents flag and subagent configs
+            use_deepagents: n.data.config?.use_deepagents ?? false,
+            subagents: n.data.config?.subagents || []
           }
         })),
         edges: edges.map(e => ({

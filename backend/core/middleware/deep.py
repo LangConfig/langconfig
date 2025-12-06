@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class TodoItem(BaseModel):
     """A single todo item for tracking agent tasks."""
-    id: int
+    id: str  # Changed from int to str to match deepagents schema
     content: str
     status: str = Field(default="pending", description="pending, in_progress, or completed")
     created_at: str
@@ -75,7 +75,7 @@ class TodoListMiddleware:
                 # Add new todos
                 for todo_dict in todos:
                     todo = TodoItem(
-                        id=self.next_id,
+                        id=str(self.next_id),  # Convert to string
                         content=todo_dict["content"],
                         status=todo_dict.get("status", "pending"),
                         created_at=datetime.datetime.utcnow().isoformat()
@@ -100,7 +100,7 @@ class TodoListMiddleware:
                 logger.error(f"Error writing todos: {e}")
                 return f"Error updating todos: {str(e)}"
 
-        def update_todo_status(todo_id: int, status: str) -> str:
+        def update_todo_status(todo_id: str, status: str) -> str:
             """
             Update the status of a specific todo item.
 

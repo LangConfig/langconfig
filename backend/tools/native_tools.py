@@ -116,14 +116,14 @@ async def web_search(query: str, max_results: int = 5) -> str:
         >>> await web_search("Python async tutorial")
     """
     import re
-    
+
     try:
         logger.info(f"Web search (DuckDuckGo HTML): {query}")
 
         # Use DuckDuckGo's HTML search (no JavaScript, no new event loops)
         url = "https://html.duckduckgo.com/html/"
         params = {"q": query}
-        
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
@@ -134,12 +134,12 @@ async def web_search(query: str, max_results: int = 5) -> str:
 
             html = response.text
             results = []
-            
+
             # Method 1: Extract snippets using regex (more robust than line-based)
             # DuckDuckGo HTML uses class="result__snippet" for search result snippets
             snippet_pattern = r'class="result__snippet"[^>]*>([^<]+(?:<b>[^<]+</b>[^<]*)*)</'
             matches = re.findall(snippet_pattern, html, re.IGNORECASE)
-            
+
             for match in matches[:max_results]:
                 # Clean up the snippet
                 snippet = re.sub(r'<[^>]+>', '', match)  # Remove any HTML tags
@@ -149,7 +149,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
                 snippet = snippet.strip()
                 if snippet and len(snippet) > 10:
                     results.append(snippet)
-            
+
             # Method 2: Fallback - try to extract from result__a (titles) if no snippets
             if not results:
                 title_pattern = r'class="result__a"[^>]*>([^<]+)</a>'
@@ -158,7 +158,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
                     title = match.strip()
                     if title and len(title) > 5:
                         results.append(f"[Title] {title}")
-            
+
             # Method 3: Last resort - extract any text between result divs
             if not results:
                 # Look for result blocks
@@ -392,6 +392,23 @@ def file_read(file_path: str, max_chars: int = 50000) -> str:
 def _file_write_impl(file_path: str, content: str, _workspace_context: dict = None) -> str:
     """Implementation of file_write tool with workspace-aware file storage"""
     try:
+        # SECURITY: Sanitize file path to prevent dangerous directory creation
+        # Extract just the filename, stripping ALL directory components
+        original_path = file_path
+        filename = Path(file_path).name  # Gets just "report.md" from any path
+
+        # Block suspicious filenames or paths that could cause issues
+        dangerous_patterns = [
+            'langconfig', 'backend', 'src', 'node_modules', '.git',
+            'frontend', 'api', 'core', 'services', 'models'
+        ]
+        path_lower = file_path.lower()
+        for pattern in dangerous_patterns:
+            if pattern in path_lower and pattern not in filename.lower():
+                logger.warning(f"Blocked dangerous path: {file_path} (contains '{pattern}')")
+                # Still write the file, but only use the filename
+                logger.info(f"Sanitized path: {file_path} -> {filename}")
+
         # Always use organized workspace for better file management
         from services.workspace_manager import get_workspace_manager
 
@@ -410,7 +427,7 @@ def _file_write_impl(file_path: str, content: str, _workspace_context: dict = No
             workspace.mkdir(parents=True, exist_ok=True)
 
         # Write file to workspace directory (use just the filename, not full path)
-        path = (workspace / Path(file_path).name).resolve()
+        path = (workspace / filename).resolve()  # Use sanitized filename only
 
         # Security: Ensure file is within workspace
         if not str(path).startswith(str(workspace)):
