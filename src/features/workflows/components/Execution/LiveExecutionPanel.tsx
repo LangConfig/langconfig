@@ -133,7 +133,8 @@ const ToolCallItem = ({
                 <pre
                   className="code-snippet p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
                   style={{
-                    fontFamily: 'var(--font-family-mono)'
+                    fontFamily: 'var(--font-family-mono)',
+                    color: '#000000'
                   }}
                 >
                   {renderedInput}
@@ -153,7 +154,7 @@ const ToolCallItem = ({
                   className="p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
                   style={{
                     backgroundColor: status === 'error' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)',
-                    color: 'var(--color-text-primary)',
+                    color: '#000000',
                     fontFamily: 'var(--font-family-mono)',
                     border: '1px solid',
                     borderColor: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
