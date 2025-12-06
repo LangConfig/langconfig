@@ -92,3 +92,4 @@ src-tauri/bundle/
 # Internal documentation (keep docs/ folder but ignore contents)
 docs/*
 !docs/.gitkeep
+langconfig/
