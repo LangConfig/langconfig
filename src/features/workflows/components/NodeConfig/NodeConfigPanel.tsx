@@ -27,6 +27,7 @@ interface NodeConfig {
   custom_tools?: string[];  // User-created custom tools
   middleware?: any[];  // Middleware configuration
   subagents?: any[];  // Subagent configurations (Advanced: DeepAgents)
+  use_deepagents?: boolean;  // Flag to enable DeepAgent mode
   condition?: string;  // For CONDITIONAL_NODE
   max_iterations?: number;  // For LOOP_NODE
   exit_condition?: string;  // For LOOP_NODE

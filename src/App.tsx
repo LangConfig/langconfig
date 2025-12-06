@@ -100,6 +100,9 @@ interface SelectedNodeData {
     max_iterations?: number;
     exit_condition?: string;
     name?: string;
+    // DeepAgent subagents
+    subagents?: any[];
+    use_deepagents?: boolean;
   };
 }
 
@@ -397,7 +400,10 @@ function AppContent() {
               middleware: selectedNodeData.middleware || selectedNodeData.config?.middleware || [],
               condition: selectedNodeData.condition || selectedNodeData.config?.condition,
               max_iterations: selectedNodeData.max_iterations || selectedNodeData.config?.max_iterations,
-              exit_condition: selectedNodeData.exit_condition || selectedNodeData.config?.exit_condition
+              exit_condition: selectedNodeData.exit_condition || selectedNodeData.config?.exit_condition,
+              // DeepAgent subagents
+              subagents: (selectedNodeData as any).subagents || selectedNodeData.config?.subagents || [],
+              use_deepagents: (selectedNodeData as any).use_deepagents || selectedNodeData.config?.use_deepagents || false
             }}
             onClose={() => {
               setSelectedNodeId(null);
