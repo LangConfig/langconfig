@@ -950,6 +950,8 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [editedName, setEditedName] = useState(workflowName);
   const [showWorkflowDropdown, setShowWorkflowDropdown] = useState(false);
   const [workflowSearchQuery, setWorkflowSearchQuery] = useState('');
+  const [showCreateWorkflowModal, setShowCreateWorkflowModal] = useState(false);
+  const [newWorkflowName, setNewWorkflowName] = useState('');
 
   // Results view state
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
@@ -1511,48 +1513,71 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setNodeContextMenu(null);
   };
 
-  const handleConfirmSaveToLibrary = async () => {
+  const handleConfirmSaveToLibrary = async (saveAsCopy: boolean = false) => {
     if (!saveToLibraryData || !agentLibraryName.trim()) return;
 
     const { nodeId, nodeData } = saveToLibraryData;
 
+    // Check if this agent came from the library (has deep_agent_template_id)
+    const existingAgentId = nodeData.config?.deep_agent_template_id;
+    const shouldUpdate = existingAgentId && !saveAsCopy;
+
     try {
-      const agentTemplate = {
-        name: agentLibraryName.trim(),
-        description: agentLibraryDescription.trim() || 'Custom agent template',
-        category: 'workflow',
-        config: {
-          model: nodeData.config.model,
-          temperature: nodeData.config.temperature ?? 0.7,
-          max_tokens: nodeData.config.max_tokens || 4000,
-          system_prompt: nodeData.config.system_prompt || '',
-          tools: nodeData.config.tools || [],
-          native_tools: nodeData.config.native_tools || [],
-          cli_tools: nodeData.config.cli_tools || [],
-          custom_tools: nodeData.config.custom_tools || [],
-          middleware: [],
-          subagents: [],
-          backend: {
-            type: 'state',
-            config: {},
-            mappings: null
+      const configPayload = {
+        model: nodeData.config.model,
+        temperature: nodeData.config.temperature ?? 0.7,
+        max_tokens: nodeData.config.max_tokens || 4000,
+        system_prompt: nodeData.config.system_prompt || '',
+        tools: nodeData.config.tools || [],
+        native_tools: nodeData.config.native_tools || [],
+        cli_tools: nodeData.config.cli_tools || [],
+        custom_tools: nodeData.config.custom_tools || [],
+        middleware: nodeData.config.middleware || [],
+        subagents: nodeData.config.subagents || [],
+        backend: {
+          type: 'state',
+          config: {},
+          mappings: null
+        },
+        guardrails: {
+          interrupts: {},
+          token_limits: {
+            max_total_tokens: 100000,
+            eviction_threshold: 80000,
+            summarization_threshold: 60000
           },
-          guardrails: {
-            interrupts: {},
-            token_limits: {
-              max_total_tokens: 100000,
-              eviction_threshold: 80000,
-              summarization_threshold: 60000
-            },
-            enable_auto_eviction: true,
-            enable_summarization: true,
-            long_term_memory: false
-          }
+          enable_auto_eviction: true,
+          enable_summarization: true,
+          long_term_memory: false
         }
       };
 
-      const response = await apiClient.createDeepAgent(agentTemplate);
-      const savedAgentId = response.data?.id;
+      let savedAgentId: number;
+
+      if (shouldUpdate) {
+        // UPDATE existing agent - preserves chat context
+        await apiClient.updateDeepAgent(existingAgentId, {
+          name: agentLibraryName.trim(),
+          description: agentLibraryDescription.trim() || 'Custom agent template',
+          config: configPayload
+        });
+        savedAgentId = existingAgentId;
+
+        // Show warning that this affects other workflows
+        showWarning(`Agent updated. This change affects all workflows using "${agentLibraryName}".`);
+      } else {
+        // CREATE new agent copy
+        const agentTemplate = {
+          name: agentLibraryName.trim(),
+          description: agentLibraryDescription.trim() || 'Custom agent template',
+          category: 'workflow',
+          config: configPayload
+        };
+
+        const response = await apiClient.createDeepAgent(agentTemplate);
+        savedAgentId = response.data?.id;
+        showSuccess(`Agent "${agentLibraryName}" saved to library!`);
+      }
 
       // Update the node with the saved agent ID and new name
       setNodes((nds) =>
@@ -1567,6 +1592,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
                 config: {
                   ...node.data.config,
                   deepAgentId: savedAgentId,
+                  deep_agent_template_id: savedAgentId,
                 }
               }
             };
@@ -1575,7 +1601,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
         })
       );
 
-      showSuccess(`Agent "${agentLibraryName}" saved to library!`);
       setShowSaveToLibraryModal(false);
       setSaveToLibraryData(null);
       setAgentLibraryName('');
@@ -2288,6 +2313,8 @@ if __name__ == "__main__":
             // DeepAgent configuration
             use_deepagents: (selectedAgent as any).use_deepagents || false,
             subagents: (selectedAgent as any).subagents || [],
+            // Track original library agent for updates (preserves chat context)
+            deep_agent_template_id: (selectedAgent as any).id || null,
             // Tool Node configuration (instance-specific)
             tool_type: null,
             tool_id: null,
@@ -3391,6 +3418,54 @@ if __name__ == "__main__":
     failed: { color: 'red', label: 'Failed' }
   };
 
+  // Handler to create new workflow from Studio dropdown
+  const handleCreateNewWorkflow = useCallback(async () => {
+    if (!newWorkflowName.trim()) {
+      showWarning('Please enter a workflow name');
+      return;
+    }
+
+    try {
+      // Create new workflow in database
+      const response = await apiClient.createWorkflow({
+        name: newWorkflowName.trim(),
+        strategy_type: 'default',
+        configuration: {},
+        blueprint: { nodes: [], edges: [] }
+      });
+
+      // Clear canvas and load the new workflow
+      setNodes([]);
+      setEdges([]);
+      setCurrentWorkflowId(response.data.id);
+      setWorkflowName(response.data.name);
+      setExecutionStatus({
+        state: 'idle',
+        currentNode: '',
+        progress: 0,
+        startTime: '',
+        duration: '0s',
+      });
+      setCurrentTaskId(null);
+      setTaskHistory([]);
+      setSelectedHistoryTask(null);
+      localStorage.setItem('langconfig-workflow-id', String(response.data.id));
+
+      // Refresh workflow list
+      apiClient.listWorkflows().then(res => {
+        setAvailableWorkflows(res.data);
+      });
+
+      // Close modal and reset
+      setShowCreateWorkflowModal(false);
+      setNewWorkflowName('');
+      showSuccess(`Created workflow "${response.data.name}"`);
+    } catch (error: any) {
+      console.error('Failed to create workflow:', error);
+      showWarning(`Failed to create workflow: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+    }
+  }, [newWorkflowName, setNodes, setEdges, showSuccess, showWarning]);
+
   // Handler to open node context menu
   const openNodeContextMenu = useCallback((nodeId: string, nodeData: NodeData, x: number, y: number) => {
     setNodeContextMenu({ nodeId, nodeData, x, y });
@@ -3473,6 +3548,23 @@ if __name__ == "__main__":
                             color: 'var(--color-text-primary)'
                           }}
                         />
+                      </div>
+
+                      {/* Create New Workflow Button */}
+                      <div
+                        className="p-2 border-b"
+                        style={{ borderColor: 'var(--color-border-dark)' }}
+                      >
+                        <button
+                          onClick={() => {
+                            setShowWorkflowDropdown(false);
+                            setShowCreateWorkflowModal(true);
+                          }}
+                          className="w-full px-3 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                        >
+                          <span className="material-symbols-outlined text-sm">add</span>
+                          Create New Workflow
+                        </button>
                       </div>
 
                       {/* Workflow List */}
@@ -6230,6 +6322,61 @@ if __name__ == "__main__":
               </button>
             </div>
           </>
+        )}
+
+        {/* Create New Workflow Modal */}
+        {showCreateWorkflowModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-panel-dark rounded-lg max-w-md w-full p-6 shadow-2xl">
+              <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>
+                Create New Workflow
+              </h3>
+
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateNewWorkflow();
+              }}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Workflow Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newWorkflowName}
+                    onChange={(e) => setNewWorkflowName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                    placeholder="Enter workflow name..."
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateWorkflowModal(false);
+                      setNewWorkflowName('');
+                    }}
+                    className="px-4 py-2 text-sm font-medium border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 hover:border-gray-400 dark:hover:border-border-light transition-all"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!newWorkflowName.trim()}
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:brightness-110 hover:shadow-lg transition-all disabled:opacity-50"
+                  >
+                    Create Workflow
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {showConflictDialog && conflictData && (
