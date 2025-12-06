@@ -111,6 +111,8 @@ interface WorkflowExecutionContext {
   classification: 'GENERAL' | 'BACKEND' | 'FRONTEND' | 'DEVOPS_IAC' | 'DATABASE' | 'API' | 'TESTING' | 'DOCUMENTATION' | 'CONFIGURATION';
   executor_type: 'default' | 'devops' | 'frontend' | 'database' | 'testing';
   max_retries: number;
+  max_events?: number;  // Configurable event limit (default: 10k)
+  timeout_seconds?: number;  // Configurable timeout (default: 10 min)
 }
 
 // Ref interface for exposing methods to parent components
@@ -939,6 +941,8 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     classification: 'GENERAL',
     executor_type: 'default',
     max_retries: 3,
+    max_events: 10000,  // Default: 10k events
+    timeout_seconds: 600,  // Default: 10 minutes (600 seconds)
   });
   const [contextDocuments, setContextDocuments] = useState<number[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
@@ -2739,7 +2743,10 @@ if __name__ == "__main__":
           task: executionConfig.task || executionConfig.directive,
           additional_context: additionalContext || '',
           checkpointer_enabled: checkpointerEnabled,
-          recursion_limit: globalRecursionLimit
+          recursion_limit: globalRecursionLimit,
+          // Configurable execution limits (use defaults if not set,  backend enforces bounds)
+          max_events: executionConfig.max_events || 10000,  // Default: 10k events
+          timeout_seconds: executionConfig.timeout_seconds || 600  // Default: 10 minutes
         },
         context_documents: contextDocuments,
       });
@@ -5618,6 +5625,59 @@ if __name__ == "__main__":
                         />
                         <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                           Number of times to retry failed steps
+                        </p>
+                      </div>
+
+                      {/* Max Events */}
+                      <div>
+                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                          Max Events
+                        </label>
+                        <input
+                          type="number"
+                          min="1000"
+                          max="100000"
+                          step="1000"
+                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent"
+                          style={{
+                            backgroundColor: 'var(--color-background-dark)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border-dark)'
+                          }}
+                          value={executionConfig.max_events || 10000}
+                          onChange={(e) => setExecutionConfig({
+                            ...executionConfig,
+                            max_events: parseInt(e.target.value) || 10000,
+                          })}
+                        />
+                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          Maximum events before stopping (1k-100k). Increase for longer workflows.
+                        </p>
+                      </div>
+
+                      {/* Timeout */}
+                      <div>
+                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                          Timeout (minutes)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="60"
+                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent"
+                          style={{
+                            backgroundColor: 'var(--color-background-dark)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border-dark)'
+                          }}
+                          value={Math.round((executionConfig.timeout_seconds || 600) / 60)}
+                          onChange={(e) => setExecutionConfig({
+                            ...executionConfig,
+                            timeout_seconds: (parseInt(e.target.value) || 10) * 60,
+                          })}
+                        />
+                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          Maximum runtime in minutes (1-60). Default is 10 minutes.
                         </p>
                       </div>
                     </div>

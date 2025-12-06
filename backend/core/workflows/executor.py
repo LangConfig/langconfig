@@ -280,8 +280,14 @@ class SimpleWorkflowExecutor:
             registry = get_cancellation_registry()
 
             # SAFETY: Prevent infinite loops with max events and timeout
-            MAX_EVENTS = 10000  # Hard limit on events
-            TIMEOUT_SECONDS = 600  # 10 minute timeout
+            # These can be configured per-execution via input_data (frontend settings)
+            MAX_EVENTS = input_data.get("max_events", 10000)  # Default: 10k events
+            TIMEOUT_SECONDS = input_data.get("timeout_seconds", 600)  # Default: 10 minutes
+
+            # Enforce reasonable bounds to prevent abuse
+            MAX_EVENTS = max(1000, min(MAX_EVENTS, 100000))  # 1k - 100k range
+            TIMEOUT_SECONDS = max(60, min(TIMEOUT_SECONDS, 3600))  # 1 min - 1 hour range
+
             event_count = 0
             execution_start_time = datetime.utcnow()
 
