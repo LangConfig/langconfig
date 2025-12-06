@@ -93,3 +93,4 @@ src-tauri/bundle/
 docs/*
 !docs/.gitkeep
 langconfig/
+langconfig/
