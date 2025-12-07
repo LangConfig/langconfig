@@ -1777,7 +1777,6 @@ When your work is complete, deliver the final result and END."""
                             strategy_name = compaction_to_strategy.get(compaction_strategy, "smart")
                         else:
                             strategy_name = agent_config.get("context_management_strategy") or agent_config.get("context_mode", "smart")
-
                         strategy_map = {
                             "recent": ContextStrategy.RECENT,
                             "smart": ContextStrategy.SMART,
