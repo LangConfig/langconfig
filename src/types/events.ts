@@ -31,6 +31,8 @@ export type WorkflowEventType =
   | 'hitl_rejected'
   | 'recursion_limit_hit'
   | 'node_completed'
+  | 'subagent_start'
+  | 'subagent_end'
   | 'keepalive';
 
 export interface BaseEvent {
@@ -109,10 +111,34 @@ export interface NodeCompletedEvent extends BaseEvent {
     toolResultCount?: number;
   };
 }
+// Subagent start event for nested execution visualization
+export interface SubagentStartEvent extends BaseEvent {
+  type: 'subagent_start';
+  data: {
+    subagent_name: string;
+    subagent_run_id: string;
+    parent_agent_label?: string;
+    parent_run_id?: string;
+    input_preview?: string;
+  };
+}
+
+// Subagent end event for nested execution visualization
+export interface SubagentEndEvent extends BaseEvent {
+  type: 'subagent_end';
+  data: {
+    subagent_name: string;
+    subagent_run_id: string;
+    parent_agent_label?: string;
+    parent_run_id?: string;
+    output_preview?: string;
+    success: boolean;
+  };
+}
 
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
-  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed'>;
+  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed' | 'subagent_start' | 'subagent_end'>;
   data: any;
 }
 
@@ -122,4 +148,6 @@ export type WorkflowEvent =
   | ToolEndEvent
   | ErrorEvent
   | NodeCompletedEvent
+  | SubagentStartEvent
+  | SubagentEndEvent
   | GenericEvent;

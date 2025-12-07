@@ -331,6 +331,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Track current executing tools for on_tool_end events
         self.current_tool_info = {}  # {run_id: {tool_name, agent_label}}
 
+        # Track active subagent runs for nested visualization
+        # Maps run_id -> {subagent_name, parent_agent_label, parent_run_id}
+        self.active_subagents = {}
+
         logger.info(
             f"ExecutionEventCallbackHandler initialized "
             f"(project={project_id}, task={task_id}, workflow={workflow_id}, save_to_db={save_to_db})"
@@ -587,6 +591,43 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             "node_id": node_id  # Pass through to on_tool_end
         }
 
+        # SUBAGENT DETECTION: If this is the 'task' tool, it's a subagent invocation
+        # Extract subagent name from inputs and emit SUBAGENT_START event
+        if tool_name == 'task':
+            subagent_name = None
+            if inputs:
+                # The task tool typically has 'name' or 'agent' as the subagent identifier
+                subagent_name = inputs.get('name') or inputs.get('agent') or inputs.get('subagent')
+            if not subagent_name and input_str:
+                # Try to extract from input string if structured
+                import json
+                try:
+                    parsed = json.loads(input_str)
+                    subagent_name = parsed.get('name') or parsed.get('agent')
+                except:
+                    pass
+
+            if subagent_name:
+                # Track this as an active subagent run
+                self.active_subagents[run_id] = {
+                    "subagent_name": subagent_name,
+                    "parent_agent_label": agent_label,
+                    "parent_run_id": str(parent_run_id) if parent_run_id else None
+                }
+
+                # Emit dedicated SUBAGENT_START event for frontend nested panels
+                await self._emit_event(
+                    event_type="SUBAGENT_START",
+                    data={
+                        "subagent_name": subagent_name,
+                        "subagent_run_id": str(run_id),
+                        "parent_agent_label": agent_label,
+                        "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                        "input_preview": input_str[:200] if input_str else ""
+                    }
+                )
+                logger.info(f"[SUBAGENT START] {subagent_name} invoked by {agent_label}")
+
         # Sanitize tool inputs
         sanitized_inputs = self._sanitize_arguments(inputs or {}) if self.enable_sanitization else inputs
 
@@ -649,6 +690,23 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "node_id": node_id  # Maps tool to correct node for grouping
             }
         )
+
+        # SUBAGENT COMPLETION: If this was a subagent (task tool), emit SUBAGENT_END
+        if run_id in self.active_subagents:
+            subagent_info = self.active_subagents[run_id]
+            await self._emit_event(
+                event_type="SUBAGENT_END",
+                data={
+                    "subagent_name": subagent_info["subagent_name"],
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": subagent_info["parent_agent_label"],
+                    "parent_run_id": subagent_info["parent_run_id"],
+                    "output_preview": output_preview,
+                    "success": True
+                }
+            )
+            logger.info(f"[SUBAGENT END] {subagent_info['subagent_name']} completed")
+            del self.active_subagents[run_id]
 
         # Clean up tool tracking to prevent memory leaks
         if run_id in self.current_tool_info:
