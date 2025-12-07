@@ -1187,6 +1187,33 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
       // warningEvents.forEach(warning => {
       //   showWarning(warning.data.message, `Suggestion: ${warning.data.suggestion}`);
       // });
+
+      // Process node_completed events to update token costs
+      const nodeCompletedEvents = workflowEvents.filter(e => e.type === 'node_completed');
+      if (nodeCompletedEvents.length > 0) {
+        nodeCompletedEvents.forEach(event => {
+          const agentLabel = event.data?.agent_label;
+          const tokenCost = event.data?.tokenCost;
+
+          if (agentLabel && tokenCost) {
+            setNodeTokenCosts(prev => {
+              // Only update if different to avoid unnecessary re-renders
+              if (prev[agentLabel]?.totalTokens === tokenCost.totalTokens) {
+                return prev;
+              }
+              return {
+                ...prev,
+                [agentLabel]: {
+                  promptTokens: tokenCost.promptTokens || 0,
+                  completionTokens: tokenCost.completionTokens || 0,
+                  totalTokens: tokenCost.totalTokens || 0,
+                  costString: tokenCost.costString || '$0.00'
+                }
+              };
+            });
+          }
+        });
+      }
     }
   }, [workflowEvents, latestEvent, executionStatus.state]);
 

@@ -30,6 +30,7 @@ export type WorkflowEventType =
   | 'hitl_approved'
   | 'hitl_rejected'
   | 'recursion_limit_hit'
+  | 'node_completed'
   | 'keepalive';
 
 export interface BaseEvent {
@@ -89,9 +90,29 @@ export interface ErrorEvent extends BaseEvent {
   };
 }
 
+// Node completion event with token usage and tool metrics
+export interface NodeCompletedEvent extends BaseEvent {
+  type: 'node_completed';
+  data: {
+    node_id: string;
+    agent_label: string;
+    model?: string;
+    timestamp?: string;
+    tokenCost?: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+      costString?: string;
+    };
+    toolCalls?: Array<{ name: string; id: string }>;
+    toolCallCount?: number;
+    toolResultCount?: number;
+  };
+}
+
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
-  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error'>;
+  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed'>;
   data: any;
 }
 
@@ -100,4 +121,5 @@ export type WorkflowEvent =
   | ToolStartEvent
   | ToolEndEvent
   | ErrorEvent
+  | NodeCompletedEvent
   | GenericEvent;

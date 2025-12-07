@@ -1861,6 +1861,89 @@ When your work is complete, deliver the final result and END."""
                             }
                         })
 
+                    # ===== EMIT NODE COMPLETION WITH TOKEN & TOOL METRICS =====
+                    # Extract token usage from the response messages
+                    token_usage = None
+                    tool_calls_info = []
+
+                    for msg in new_messages:
+                        # Extract token usage from response_metadata
+                        if hasattr(msg, 'response_metadata') and msg.response_metadata:
+                            metadata = msg.response_metadata
+                            # OpenAI/Anthropic format
+                            if 'usage' in metadata:
+                                usage = metadata['usage']
+                                token_usage = {
+                                    'promptTokens': usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0),
+                                    'completionTokens': usage.get('completion_tokens', 0) or usage.get('output_tokens', 0),
+                                    'totalTokens': usage.get('total_tokens', 0),
+                                }
+                                if not token_usage['totalTokens']:
+                                    token_usage['totalTokens'] = token_usage['promptTokens'] + token_usage['completionTokens']
+                            # Google/LangChain format
+                            elif 'usage_metadata' in metadata:
+                                usage = metadata['usage_metadata']
+                                token_usage = {
+                                    'promptTokens': usage.get('input_tokens', 0) or usage.get('prompt_tokens', 0),
+                                    'completionTokens': usage.get('output_tokens', 0) or usage.get('completion_tokens', 0),
+                                    'totalTokens': usage.get('total_tokens', 0),
+                                }
+                                if not token_usage['totalTokens']:
+                                    token_usage['totalTokens'] = token_usage['promptTokens'] + token_usage['completionTokens']
+
+                        # Extract tool call information
+                        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                tool_calls_info.append({
+                                    'name': tc.get('name', 'unknown'),
+                                    'id': tc.get('id', ''),
+                                })
+
+                    # Count tool results from earlier messages
+                    tool_results_count = sum(1 for m in all_response_messages if hasattr(m, '__class__') and 'Tool' in m.__class__.__name__)
+
+                    # Calculate estimated cost if we have token data
+                    if token_usage:
+                        try:
+                            from lib.model_pricing import get_model_cost
+                            cost = get_model_cost(model, token_usage['promptTokens'], token_usage['completionTokens'])
+                            token_usage['costString'] = f"${cost:.6f}"
+                        except Exception:
+                            # Fallback cost estimation
+                            estimated_cost = (token_usage['promptTokens'] * 0.000003) + (token_usage['completionTokens'] * 0.000015)
+                            token_usage['costString'] = f"${estimated_cost:.6f}"
+
+                    # Emit node_completed event with all metrics
+                    try:
+                        from services.event_bus import get_event_bus
+                        event_bus = get_event_bus()
+                        channel = f"workflow:{state.get('workflow_id')}"
+
+                        completion_event = {
+                            "type": "node_completed",
+                            "data": {
+                                "node_id": node_id,
+                                "agent_label": display_name,
+                                "model": model,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        }
+
+                        if token_usage:
+                            completion_event["data"]["tokenCost"] = token_usage
+
+                        if tool_calls_info:
+                            completion_event["data"]["toolCalls"] = tool_calls_info
+                            completion_event["data"]["toolCallCount"] = len(tool_calls_info)
+
+                        if tool_results_count:
+                            completion_event["data"]["toolResultCount"] = tool_results_count
+
+                        await event_bus.publish(channel, completion_event)
+                        logger.debug(f"[{display_name}] Emitted node_completed event with token usage: {token_usage}")
+                    except Exception as event_error:
+                        logger.warning(f"[{display_name}] Failed to emit node_completed event: {event_error}")
+
                     logger.info(f"[{display_name}] Returning {len(new_messages)} new messages")
 
                     # Return new messages (reducer will append them)

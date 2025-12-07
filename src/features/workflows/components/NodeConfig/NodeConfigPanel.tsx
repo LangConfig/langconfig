@@ -89,6 +89,7 @@ const MIDDLEWARE_TYPES = [
 
 // Native Python Tools (local-first, no Node.js required)
 // These map to backend/tools/native_tools.py
+// Note: Memory tools (enable_memory, memory_store, memory_recall, enable_rag) moved to unified Context & Memory section
 const AVAILABLE_TOOLS = [
   { id: 'web_search', name: 'Web Search', description: 'Search the web (DuckDuckGo)', category: 'web' },
   { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch webpage content', category: 'web' },
@@ -96,10 +97,6 @@ const AVAILABLE_TOOLS = [
   { id: 'file_read', name: 'Read Files', description: 'Read file contents', category: 'files' },
   { id: 'file_write', name: 'Write Files', description: 'Write to files', category: 'files' },
   { id: 'file_list', name: 'List Files', description: 'List directory contents', category: 'files' },
-  { id: 'enable_memory', name: 'Enable Memory', description: 'Capability flag: enables long‑term memory for this agent (persists via project/workflow store). Not a tool by itself; pair with Store/Recall Memory.', category: 'memory' },
-  { id: 'memory_store', name: 'Store Memory', description: 'Save information to the agent\'s long‑term memory store', category: 'memory' },
-  { id: 'memory_recall', name: 'Recall Memory', description: 'Retrieve previously stored information from memory', category: 'memory' },
-  { id: 'enable_rag', name: 'Enable RAG', description: 'Capability flag: enables retrieval from the project\'s vector store (documents/KB). Not a tool by itself.', category: 'memory' },
   { id: 'reasoning_chain', name: 'Reasoning Chain', description: 'Multi-step reasoning', category: 'reasoning' },
 ];
 
@@ -150,6 +147,14 @@ const NodeConfigPanel = ({
   const [contextStrategy, setContextStrategy] = useState<'smart' | 'recent' | 'summary' | 'quarantine' | 'full'>('smart');
   const [maxContextTokens, setMaxContextTokens] = useState<number | null>(null);  // null = auto-detect from model
   const [enableAutoSummarization, setEnableAutoSummarization] = useState(true);
+
+  // Long-Term Memory (unified section)
+  const [enableLongTermMemory, setEnableLongTermMemory] = useState(false);
+  const [enableMemoryStore, setEnableMemoryStore] = useState(true);  // Tool: save to memory (requires enableLongTermMemory)
+  const [enableMemoryRecall, setEnableMemoryRecall] = useState(true); // Tool: recall from memory (requires enableLongTermMemory)
+
+  // RAG (unified section)
+  const [enableRAG, setEnableRAG] = useState(false);
 
   // Middleware configuration
   const [enabledMiddleware, setEnabledMiddleware] = useState<string[]>([]);
@@ -377,6 +382,12 @@ const NodeConfigPanel = ({
       setMaxContextTokens((selectedNode as any).max_context_tokens || null);
       setEnableAutoSummarization((selectedNode as any).enable_auto_summarization ?? true);
 
+      // Long-Term Memory & RAG (unified section)
+      setEnableLongTermMemory((selectedNode as any).enable_long_term_memory ?? false);
+      setEnableMemoryStore((selectedNode as any).enable_memory_store ?? true);
+      setEnableMemoryRecall((selectedNode as any).enable_memory_recall ?? true);
+      setEnableRAG((selectedNode as any).enable_rag ?? false);
+
       // LangGraph HITL parameters
       setInterruptBefore(selectedNode.interrupt_before || false);
       setInterruptAfter(selectedNode.interrupt_after || false);
@@ -450,14 +461,8 @@ const NodeConfigPanel = ({
 
   const handleSave = () => {
     if (config) {
-      // Check if enable_memory or enable_rag are selected as tools
-      const hasEnableMemoryTool = ((config as any).native_tools || []).includes('enable_memory');
-      const hasEnableRagTool = ((config as any).native_tools || []).includes('enable_rag');
-
-      // Filter out enable_memory and enable_rag from native_tools since they're config flags, not actual tools
-      const cleanedNativeTools = ((config as any).native_tools || []).filter(
-        (tool: string) => tool !== 'enable_memory' && tool !== 'enable_rag'
-      );
+      // Get native tools from config (no longer need to detect memory flags from tools)
+      const nativeTools = (config as any).native_tools || [];
 
       // Build complete config object matching LangGraph/backend structure
       // DEBUG: Log what we're about to save
@@ -476,13 +481,11 @@ const NodeConfigPanel = ({
         // Tools - now unified (no more separate "built-in" vs "MCP")
         // Backend expects mcp_tools, tools is deprecated but kept for compatibility
         tools: [],  // Deprecated, kept empty for backward compatibility
-        native_tools: cleanedNativeTools,  // Cleaned tools without enable_memory/enable_rag
+        native_tools: nativeTools,  // Native Python tools (memory flags handled in unified section)
         mcp_tools: [], // Deprecated in favor of native_tools
         custom_tools: selectedCustomTools,  // User-defined custom tools
 
-        // Agent capabilities (set from tools)
-        enable_memory: hasEnableMemoryTool,
-        enable_rag: hasEnableRagTool,
+        // Agent capabilities now handled in unified Context & Memory section below
 
         // LangGraph HITL parameters
         interrupt_before: interruptBefore,
@@ -514,6 +517,12 @@ const NodeConfigPanel = ({
         context_management_strategy: contextStrategy,
         max_context_tokens: maxContextTokens,
         enable_auto_summarization: enableAutoSummarization,
+
+        // Long-Term Memory & RAG (unified section)
+        enable_long_term_memory: enableLongTermMemory,
+        enable_memory_store: enableMemoryStore,
+        enable_memory_recall: enableMemoryRecall,
+        enable_rag: enableRAG,
 
         // Advanced: Parallel Tool Calling
         enable_parallel_tools: enableParallelTools,
@@ -1067,115 +1076,342 @@ const NodeConfigPanel = ({
                 </p>
               </div>
 
-              {/* Context Window Management - LangChain 1.1 */}
+              {/* ═══════════════════════════════════════════════════════════════════
+                  📊 CONTEXT & MEMORY - Unified Section
+                  All context and memory settings organized in one place
+                  ═══════════════════════════════════════════════════════════════════ */}
               <div className="mt-4 p-3 rounded-lg border" style={{
-                borderColor: 'var(--color-border-dark)',
+                borderColor: 'var(--color-primary)',
                 backgroundColor: 'var(--color-background-secondary, rgba(0,0,0,0.02))'
               }}>
                 <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-4 h-4" style={{ color: 'var(--color-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" style={{ color: 'var(--color-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                   </svg>
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                    Context Window Management
+                  <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Context & Memory
                   </span>
                 </div>
 
-                {/* Strategy Selector */}
-                <div className="mb-3">
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                    Strategy
-                  </label>
-                  <select
-                    value={contextStrategy}
-                    onChange={(e) => {
-                      const strategy = e.target.value as 'smart' | 'recent' | 'summary' | 'quarantine' | 'full';
-                      setContextStrategy(strategy);
-                      if (config) {
-                        onSave(config.id, {
-                          ...config,
-                          context_management_strategy: strategy
-                        });
-                      }
-                    }}
-                    className="w-full px-2 py-1.5 border rounded text-xs"
-                    style={{
-                      backgroundColor: 'var(--color-input-background)',
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-primary)'
-                    }}
-                  >
-                    <option value="smart">Smart (Auto-optimize for each call)</option>
-                    <option value="recent">Recent (Keep last N messages)</option>
-                    <option value="summary">Summary (Compress older messages)</option>
-                    <option value="quarantine">Quarantine (Isolate large content)</option>
-                    <option value="full">Full (No management - risky)</option>
-                  </select>
-                  <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    How to handle context when approaching token limits
-                  </p>
-                </div>
+                {/* ─────────────────────────────────────────────────────────────────
+                    SUB-GROUP 1: Runtime Context Management (Always Visible)
+                    How the agent handles context during execution
+                    ───────────────────────────────────────────────────────────────── */}
+                <div className="mb-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Runtime Context
+                  </div>
 
-                {/* Max Context Tokens */}
-                <div className="mb-3">
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                    Max Context Tokens
-                    <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                      (blank = auto-detect from model)
-                    </span>
-                  </label>
-                  <input
-                    type="number"
-                    value={maxContextTokens ?? ''}
-                    placeholder="Auto-detect"
-                    onChange={(e) => {
-                      const value = e.target.value ? parseInt(e.target.value) : null;
-                      setMaxContextTokens(value);
-                      if (config) {
-                        onSave(config.id, {
-                          ...config,
-                          max_context_tokens: value
-                        });
-                      }
-                    }}
-                    min="1000"
-                    max="200000"
-                    step="1000"
-                    className="w-full px-2 py-1.5 border rounded text-xs"
-                    style={{
-                      backgroundColor: 'var(--color-input-background)',
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-primary)'
-                    }}
-                  />
-                </div>
-
-                {/* Auto-Summarization Toggle */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enableAutoSummarization}
-                    onChange={(e) => {
-                      setEnableAutoSummarization(e.target.checked);
-                      if (config) {
-                        onSave(config.id, {
-                          ...config,
-                          enable_auto_summarization: e.target.checked
-                        });
-                      }
-                    }}
-                    className="w-4 h-4 rounded"
-                    style={{ accentColor: 'var(--color-primary)' }}
-                  />
-                  <div>
-                    <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                      Auto-Summarize at 80% Capacity
-                    </span>
-                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                      Proactively compress context before hitting limits
+                  {/* Strategy */}
+                  <div className="mb-2">
+                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                      Strategy
+                    </label>
+                    <select
+                      value={contextStrategy}
+                      onChange={(e) => {
+                        const strategy = e.target.value as 'smart' | 'recent' | 'summary' | 'quarantine' | 'full';
+                        setContextStrategy(strategy);
+                        if (config) {
+                          onSave(config.id, { ...config, context_management_strategy: strategy });
+                        }
+                      }}
+                      className="w-full px-2 py-1.5 border rounded text-xs"
+                      style={{
+                        backgroundColor: 'var(--color-input-background)',
+                        borderColor: 'var(--color-border-dark)',
+                        color: 'var(--color-text-primary)'
+                      }}
+                    >
+                      <option value="recent">Recent — keeps last N messages only (fast, predictable)</option>
+                      <option value="smart">Smart — hybrid: trims old messages, keeps important ones</option>
+                      <option value="summary">Summary — compresses older messages into AI summaries</option>
+                      <option value="quarantine">Quarantine — isolates large tool outputs to reduce tokens</option>
+                      <option value="full">Full — no trimming (may hit context limit errors)</option>
+                    </select>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {contextStrategy === 'recent' && '💡 Best for fresh runs. Only keeps the most recent messages — fast and token-efficient.'}
+                      {contextStrategy === 'smart' && '💡 Balances recency with relevance. Trims oldest messages but keeps bookmarked/important ones.'}
+                      {contextStrategy === 'summary' && '💡 Uses AI to compress older messages. Good for long conversations but adds latency.'}
+                      {contextStrategy === 'quarantine' && '💡 Moves large tool outputs (code, files) to a separate cache. Useful for code-heavy workflows.'}
+                      {contextStrategy === 'full' && '⚠️ No context management — risks context_length_exceeded errors with long conversations.'}
                     </p>
                   </div>
-                </label>
+
+                  {/* Max Context Tokens + Auto-Summarize in row */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                        Max Tokens
+                      </label>
+                      <input
+                        type="number"
+                        value={maxContextTokens ?? ''}
+                        placeholder="Auto"
+                        onChange={(e) => {
+                          const value = e.target.value ? parseInt(e.target.value) : null;
+                          setMaxContextTokens(value);
+                          if (config) {
+                            onSave(config.id, { ...config, max_context_tokens: value });
+                          }
+                        }}
+                        min="1000" max="200000" step="1000"
+                        className="w-full px-2 py-1.5 border rounded text-xs"
+                        style={{
+                          backgroundColor: 'var(--color-input-background)',
+                          borderColor: 'var(--color-border-dark)',
+                          color: 'var(--color-text-primary)'
+                        }}
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer pt-5">
+                      <input
+                        type="checkbox"
+                        checked={enableAutoSummarization}
+                        onChange={(e) => {
+                          setEnableAutoSummarization(e.target.checked);
+                          if (config) {
+                            onSave(config.id, { ...config, enable_auto_summarization: e.target.checked });
+                          }
+                        }}
+                        className="w-4 h-4 rounded"
+                        style={{ accentColor: 'var(--color-primary)' }}
+                      />
+                      <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>Auto-summarize at 80%</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="border-t my-3" style={{ borderColor: 'var(--color-border-dark)' }} />
+
+                {/* ─────────────────────────────────────────────────────────────────
+                    SUB-GROUP 2: Long-Term Memory (Toggle)
+                    Persistent memory across executions
+                    ───────────────────────────────────────────────────────────────── */}
+                <div className="mb-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" style={{ color: enableLongTermMemory ? 'var(--color-primary)' : 'var(--color-text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                      </svg>
+                      <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>Long-Term Memory</span>
+                    </div>
+                    <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableLongTermMemory ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={enableLongTermMemory}
+                        onChange={(e) => {
+                          setEnableLongTermMemory(e.target.checked);
+                          if (config) {
+                            onSave(config.id, { ...config, enable_long_term_memory: e.target.checked });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableLongTermMemory ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                  </label>
+
+                  {/* Memory tools when enabled */}
+                  {enableLongTermMemory && (
+                    <div className="mt-2 pl-6 space-y-1 border-l-2" style={{ borderColor: 'var(--color-primary)' }}>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableMemoryStore}
+                          onChange={(e) => {
+                            setEnableMemoryStore(e.target.checked);
+                            if (config) {
+                              onSave(config.id, { ...config, enable_memory_store: e.target.checked });
+                            }
+                          }}
+                          className="w-3 h-3 rounded"
+                          style={{ accentColor: 'var(--color-primary)' }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>Store Memory (save to memory)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableMemoryRecall}
+                          onChange={(e) => {
+                            setEnableMemoryRecall(e.target.checked);
+                            if (config) {
+                              onSave(config.id, { ...config, enable_memory_recall: e.target.checked });
+                            }
+                          }}
+                          className="w-3 h-3 rounded"
+                          style={{ accentColor: 'var(--color-primary)' }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>Recall Memory (retrieve from memory)</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* ─────────────────────────────────────────────────────────────────
+                    SUB-GROUP 3: RAG (Toggle)
+                    Retrieve from project vector store
+                    ───────────────────────────────────────────────────────────────── */}
+                <div className="mb-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" style={{ color: enableRAG ? 'var(--color-primary)' : 'var(--color-text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <div>
+                        <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>Enable RAG</span>
+                        <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>(project docs/KB)</span>
+                      </div>
+                    </div>
+                    <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableRAG ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={enableRAG}
+                        onChange={(e) => {
+                          setEnableRAG(e.target.checked);
+                          if (config) {
+                            onSave(config.id, { ...config, enable_rag: e.target.checked });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableRAG ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                  </label>
+                </div>
+
+                {/* ─────────────────────────────────────────────────────────────────
+                    SUB-GROUP 4: Conversation History (Toggle)
+                    Load chat history from a DeepAgent
+                    ───────────────────────────────────────────────────────────────── */}
+                <div>
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" style={{ color: enableConversationContext ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                      <div>
+                        <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>Conversation History</span>
+                        <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>(from DeepAgent)</span>
+                      </div>
+                    </div>
+                    <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableConversationContext ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={enableConversationContext}
+                        onChange={(e) => {
+                          const newValue = e.target.checked;
+                          setEnableConversationContext(newValue);
+                          if (newValue && !selectedDeepAgentId && deepAgents.length > 0) {
+                            setSelectedDeepAgentId(deepAgents[0].id);
+                          }
+                          if (config) {
+                            onSave(config.id, {
+                              ...config,
+                              enable_conversation_context: newValue,
+                              deep_agent_template_id: newValue && !selectedDeepAgentId && deepAgents.length > 0 ? deepAgents[0].id : selectedDeepAgentId
+                            });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableConversationContext ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                  </label>
+
+                  {/* Conversation settings when enabled */}
+                  {enableConversationContext && (
+                    <div className="mt-2 pl-6 space-y-2 border-l-2" style={{ borderColor: 'var(--color-primary)' }}>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                            Deep Agent
+                          </label>
+                          <select
+                            value={selectedDeepAgentId || ''}
+                            onChange={(e) => {
+                              const agentId = e.target.value ? Number(e.target.value) : null;
+                              setSelectedDeepAgentId(agentId);
+                              if (config) {
+                                onSave(config.id, { ...config, deep_agent_template_id: agentId });
+                              }
+                            }}
+                            className="w-full px-2 py-1 border rounded text-xs"
+                            style={{
+                              backgroundColor: 'var(--color-input-background)',
+                              borderColor: 'var(--color-border-dark)',
+                              color: 'var(--color-text-primary)'
+                            }}
+                          >
+                            <option value="">Select...</option>
+                            {deepAgents.map(agent => (
+                              <option key={agent.id} value={agent.id}>
+                                {agent.name} ({agent.chat_sessions_count || 0})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                            Mode
+                          </label>
+                          <select
+                            value={contextMode}
+                            onChange={(e) => {
+                              const mode = e.target.value as 'recent' | 'smart' | 'full' | 'summary' | 'quarantine';
+                              setContextMode(mode);
+                              if (config) {
+                                onSave(config.id, { ...config, context_mode: mode });
+                              }
+                            }}
+                            className="w-full px-2 py-1 border rounded text-xs"
+                            style={{
+                              backgroundColor: 'var(--color-input-background)',
+                              borderColor: 'var(--color-border-dark)',
+                              color: 'var(--color-text-primary)'
+                            }}
+                          >
+                            <option value="recent">Recent</option>
+                            <option value="smart">Smart</option>
+                            <option value="summary">Summary</option>
+                            <option value="quarantine">Quarantine</option>
+                            <option value="full">Full</option>
+                          </select>
+                        </div>
+                      </div>
+                      {contextMode === 'recent' && (
+                        <div>
+                          <label className="block text-xs mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                            Last {contextWindowSize} messages
+                          </label>
+                          <input
+                            type="range"
+                            min="5" max="100" step="5"
+                            value={contextWindowSize}
+                            onChange={(e) => {
+                              const size = parseInt(e.target.value);
+                              setContextWindowSize(size);
+                              if (config) {
+                                onSave(config.id, { ...config, context_window_size: size });
+                              }
+                            }}
+                            className="w-full h-1"
+                            style={{ accentColor: 'var(--color-primary)' }}
+                          />
+                        </div>
+                      )}
+                      {selectedDeepAgentId && (
+                        <button
+                          onClick={() => setShowContextPreview(true)}
+                          className="w-full px-2 py-1 rounded text-xs font-medium flex items-center justify-center gap-1"
+                          style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                        >
+                          <MessageSquare className="w-3 h-3" /> Preview
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Save Button - Right after system prompt */}
@@ -1190,195 +1426,6 @@ const NodeConfigPanel = ({
               >
                 {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save Changes'}
               </button>
-            </div>
-          )}
-
-          {/* Conversation Context Configuration - Compact version right after system prompt */}
-          {config.agentType !== 'CONDITIONAL_NODE' && config.agentType !== 'LOOP_NODE' && config.agentType !== 'TOOL_NODE' && (
-            <div className="border-t border-gray-200 dark:border-border-dark pt-4">
-              <div className="space-y-3">
-                {/* Enable Toggle - Compact */}
-                <label className="flex items-center justify-between cursor-pointer group">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
-                    <div>
-                      <span className="text-sm font-medium block" style={{ color: 'var(--color-text-primary)' }}>Conversation Context</span>
-                      <span className="text-xs block" style={{ color: 'var(--color-text-muted)' }}>Load chat history from deep agent</span>
-                    </div>
-                  </div>
-                  <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableConversationContext ? 'bg-primary' : 'bg-gray-300'}`}>
-                    <input
-                      type="checkbox"
-                      checked={enableConversationContext}
-                      onChange={(e) => {
-                        const newValue = e.target.checked;
-                        setEnableConversationContext(newValue);
-
-                        // Auto-select first deep agent if enabling and none selected
-                        if (newValue && !selectedDeepAgentId && deepAgents.length > 0) {
-                          setSelectedDeepAgentId(deepAgents[0].id);
-                        }
-
-                        // Auto-save: Update node config immediately
-                        if (config) {
-                          onSave(config.id, {
-                            ...config,
-                            enable_conversation_context: newValue,
-                            deep_agent_template_id: newValue && !selectedDeepAgentId && deepAgents.length > 0 ? deepAgents[0].id : selectedDeepAgentId
-                          });
-                        }
-                      }}
-                      className="sr-only"
-                    />
-                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableConversationContext ? 'translate-x-5' : 'translate-x-1'}`} />
-                  </div>
-                </label>
-
-                {/* Compact Settings when enabled */}
-                {enableConversationContext && (
-                  <div className="pl-6 space-y-2 border-l-2 border-primary/20">
-                    {/* Agent + Mode in same row */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                          Deep Agent
-                        </label>
-                        <select
-                          value={selectedDeepAgentId || ''}
-                          onChange={(e) => {
-                            const agentId = e.target.value ? Number(e.target.value) : null;
-                            setSelectedDeepAgentId(agentId);
-                            if (config) {
-                              onSave(config.id, {
-                                ...config,
-                                deep_agent_template_id: agentId
-                              });
-                            }
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onWheel={(e) => e.stopPropagation()}
-                          className="w-full px-2 py-1.5 border rounded text-xs"
-                          style={{
-                            backgroundColor: 'var(--color-input-background)',
-                            borderColor: 'var(--color-border-dark)',
-                            color: 'var(--color-text-primary)'
-                          }}
-                        >
-                          <option value="">Select...</option>
-                          {deepAgents.map(agent => (
-                            <option key={agent.id} value={agent.id}>
-                              {agent.name} ({agent.chat_sessions_count || 0})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                          Mode
-                        </label>
-                        <select
-                          value={contextMode}
-                          onChange={(e) => {
-                            const mode = e.target.value as 'recent' | 'smart' | 'full' | 'summary' | 'quarantine';
-                            setContextMode(mode);
-                            if (config) {
-                              onSave(config.id, {
-                                ...config,
-                                context_mode: mode
-                              });
-                            }
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onWheel={(e) => e.stopPropagation()}
-                          className="w-full px-2 py-1.5 border rounded text-xs"
-                          style={{
-                            backgroundColor: 'var(--color-input-background)',
-                            borderColor: 'var(--color-border-dark)',
-                            color: 'var(--color-text-primary)'
-                          }}
-                        >
-                          <option value="recent">Recent (Last N messages)</option>
-                          <option value="smart">Smart (Hybrid trimming)</option>
-                          <option value="summary">Summary (Compress old)</option>
-                          <option value="quarantine">Quarantine (Isolate large)</option>
-                          <option value="full">Full (Warning: may exceed limits)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Window size only for recent mode */}
-                    {contextMode === 'recent' && (
-                      <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                          Last {contextWindowSize} messages
-                        </label>
-                        <input
-                          type="range"
-                          min="5"
-                          max="100"
-                          step="5"
-                          value={contextWindowSize}
-                          onChange={(e) => {
-                            const size = parseInt(e.target.value);
-                            setContextWindowSize(size);
-                            if (config) {
-                              onSave(config.id, {
-                                ...config,
-                                context_window_size: size
-                              });
-                            }
-                          }}
-                          className="w-full h-1"
-                          style={{ accentColor: 'var(--color-primary)' }}
-                        />
-                      </div>
-                    )}
-
-                    {/* Preview button - compact */}
-                    {selectedDeepAgentId && (
-                      <button
-                        onClick={() => setShowContextPreview(true)}
-                        className="w-full px-2 py-1 rounded text-xs font-medium transition-all hover:opacity-90 flex items-center justify-center gap-1"
-                        style={{
-                          backgroundColor: 'var(--color-primary)',
-                          color: 'white'
-                        }}
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        Preview
-                      </button>
-                    )}
-
-                    {/* Info Box */}
-                    <div className="p-2 rounded border" style={{
-                      backgroundColor: 'var(--color-background-dark)',
-                      borderColor: 'var(--color-border-dark)'
-                    }}>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
-                        How Context Modes Work:
-                      </p>
-                      <ul className="text-xs space-y-1.5" style={{ color: 'var(--color-text-primary)' }}>
-                        <li>
-                          <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Recent:</span> Loads the most recent messages (5-100, you choose). Fast and token-efficient.
-                        </li>
-                        <li>
-                          <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Smart:</span> Combines recent messages, your bookmarked messages, plus AI-selected relevant past messages using semantic search.
-                        </li>
-                        <li>
-                          <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Full:</span> Loads the entire conversation history. Most context but uses the most tokens.
-                        </li>
-                      </ul>
-                      <p className="text-xs mt-2 pt-2" style={{
-                        color: 'var(--color-text-primary)',
-                        borderTop: '1px solid var(--color-border-dark)'
-                      }}>
-                        <span className="font-semibold">Tip:</span> Click the bookmark icon in chat to mark important messages. Smart mode will always include them.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -1450,61 +1497,6 @@ const NodeConfigPanel = ({
                             {tool.name}
                           </span>
                         </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Memory Tools */}
-                <div>
-                  <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-primary)' }}>Memory & Context</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {AVAILABLE_TOOLS.filter(t => t.category === 'memory').map(tool => (
-                      <label
-                        key={tool.id}
-                        className="group relative flex items-start gap-1.5 p-2 rounded cursor-pointer transition-colors border hover:border-primary/50"
-                        style={{
-                          backgroundColor: 'var(--color-background-dark, #f9fafb)',
-                          borderColor: 'var(--color-border-dark)'
-                        }}
-                        title={tool.id === 'enable_memory' || tool.id === 'enable_rag' ? undefined : tool.description}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={((config as any).native_tools || []).includes(tool.id) || ((config as any).native_tools || []).includes('memory')}
-                          onChange={() => toggleNativeTool(tool.id)}
-                          className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                            {tool.name}
-                          </span>
-                        </div>
-
-
-                        {(tool.id === 'enable_memory' || tool.id === 'enable_rag') && (
-                          <div
-                            className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 px-3 py-2 rounded border shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                            style={{ backgroundColor: 'var(--color-panel-dark)', borderColor: 'var(--color-border-dark)', color: 'var(--color-text-primary)', zIndex: 100001 }}
-                            role="tooltip"
-                          >
-                            {tool.id === 'enable_memory' ? (
-                              <>
-                                <div className="text-xs font-semibold mb-1">Enable Memory</div>
-                                <div className="text-[11px] leading-snug">
-                                  Turns on long‑term memory for this agent (project/workflow store). Use <strong>Store Memory</strong> and <strong>Recall Memory</strong> to write/read entries.
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="text-xs font-semibold mb-1">Enable RAG</div>
-                                <div className="text-[11px] leading-snug">
-                                  Allows retrieval from your project's vector store (documents/KB). This is a capability flag, not a tool.
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )}
                       </label>
                     ))}
                   </div>
