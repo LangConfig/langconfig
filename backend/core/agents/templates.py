@@ -178,6 +178,16 @@ class AgentTemplate(BaseModel):
     enable_context: bool = Field(default=True)
     context_limit: int = Field(default=5)
 
+    # Context Window Management (LangChain 1.1)
+    context_management_strategy: str = Field(
+        default="smart",
+        description="Context window strategy: 'recent' (sliding window), 'smart' (hybrid), 'summary' (compress old), 'quarantine' (isolate large)"
+    )
+    max_context_tokens: Optional[int] = Field(
+        default=None,
+        description="Override model's default context token limit (auto-detected if not set)"
+    )
+
     # Metadata
     tags: List[str] = Field(default_factory=list)
     version: str = Field(default="2.0.0")

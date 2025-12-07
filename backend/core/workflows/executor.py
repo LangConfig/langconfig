@@ -1613,7 +1613,60 @@ When your work is complete, deliver the final result and END."""
                     # Gemini sometimes stops with "UNEXPECTED_TOOL_CALL" but doesn't execute the tool
                     # We catch this and force a retry with an explicit instruction
                     max_retries = 2
-                    current_messages = messages
+
+                    # CONTEXT WINDOW MANAGEMENT: Trim messages if they exceed model's context limit
+                    # This prevents "context_length_exceeded" errors from crashing the workflow
+                    try:
+                        from services.context_window_manager import ContextWindowManager, ContextStrategy
+
+                        model_name = agent_config.get("model", "gpt-4o")
+
+                        # Get strategy from agent config or default to SMART
+                        strategy_name = agent_config.get("context_management_strategy", "smart")
+                        strategy_map = {
+                            "recent": ContextStrategy.RECENT,
+                            "smart": ContextStrategy.SMART,
+                            "full": ContextStrategy.FULL,
+                            "summary": ContextStrategy.SUMMARY,
+                            "quarantine": ContextStrategy.QUARANTINE,
+                        }
+                        strategy = strategy_map.get(strategy_name.lower(), ContextStrategy.SMART)
+
+                        # Get optional max_context_tokens override from agent config
+                        max_context_tokens = agent_config.get("max_context_tokens", None)
+
+                        context_manager = ContextWindowManager(
+                            model_name=model_name,
+                            max_tokens=max_context_tokens,
+                            strategy=strategy
+                        )
+
+                        original_token_count = context_manager.count_tokens(messages)
+
+                        # Only process if messages exist and might exceed limits (80% threshold)
+                        if original_token_count > context_manager.available_context_tokens * 0.8:
+                            logger.warning(
+                                f"[{display_name}] Context nearing limit: {original_token_count} tokens "
+                                f"(limit: {context_manager.available_context_tokens}, strategy: {strategy.value})"
+                            )
+
+                            # Apply configured trimming strategy
+                            current_messages = context_manager.apply_strategy(messages, strategy)
+                            trimmed_token_count = context_manager.count_tokens(current_messages)
+
+                            logger.info(
+                                f"[{display_name}] Context managed: {original_token_count} → {trimmed_token_count} tokens "
+                                f"({len(messages)} → {len(current_messages)} messages)"
+                            )
+                        else:
+                            current_messages = messages
+
+                    except ImportError:
+                        logger.debug(f"[{display_name}] Context window manager not available, using messages as-is")
+                        current_messages = messages
+                    except Exception as e:
+                        logger.warning(f"[{display_name}] Context management failed: {e}, using messages as-is")
+                        current_messages = messages
 
                     for attempt in range(max_retries + 1):
                         if attempt > 0:
