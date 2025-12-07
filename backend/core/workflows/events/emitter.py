@@ -1013,7 +1013,9 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "AGENT_ACTION": "on_agent_action",
                 "AGENT_FINISH": "on_agent_finish",
                 "LLM_END": "on_llm_end",
-                "CHAT_MODEL_STREAM": "on_chat_model_stream"
+                "CHAT_MODEL_STREAM": "on_chat_model_stream",
+                "SUBAGENT_START": "subagent_start",
+                "SUBAGENT_END": "subagent_end"
             }
 
             # Get SSE-compatible event type
