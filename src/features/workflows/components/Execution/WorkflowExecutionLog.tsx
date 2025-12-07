@@ -191,6 +191,26 @@ export default function WorkflowExecutionLog({ events, className = '' }: Workflo
           type: 'info' as const,
         };
 
+      case 'subagent_start':
+        return {
+          timestamp,
+          icon: <Users className="w-5 h-5" />,
+          iconColor: 'text-purple-600 dark:text-purple-400',
+          title: `🤖 Subagent Started: ${event.data?.subagent_name || 'Subagent'}`,
+          description: event.data?.input_preview || `Delegated task to ${event.data?.subagent_name}`,
+          type: 'info' as const,
+        };
+
+      case 'subagent_end':
+        return {
+          timestamp,
+          icon: event.data?.success ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />,
+          iconColor: event.data?.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400',
+          title: `${event.data?.success ? '✅' : '❌'} Subagent Completed: ${event.data?.subagent_name || 'Subagent'}`,
+          description: event.data?.output_preview?.slice(0, 300) || 'Subagent task finished',
+          type: event.data?.success ? 'success' as const : 'error' as const,
+        };
+
       case 'error':
         return {
           timestamp,
@@ -251,9 +271,9 @@ export default function WorkflowExecutionLog({ events, className = '' }: Workflo
         >
           {/* Timeline icon */}
           <div className={`absolute left-[-25px] top-4 w-10 h-10 rounded-full flex items-center justify-center ${entry.type === 'success' ? 'bg-green-100 dark:bg-green-900/30' :
-              entry.type === 'error' ? 'bg-red-100 dark:bg-red-900/30' :
-                entry.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
-                  'bg-blue-100 dark:bg-blue-900/30'
+            entry.type === 'error' ? 'bg-red-100 dark:bg-red-900/30' :
+              entry.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                'bg-blue-100 dark:bg-blue-900/30'
             }`}>
             <div className={entry.iconColor}>
               {entry.icon}

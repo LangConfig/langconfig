@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Maximize2, Minimize2, Bot, Loader2, Wrench, CheckCircle, XCircle, X, PenLine } from 'lucide-react';
+import { Maximize2, Minimize2, Bot, Loader2, Wrench, CheckCircle, XCircle, X, PenLine } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -53,15 +53,15 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
     const startEvents = events.filter(e => e.type === 'on_tool_start');
 
     for (const startEvent of startEvents) {
-      const runId = startEvent.data?.run_id;
+      const runId = (startEvent.data as any)?.run_id;
       const endEvent = events.find(e =>
-        (e.type === 'on_tool_end' || e.type === 'error') && e.data?.run_id === runId
+        (e.type === 'on_tool_end' || e.type === 'error') && (e.data as any)?.run_id === runId
       );
 
       tools.push({
-        name: startEvent.data?.tool_name || 'Tool',
-        input: startEvent.data?.input_preview || '',
-        output: endEvent?.data?.output_preview,
+        name: (startEvent.data as any)?.tool_name || 'Tool',
+        input: (startEvent.data as any)?.input_preview || '',
+        output: (endEvent?.data as any)?.output_preview,
         status: endEvent?.type === 'error' ? 'error' : endEvent ? 'complete' : 'running'
       });
     }
@@ -203,8 +203,8 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
                 {tool.name}
               </span>
               <span className={`text-xs ml-auto px-1.5 py-0.5 rounded ${tool.status === 'running' ? 'bg-blue-500/20 text-blue-400' :
-                  tool.status === 'complete' ? 'bg-green-500/20 text-green-400' :
-                    'bg-red-500/20 text-red-400'
+                tool.status === 'complete' ? 'bg-green-500/20 text-green-400' :
+                  'bg-red-500/20 text-red-400'
                 }`}>
                 {tool.status}
               </span>
