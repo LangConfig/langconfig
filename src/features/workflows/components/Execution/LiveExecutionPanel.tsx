@@ -28,6 +28,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { calculateAndFormatCost } from '../../../../utils/modelPricing';
+import { SubagentPanelStack } from './SubagentPanel';
 
 // Helper component for code blocks with copy button
 const CodeBlock = ({ language, children }: { language: string, children: string }) => {
@@ -320,6 +321,47 @@ export default function LiveExecutionPanel({
   const workflowFailed = useMemo(() => {
     const completeEvent = events.find(e => e.type === 'complete');
     return completeEvent?.data?.status === 'error';
+  }, [events]);
+
+  // Track active subagents from subagent_start/end events
+  const activeSubagents = useMemo(() => {
+    const subagentMap = new Map<string, {
+      id: string;
+      label: string;
+      parentRunId: string;
+      events: WorkflowEvent[];
+      status: 'running' | 'completed' | 'error';
+    }>();
+
+    for (const event of events) {
+      if (event.type === 'subagent_start') {
+        const { subagent_name, subagent_run_id, parent_agent_label, parent_run_id } = event.data as any;
+        subagentMap.set(subagent_run_id, {
+          id: subagent_run_id,
+          label: subagent_name || 'Subagent',
+          parentRunId: parent_run_id || '',
+          events: [],
+          status: 'running'
+        });
+      } else if (event.type === 'subagent_end') {
+        const { subagent_run_id, success } = event.data as any;
+        const subagent = subagentMap.get(subagent_run_id);
+        if (subagent) {
+          subagent.status = success ? 'completed' : 'error';
+        }
+      }
+      // Route events to their parent subagent if they have matching run_id
+      else if (event.data?.parent_run_id) {
+        const parentId = event.data.parent_run_id;
+        for (const [subId, sub] of subagentMap) {
+          if (sub.parentRunId === parentId || subId === parentId) {
+            sub.events.push(event);
+          }
+        }
+      }
+    }
+
+    return Array.from(subagentMap.values());
   }, [events]);
 
   // Knowledge tips that rotate when panel is idle
@@ -1271,6 +1313,25 @@ export default function LiveExecutionPanel({
           </button>
         )
       }
+
+      {/* Subagent Panels - Slide out from right when subagents are active */}
+      {activeSubagents.length > 0 && (
+        <div
+          className="fixed top-0 h-full z-40 transition-all duration-300 ease-out"
+          style={{
+            left: isFullScreen ? '66.666%' : '850px',
+            width: isFullScreen ? '33.333%' : '400px',
+            backgroundColor: 'var(--color-background-dark)',
+            borderLeft: '1px solid var(--color-border-dark)'
+          }}
+        >
+          <SubagentPanelStack
+            subagents={activeSubagents}
+            isVisible={true}
+          />
+        </div>
+      )}
     </div >
+
   );
 }
