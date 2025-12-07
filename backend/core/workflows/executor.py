@@ -1206,18 +1206,32 @@ class SimpleWorkflowExecutor:
                 first_node_id = entry_point_override
                 logger.info(f"Using user-specified entry point: {first_node_id}")
             else:
-                # Find the node with no incoming edges (the actual start of the workflow)
+                # Build a map of node_id -> agent_type for proper filtering
+                node_type_map = {}
+                for n in nodes:
+                    nid = n["id"]
+                    n_type = n.get("type", "default")
+                    n_data = n.get("data", {})
+                    n_data_type = n_data.get("agentType", "")
+                    # Resolve type: prefer explicit type, fallback to data.agentType
+                    resolved_type = n_type if n_type not in ["default", ""] else (n_data_type or "default")
+                    node_type_map[nid] = resolved_type
+
+                # Find regular nodes (non-control nodes)
                 regular_nodes = [n for n in nodes
-                                if n.get("data", {}).get("label", "default")
-                                not in ['START_NODE', 'END_NODE']]
+                                if node_type_map.get(n["id"], "default")
+                                not in ['START_NODE', 'END_NODE', 'CHECKPOINT_NODE']]
 
                 if not regular_nodes:
                     raise ValueError("Workflow must have at least one regular (non-control) node")
 
-                # Get all target nodes (nodes that have incoming edges)
-                target_node_ids = {e["target"] for e in edges if e["source"] != 'START_NODE'}
+                # Get all START_NODE ids for proper edge filtering
+                start_node_ids = {nid for nid, ntype in node_type_map.items() if ntype == 'START_NODE'}
 
-                # Find nodes with NO incoming edges - these are potential entry points
+                # Get all target nodes (nodes that have incoming edges from non-START nodes)
+                target_node_ids = {e["target"] for e in edges if e["source"] not in start_node_ids}
+
+                # Find nodes with NO incoming edges from regular nodes - these are potential entry points
                 entry_candidates = [n["id"] for n in regular_nodes if n["id"] not in target_node_ids]
 
                 if entry_candidates:
