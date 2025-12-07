@@ -146,6 +146,11 @@ const NodeConfigPanel = ({
   const [loopExitCondition, setLoopExitCondition] = useState('');
   const [recursionLimit, setRecursionLimit] = useState(75);
 
+  // Context Window Management (LangChain 1.1)
+  const [contextStrategy, setContextStrategy] = useState<'smart' | 'recent' | 'summary' | 'quarantine' | 'full'>('smart');
+  const [maxContextTokens, setMaxContextTokens] = useState<number | null>(null);  // null = auto-detect from model
+  const [enableAutoSummarization, setEnableAutoSummarization] = useState(true);
+
   // Middleware configuration
   const [enabledMiddleware, setEnabledMiddleware] = useState<string[]>([]);
 
@@ -186,7 +191,7 @@ const NodeConfigPanel = ({
   // Conversation context configuration
   const [enableConversationContext, setEnableConversationContext] = useState(false);
   const [selectedDeepAgentId, setSelectedDeepAgentId] = useState<number | null>(null);
-  const [contextMode, setContextMode] = useState<'recent' | 'smart' | 'full'>('smart');
+  const [contextMode, setContextMode] = useState<'recent' | 'smart' | 'full' | 'summary' | 'quarantine'>('smart');
   const [contextWindowSize, setContextWindowSize] = useState(20);
   const [deepAgents, setDeepAgents] = useState<Array<{
     id: number,
@@ -367,6 +372,11 @@ const NodeConfigPanel = ({
       setRecursionLimit(selectedNode.recursion_limit || 300);
       setEnableParallelTools((selectedNode as any).enable_parallel_tools ?? true);
 
+      // Context Window Management (LangChain 1.1)
+      setContextStrategy((selectedNode as any).context_management_strategy || 'smart');
+      setMaxContextTokens((selectedNode as any).max_context_tokens || null);
+      setEnableAutoSummarization((selectedNode as any).enable_auto_summarization ?? true);
+
       // LangGraph HITL parameters
       setInterruptBefore(selectedNode.interrupt_before || false);
       setInterruptAfter(selectedNode.interrupt_after || false);
@@ -499,6 +509,11 @@ const NodeConfigPanel = ({
 
         // Recursion limit (applies to all agent nodes)
         recursion_limit: recursionLimit,
+
+        // Context Window Management (LangChain 1.1)
+        context_management_strategy: contextStrategy,
+        max_context_tokens: maxContextTokens,
+        enable_auto_summarization: enableAutoSummarization,
 
         // Advanced: Parallel Tool Calling
         enable_parallel_tools: enableParallelTools,
@@ -1052,6 +1067,117 @@ const NodeConfigPanel = ({
                 </p>
               </div>
 
+              {/* Context Window Management - LangChain 1.1 */}
+              <div className="mt-4 p-3 rounded-lg border" style={{
+                borderColor: 'var(--color-border-dark)',
+                backgroundColor: 'var(--color-background-secondary, rgba(0,0,0,0.02))'
+              }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4" style={{ color: 'var(--color-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                  </svg>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    Context Window Management
+                  </span>
+                </div>
+
+                {/* Strategy Selector */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                    Strategy
+                  </label>
+                  <select
+                    value={contextStrategy}
+                    onChange={(e) => {
+                      const strategy = e.target.value as 'smart' | 'recent' | 'summary' | 'quarantine' | 'full';
+                      setContextStrategy(strategy);
+                      if (config) {
+                        onSave(config.id, {
+                          ...config,
+                          context_management_strategy: strategy
+                        });
+                      }
+                    }}
+                    className="w-full px-2 py-1.5 border rounded text-xs"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      borderColor: 'var(--color-border-dark)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  >
+                    <option value="smart">Smart (Auto-optimize for each call)</option>
+                    <option value="recent">Recent (Keep last N messages)</option>
+                    <option value="summary">Summary (Compress older messages)</option>
+                    <option value="quarantine">Quarantine (Isolate large content)</option>
+                    <option value="full">Full (No management - risky)</option>
+                  </select>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    How to handle context when approaching token limits
+                  </p>
+                </div>
+
+                {/* Max Context Tokens */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                    Max Context Tokens
+                    <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                      (blank = auto-detect from model)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    value={maxContextTokens ?? ''}
+                    placeholder="Auto-detect"
+                    onChange={(e) => {
+                      const value = e.target.value ? parseInt(e.target.value) : null;
+                      setMaxContextTokens(value);
+                      if (config) {
+                        onSave(config.id, {
+                          ...config,
+                          max_context_tokens: value
+                        });
+                      }
+                    }}
+                    min="1000"
+                    max="200000"
+                    step="1000"
+                    className="w-full px-2 py-1.5 border rounded text-xs"
+                    style={{
+                      backgroundColor: 'var(--color-input-background)',
+                      borderColor: 'var(--color-border-dark)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  />
+                </div>
+
+                {/* Auto-Summarization Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableAutoSummarization}
+                    onChange={(e) => {
+                      setEnableAutoSummarization(e.target.checked);
+                      if (config) {
+                        onSave(config.id, {
+                          ...config,
+                          enable_auto_summarization: e.target.checked
+                        });
+                      }
+                    }}
+                    className="w-4 h-4 rounded"
+                    style={{ accentColor: 'var(--color-primary)' }}
+                  />
+                  <div>
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      Auto-Summarize at 80% Capacity
+                    </span>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      Proactively compress context before hitting limits
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               {/* Save Button - Right after system prompt */}
               <button
                 onClick={handleSave}
@@ -1154,7 +1280,7 @@ const NodeConfigPanel = ({
                         <select
                           value={contextMode}
                           onChange={(e) => {
-                            const mode = e.target.value as 'recent' | 'smart' | 'full';
+                            const mode = e.target.value as 'recent' | 'smart' | 'full' | 'summary' | 'quarantine';
                             setContextMode(mode);
                             if (config) {
                               onSave(config.id, {
@@ -1172,9 +1298,11 @@ const NodeConfigPanel = ({
                             color: 'var(--color-text-primary)'
                           }}
                         >
-                          <option value="recent">Recent</option>
-                          <option value="smart">Smart</option>
-                          <option value="full">Full</option>
+                          <option value="recent">Recent (Last N messages)</option>
+                          <option value="smart">Smart (Hybrid trimming)</option>
+                          <option value="summary">Summary (Compress old)</option>
+                          <option value="quarantine">Quarantine (Isolate large)</option>
+                          <option value="full">Full (Warning: may exceed limits)</option>
                         </select>
                       </div>
                     </div>

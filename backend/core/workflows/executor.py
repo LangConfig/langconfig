@@ -1621,8 +1621,27 @@ When your work is complete, deliver the final result and END."""
 
                         model_name = agent_config.get("model", "gpt-4o")
 
-                        # Get strategy from agent config or default to SMART
-                        strategy_name = agent_config.get("context_management_strategy", "smart")
+                        # Get strategy from multiple possible sources (in priority order):
+                        # 1. guardrails.compaction_strategy (DeepAgent UI)
+                        # 2. context_management_strategy (AgentTemplate)
+                        # 3. context_mode (NodeConfigPanel)
+                        guardrails = agent_config.get("guardrails", {})
+                        compaction_strategy = guardrails.get("compaction_strategy", "none") if guardrails else "none"
+
+                        # Map DeepAgent compaction_strategy to ContextStrategy
+                        compaction_to_strategy = {
+                            "none": "smart",  # Default to smart when no compaction
+                            "trim_messages": "recent",
+                            "summarization": "summary",
+                            "filter_custom": "quarantine",
+                        }
+
+                        # Priority: guardrails.compaction_strategy > context_management_strategy > context_mode
+                        if compaction_strategy and compaction_strategy != "none":
+                            strategy_name = compaction_to_strategy.get(compaction_strategy, "smart")
+                        else:
+                            strategy_name = agent_config.get("context_management_strategy") or agent_config.get("context_mode", "smart")
+
                         strategy_map = {
                             "recent": ContextStrategy.RECENT,
                             "smart": ContextStrategy.SMART,
@@ -1632,8 +1651,12 @@ When your work is complete, deliver the final result and END."""
                         }
                         strategy = strategy_map.get(strategy_name.lower(), ContextStrategy.SMART)
 
-                        # Get optional max_context_tokens override from agent config
-                        max_context_tokens = agent_config.get("max_context_tokens", None)
+                        # Get max tokens from guardrails.token_limits or direct config
+                        token_limits = guardrails.get("token_limits", {}) if guardrails else {}
+                        max_context_tokens = (
+                            token_limits.get("max_total_tokens") or
+                            agent_config.get("max_context_tokens")
+                        )
 
                         context_manager = ContextWindowManager(
                             model_name=model_name,
