@@ -591,42 +591,64 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             "node_id": node_id  # Pass through to on_tool_end
         }
 
-        # SUBAGENT DETECTION: If this is the 'task' tool, it's a subagent invocation
-        # Extract subagent name from inputs and emit SUBAGENT_START event
-        if tool_name == 'task':
+        # SUBAGENT DETECTION: Check for known subagent invocation tool patterns
+        # DeepAgents uses 'task' tool, but other patterns might include:
+        # - delegate, handoff, invoke_agent, call_agent, run_agent
+        subagent_tool_patterns = ['task', 'delegate', 'handoff', 'invoke_agent', 'call_agent', 'run_agent']
+        is_subagent_tool = tool_name.lower() in subagent_tool_patterns or 'subagent' in tool_name.lower()
+
+        # DEBUG: Log all tool calls to help identify subagent patterns
+        logger.info(f"[TOOL DEBUG] tool_name={tool_name}, inputs_keys={list(inputs.keys()) if inputs else 'None'}, is_subagent={is_subagent_tool}")
+
+        if is_subagent_tool:
             subagent_name = None
             if inputs:
-                # The task tool typically has 'name' or 'agent' as the subagent identifier
-                subagent_name = inputs.get('name') or inputs.get('agent') or inputs.get('subagent')
+                # The task tool uses various fields for subagent identification
+                # Check: name, agent, subagent, agent_name, subagent_type
+                subagent_name = (
+                    inputs.get('name') or
+                    inputs.get('agent') or
+                    inputs.get('subagent') or
+                    inputs.get('agent_name') or
+                    inputs.get('subagent_type')  # DeepAgents uses this
+                )
             if not subagent_name and input_str:
                 # Try to extract from input string if structured
                 import json
                 try:
                     parsed = json.loads(input_str)
-                    subagent_name = parsed.get('name') or parsed.get('agent')
+                    subagent_name = (
+                        parsed.get('name') or
+                        parsed.get('agent') or
+                        parsed.get('agent_name') or
+                        parsed.get('subagent_type')
+                    )
                 except:
                     pass
 
-            if subagent_name:
-                # Track this as an active subagent run
-                self.active_subagents[run_id] = {
-                    "subagent_name": subagent_name,
-                    "parent_agent_label": agent_label,
-                    "parent_run_id": str(parent_run_id) if parent_run_id else None
-                }
+            # Fallback: use tool name if no subagent name found
+            if not subagent_name:
+                subagent_name = tool_name
 
-                # Emit dedicated SUBAGENT_START event for frontend nested panels
-                await self._emit_event(
-                    event_type="SUBAGENT_START",
-                    data={
-                        "subagent_name": subagent_name,
-                        "subagent_run_id": str(run_id),
-                        "parent_agent_label": agent_label,
-                        "parent_run_id": str(parent_run_id) if parent_run_id else None,
-                        "input_preview": input_str[:200] if input_str else ""
-                    }
-                )
-                logger.info(f"[SUBAGENT START] {subagent_name} invoked by {agent_label}")
+            # Track this as an active subagent run
+            self.active_subagents[run_id] = {
+                "subagent_name": subagent_name,
+                "parent_agent_label": agent_label,
+                "parent_run_id": str(parent_run_id) if parent_run_id else None
+            }
+
+            # Emit dedicated SUBAGENT_START event for frontend nested panels
+            await self._emit_event(
+                event_type="SUBAGENT_START",
+                data={
+                    "subagent_name": subagent_name,
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": agent_label,
+                    "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                    "input_preview": input_str[:200] if input_str else ""
+                }
+            )
+            logger.info(f"[SUBAGENT START] {subagent_name} invoked by {agent_label}")
 
         # Sanitize tool inputs
         sanitized_inputs = self._sanitize_arguments(inputs or {}) if self.enable_sanitization else inputs
@@ -670,13 +692,20 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Handle case where output might not be a string
         try:
             if isinstance(output, str):
-                output_preview = output[:500] if output else ""
+                full_output = output
+                # Increase preview limit for better visibility
+                output_preview = output[:2000] if output else ""
             else:
                 # Convert to string if it's not already
-                output_preview = str(output)[:500] if output else ""
+                full_output = str(output) if output else ""
+                output_preview = full_output[:2000]
         except Exception as e:
             logger.warning(f"Error processing tool output: {e}")
             output_preview = "[Output could not be processed]"
+            full_output = output_preview
+
+        # For file_write tool, include the full output (it contains the written content)
+        include_full_output = tool_name in ['file_write', 'write_file', 'task', 'delegate']
 
         await self._emit_event(
             event_type="TOOL_END",
@@ -685,6 +714,7 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "run_id": str(run_id),
                 "parent_run_id": str(parent_run_id) if parent_run_id else None,
                 "output_preview": output_preview,
+                "full_output": full_output if include_full_output else None,
                 "success": True,
                 "agent_label": agent_label,  # User-friendly name
                 "node_id": node_id  # Maps tool to correct node for grouping
