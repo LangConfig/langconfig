@@ -40,20 +40,29 @@ class LangGraphCodeGenerator:
         Generate LangGraph code from a workflow dictionary.
 
         Args:
-            workflow_dict: Workflow data from database including blueprint
+            workflow_dict: Workflow data from database including configuration
 
         Returns:
             Generated Python code as string
         """
+        # CRITICAL: Use 'configuration' (where actual node configs are stored)
+        # Fallback to 'blueprint' for backward compatibility
+        configuration = workflow_dict.get('configuration', {})
         blueprint = workflow_dict.get('blueprint', {})
+
+        # Prefer configuration over blueprint (configuration has the actual node configs)
+        nodes_source = configuration if configuration.get('nodes') else blueprint
+
+        logger.info(f"[CODEGEN] Using {'configuration' if configuration.get('nodes') else 'blueprint'} as node source")
+        logger.info(f"[CODEGEN] Found {len(nodes_source.get('nodes', []))} nodes")
 
         # Extract workflow metadata
         workflow_data = {
             'strategy_type': workflow_dict.get('strategy_type', 'CUSTOM'),
             'name': workflow_dict.get('name', 'Custom Workflow'),
             'description': workflow_dict.get('description', ''),
-            'nodes': self._convert_reactflow_nodes(blueprint.get('nodes', [])),
-            'edges': self._convert_reactflow_edges(blueprint.get('edges', []))
+            'nodes': self._convert_reactflow_nodes(nodes_source.get('nodes', [])),
+            'edges': self._convert_reactflow_edges(nodes_source.get('edges', []))
         }
 
         return self.generate_from_blueprint(workflow_data)
@@ -66,12 +75,20 @@ class LangGraphCodeGenerator:
             node_id = node.get('id', 'unknown')
             node_data = node.get('data', {})
 
+            # Config is stored at TOP LEVEL: node["config"] (not node["data"]["config"])
+            # This matches how executor.py reads it in _build_graph_from_workflow
+            node_config = node.get('config', {})
+
+            # Log what we're finding
+            logger.info(f"[CODEGEN] Node {node_id}: config.model={node_config.get('model')}, config.system_prompt={node_config.get('system_prompt', '')[:30]}...")
+
             blueprint_node = {
                 'node_id': node_id,
                 'display_name': node_data.get('label', node_id),
-                'node_type': 'EXECUTE',  # Default type
+                'node_type': node_data.get('agentType', 'EXECUTE'),
                 'handler_function': f'node_{self._sanitize_name(node_id)}',
-                'metadata': node_data.get('config', {})
+                # Use top-level config (where model, system_prompt, tools are stored)
+                'metadata': node_config
             }
 
             blueprint_nodes.append(blueprint_node)

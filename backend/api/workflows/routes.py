@@ -137,7 +137,7 @@ async def create_workflow(
 
         logger.info(
             f"Created workflow: {db_workflow.name}",
-            extra={"workflow_id": db_workflow.id, "name": db_workflow.name}
+            extra={"workflow_id": db_workflow.id, "workflow_name": db_workflow.name}
         )
 
         return db_workflow
@@ -1818,3 +1818,214 @@ async def export_execution_to_word(
     except Exception as e:
         logger.error(f"Error exporting to Word: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+# =============================================================================
+# Workflow Export/Import Endpoints
+# =============================================================================
+
+class WorkflowExportOptions(BaseModel):
+    """Options for workflow export."""
+    include_custom_tools: bool = True
+    include_metadata: bool = True
+
+
+@router.post("/{workflow_id}/export/package")
+async def export_workflow_package(
+    workflow_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Export workflow as a complete, executable Python package (ZIP).
+
+    Returns a ZIP file containing all necessary code, configuration,
+    and dependencies to run the workflow standalone.
+
+    Uses LangChain v1.1 / LangGraph v1.x / DeepAgents v2.x patterns.
+    """
+    from core.codegen.workflow_exporter import ExecutableWorkflowExporter
+
+    # Get workflow
+    workflow = db.query(WorkflowProfile).filter(
+        WorkflowProfile.id == workflow_id
+    ).first()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Convert to dict for exporter
+    workflow_dict = {
+        "id": workflow.id,
+        "name": workflow.name,
+        "description": workflow.description,
+        "strategy_type": workflow.strategy_type.value if hasattr(workflow.strategy_type, "value") else str(workflow.strategy_type),
+        "configuration": workflow.configuration or {},
+        "blueprint": workflow.blueprint or {},
+    }
+
+    # DEBUG: Log what's being passed to the exporter
+    config = workflow.configuration or {}
+    nodes = config.get("nodes", [])
+    logger.info(f"[EXPORT DEBUG] Workflow {workflow_id} has {len(nodes)} nodes in configuration")
+    for i, node in enumerate(nodes[:3]):  # First 3 nodes
+        node_config = node.get("config", {})
+        logger.info(f"[EXPORT DEBUG] Node {i} ({node.get('id')}): config.model={node_config.get('model')}")
+        logger.info(f"[EXPORT DEBUG] Node {i} ({node.get('id')}): config.system_prompt={node_config.get('system_prompt', '')[:50]}...")
+
+    try:
+        # Generate export
+        exporter = ExecutableWorkflowExporter(
+            workflow=workflow_dict,
+            project_id=workflow.project_id or 0
+        )
+
+        zip_bytes = await exporter.export_to_zip()
+
+        # Return as downloadable file
+        safe_name = workflow.name.lower().replace(" ", "_").replace("-", "_")
+        filename = f"workflow_{safe_name}_{workflow_id}.zip"
+
+        return StreamingResponse(
+            io.BytesIO(zip_bytes),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to export workflow {workflow_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Export failed: {str(e)}"
+        )
+
+
+@router.get("/{workflow_id}/export/config")
+async def export_workflow_config(
+    workflow_id: int,
+    include_custom_tools: bool = True,
+    include_metadata: bool = True,
+    db: Session = Depends(get_db)
+):
+    """
+    Export workflow as .langconfig JSON for sharing between LangConfig instances.
+
+    This format preserves the complete workflow configuration including:
+    - Nodes and edges
+    - Custom tool definitions
+    - DeepAgent configurations
+
+    The exported file can be imported into another LangConfig instance.
+    """
+    from services.workflow_config_service import WorkflowConfigService
+    from fastapi.responses import JSONResponse
+
+    try:
+        service = WorkflowConfigService(db)
+        config = await service.export_workflow_config(
+            workflow_id=workflow_id,
+            include_custom_tools=include_custom_tools,
+            include_metadata=include_metadata
+        )
+
+        # Get workflow name for filename
+        workflow = db.query(WorkflowProfile).filter(
+            WorkflowProfile.id == workflow_id
+        ).first()
+
+        safe_name = workflow.name.lower().replace(" ", "_").replace("-", "_") if workflow else "workflow"
+        filename = f"{safe_name}.langconfig"
+
+        return JSONResponse(
+            content=config,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to export workflow config {workflow_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Export failed: {str(e)}"
+        )
+
+
+class WorkflowImportRequest(BaseModel):
+    """Request body for workflow import."""
+    config: dict = Field(..., description="The .langconfig JSON content")
+    project_id: int = Field(..., description="Project to import into")
+    name_override: Optional[str] = Field(None, description="Optional name override")
+    create_custom_tools: bool = Field(True, description="Create custom tools from config")
+
+
+@router.post("/import")
+async def import_workflow_config(
+    import_request: WorkflowImportRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Import a .langconfig file to create a new workflow.
+
+    Validates version compatibility and creates:
+    - The workflow with all nodes and edges
+    - Any custom tools included in the config
+    """
+    from services.workflow_config_service import WorkflowConfigService
+
+    try:
+        service = WorkflowConfigService(db)
+        result = await service.import_workflow_config(
+            config=import_request.config,
+            project_id=import_request.project_id,
+            owner_id=0,  # TODO: Get from auth context
+            name_override=import_request.name_override,
+            create_custom_tools=import_request.create_custom_tools
+        )
+
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to import workflow: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Import failed: {str(e)}"
+        )
+
+
+@router.get("/{workflow_id}/export/config/preview")
+async def preview_workflow_config(
+    workflow_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Preview what would be exported without downloading.
+
+    Returns summary information about the export.
+    """
+    from services.workflow_config_service import WorkflowConfigService
+
+    try:
+        service = WorkflowConfigService(db)
+        config = await service.export_workflow_config(
+            workflow_id=workflow_id,
+            include_custom_tools=True,
+            include_metadata=True
+        )
+
+        # Return just the summary info
+        return service.get_config_info(config)
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to preview workflow config {workflow_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Preview failed: {str(e)}"
+        )

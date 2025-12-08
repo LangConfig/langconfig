@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import apiClient from '../../../../lib/api-client';
 import type { Workflow, WorkflowNode, WorkflowEdge, CostMetrics, AgentConfig } from '../../types/workflow';
 
@@ -15,6 +15,8 @@ interface WorkflowDetailedViewProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onExportCode: () => void;
+  onExportPackage?: () => void;
+  onExportLangConfig?: () => void;
 }
 
 export default function WorkflowDetailedView({
@@ -22,11 +24,92 @@ export default function WorkflowDetailedView({
   onOpenStudio,
   onDuplicate,
   onDelete,
-  onExportCode
+  onExportCode,
+  onExportPackage,
+  onExportLangConfig
 }: WorkflowDetailedViewProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['preview', 'agents', 'metrics'])
   );
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportMenu]);
+
+  const handleExportPackage = async () => {
+    setExportLoading(true);
+    setShowExportMenu(false);
+
+    try {
+      const response = await fetch(`/api/workflows/${workflow.id}/export/package`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export package');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow_${workflow.name.replace(/\s+/g, '_')}_${workflow.id}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to export package:', error);
+      alert('Failed to export workflow package. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportLangConfig = async () => {
+    setExportLoading(true);
+    setShowExportMenu(false);
+
+    try {
+      const response = await fetch(`/api/workflows/${workflow.id}/export/config`);
+
+      if (!response.ok) {
+        throw new Error('Failed to export config');
+      }
+
+      const config = await response.json();
+      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${workflow.name.replace(/\s+/g, '_')}.langconfig`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to export config:', error);
+      alert('Failed to export workflow config. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const [costMetrics, setCostMetrics] = useState<CostMetrics>({
     totalCost: 0,
@@ -74,9 +157,9 @@ export default function WorkflowDetailedView({
     });
   };
 
-  // Extract nodes and edges from blueprint (or fallback to configuration for older workflows)
-  const nodes = workflow.blueprint?.nodes || (workflow.configuration?.nodes as WorkflowNode[]) || [];
-  const edges = workflow.blueprint?.edges || (workflow.configuration?.edges as WorkflowEdge[]) || [];
+  // Extract nodes and edges from configuration (where Studio saves) or blueprint as fallback
+  const nodes = (workflow.configuration?.nodes as WorkflowNode[]) || workflow.blueprint?.nodes || [];
+  const edges = (workflow.configuration?.edges as WorkflowEdge[]) || workflow.blueprint?.edges || [];
 
   // Calculate metrics
   const nodeCount = nodes.length;
@@ -116,14 +199,82 @@ export default function WorkflowDetailedView({
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={onExportCode}
-              className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
-              style={{ color: 'var(--color-text-primary)' }}
-            >
-              <span className="material-symbols-outlined text-base">code</span>
-              Export Code
-            </button>
+            {/* Export Dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={exportLoading}
+                className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                {exportLoading ? (
+                  <>
+                    <span className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-current"></span>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-base">download</span>
+                    Export
+                    <span className="material-symbols-outlined text-sm">expand_more</span>
+                  </>
+                )}
+              </button>
+
+              {/* Export Menu Dropdown */}
+              {showExportMenu && (
+                <div className="absolute right-0 mt-1 w-64 rounded-lg border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark shadow-xl z-50">
+                  <div className="p-1">
+                    <button
+                      onClick={handleExportPackage}
+                      className="w-full px-3 py-2.5 text-left text-sm rounded-md hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-start gap-3"
+                    >
+                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">folder_zip</span>
+                      <div>
+                        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                          Python Package
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                          Standalone executable code with requirements.txt
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleExportLangConfig}
+                      className="w-full px-3 py-2.5 text-left text-sm rounded-md hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-start gap-3"
+                    >
+                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">share</span>
+                      <div>
+                        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                          LangConfig File
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                          Share with other LangConfig users
+                        </p>
+                      </div>
+                    </button>
+                    <div className="border-t border-gray-200 dark:border-border-dark my-1"></div>
+                    <button
+                      onClick={() => {
+                        setShowExportMenu(false);
+                        onExportCode();
+                      }}
+                      className="w-full px-3 py-2.5 text-left text-sm rounded-md hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-start gap-3"
+                    >
+                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">code</span>
+                      <div>
+                        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                          View Code
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                          Preview generated LangGraph code
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               onClick={onDuplicate}
               className="px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2"

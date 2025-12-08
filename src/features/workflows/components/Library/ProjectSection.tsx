@@ -133,8 +133,8 @@ export default function ProjectSection({
             </div>
           ) : (
             workflows.map((workflow) => {
-              const workflowNodeCount = workflow.blueprint?.nodes?.length || 0;
-              const workflowEdgeCount = workflow.blueprint?.edges?.length || 0;
+              // Read from configuration (where Studio saves) first, fallback to blueprint
+              const workflowNodeCount = workflow.configuration?.nodes?.length || workflow.blueprint?.nodes?.length || 0;
               const isSelected = selectedWorkflowId === workflow.id;
 
               return (
@@ -163,17 +163,9 @@ export default function ProjectSection({
                     >
                       {workflow.name}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        {workflowNodeCount} node{workflowNodeCount !== 1 ? 's' : ''}
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        •
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        {workflowEdgeCount} edge{workflowEdgeCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {workflowNodeCount} node{workflowNodeCount !== 1 ? 's' : ''}
+                    </span>
                   </div>
                 </button>
               );

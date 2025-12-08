@@ -1823,6 +1823,13 @@ if __name__ == "__main__":
     fetchWorkflows();
   }, []);
 
+  // Refresh workflow list when dropdown opens
+  useEffect(() => {
+    if (showWorkflowDropdown) {
+      fetchWorkflows();
+    }
+  }, [showWorkflowDropdown]);
+
   // Fetch workflow details and lock_version when workflowId changes
   useEffect(() => {
     const fetchWorkflowDetails = async () => {
@@ -3383,47 +3390,50 @@ if __name__ == "__main__":
 
       // Load workflow into canvas
       // Backend stores data in 'configuration' field, which may contain nodes/edges
-      const config = workflow.configuration || workflow.graph;
-      if (config && config.nodes) {
-        // Validate and fix node positions and ensure type is set to 'custom'
-        const validatedNodes = config.nodes.map((node: any, index: number) => {
-          // Backend saves nodes with: id, type (from agentType), config, position
-          // Frontend needs: id, type='custom', data={label, agentType, model, config}, position
+      const config = workflow.configuration || workflow.graph || {};
+      const configNodes = config.nodes || [];
 
-          // If node already has data field (from a previous save), use it
-          // Otherwise, reconstruct it from the saved type and config
-          const nodeData = node.data || {
-            label: node.type ? node.type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Node ${node.id}`,
-            agentType: node.type || 'default',
-            model: node.config?.model || 'gpt-4o-mini',
-            config: node.config || {}
-          };
+      // Validate and fix node positions and ensure type is set to 'custom'
+      const validatedNodes = configNodes.map((node: any, index: number) => {
+        // Backend saves nodes with: id, type (from agentType), config, position
+        // Frontend needs: id, type='custom', data={label, agentType, model, config}, position
 
-          return {
-            ...node,
-            type: 'custom', // React Flow node type (always 'custom' for our CustomNode component)
-            data: nodeData,
-            position: {
-              x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
-                ? node.position.x
-                : 250 + (index * 200),
-              y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
-                ? node.position.y
-                : 250
-            },
-            width: node.width || 200, // Ensure width is always set
-            height: node.height || 100 // Ensure height is always set
-          };
-        });
-        setNodes(validatedNodes);
-        setEdges(config.edges || []);
-        setWorkflowName(workflow.name || 'Untitled Workflow');
-        setEditedName(workflow.name || 'Untitled Workflow');
-        setCurrentWorkflowId(workflowId);
-        // Clear task ID when switching workflows to get fresh events
-        setCurrentTaskId(null);
-        localStorage.removeItem('langconfig-current-task-id');
-      }
+        // If node already has data field (from a previous save), use it
+        // Otherwise, reconstruct it from the saved type and config
+        const nodeData = node.data || {
+          label: node.type ? node.type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Node ${node.id}`,
+          agentType: node.type || 'default',
+          model: node.config?.model || 'gpt-4o-mini',
+          config: node.config || {}
+        };
+
+        return {
+          ...node,
+          type: 'custom', // React Flow node type (always 'custom' for our CustomNode component)
+          data: nodeData,
+          position: {
+            x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
+              ? node.position.x
+              : 250 + (index * 200),
+            y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
+              ? node.position.y
+              : 250
+          },
+          width: node.width || 200, // Ensure width is always set
+          height: node.height || 100 // Ensure height is always set
+        };
+      });
+
+      // Always update the canvas state, even for empty workflows
+      setNodes(validatedNodes);
+      setEdges(config.edges || []);
+      setWorkflowName(workflow.name || 'Untitled Workflow');
+      setEditedName(workflow.name || 'Untitled Workflow');
+      setCurrentWorkflowId(workflowId);
+      // Clear task ID when switching workflows to get fresh events
+      setCurrentTaskId(null);
+      localStorage.removeItem('langconfig-current-task-id');
+      localStorage.setItem('langconfig-workflow-id', String(workflowId));
 
       setShowWorkflowDropdown(false);
       setWorkflowSearchQuery('');
@@ -3463,7 +3473,6 @@ if __name__ == "__main__":
       // Create new workflow in database
       const response = await apiClient.createWorkflow({
         name: newWorkflowName.trim(),
-        strategy_type: 'default',
         configuration: {},
         blueprint: { nodes: [], edges: [] }
       });
