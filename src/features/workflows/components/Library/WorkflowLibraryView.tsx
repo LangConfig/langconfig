@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import apiClient from "../../../../lib/api-client";
 import { useProject } from "../../../../contexts/ProjectContext";
 import ProjectSection from './ProjectSection';
@@ -41,6 +41,13 @@ export default function WorkflowLibraryView({
   const [workflowToChangeProject, setWorkflowToChangeProject] = useState<Workflow | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -178,7 +185,6 @@ export default function WorkflowLibraryView({
       const response = await apiClient.createWorkflow({
         name: newWorkflowName.trim(),
         project_id: activeProject?.id || undefined,
-        strategy_type: 'default',
         configuration: {},
         blueprint: { nodes: [], edges: [] }
       });
@@ -318,6 +324,153 @@ export default function WorkflowLibraryView({
     }
   };
 
+  const handleExportPackage = async () => {
+    if (!selectedWorkflowId) return;
+
+    try {
+      setExportLoading(true);
+      setShowExportMenu(false);
+
+      // Call the export package endpoint
+      const response = await fetch(`/api/workflows/${selectedWorkflowId}/export/package`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export package');
+      }
+
+      // Get the blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow_${selectedWorkflow?.name?.replace(/\s+/g, '_') || selectedWorkflowId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      alert('Workflow exported as Python package!');
+    } catch (error) {
+      console.error('Failed to export package:', error);
+      alert('Failed to export workflow package. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportLangConfig = async () => {
+    if (!selectedWorkflowId) return;
+
+    try {
+      setExportLoading(true);
+      setShowExportMenu(false);
+
+      // Call the export config endpoint
+      const response = await fetch(`/api/workflows/${selectedWorkflowId}/export/config`);
+
+      if (!response.ok) {
+        throw new Error('Failed to export config');
+      }
+
+      // Get the JSON and download
+      const config = await response.json();
+      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedWorkflow?.name?.replace(/\s+/g, '_') || 'workflow'}.langconfig`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      alert('Workflow exported as .langconfig file!');
+    } catch (error) {
+      console.error('Failed to export config:', error);
+      alert('Failed to export workflow config. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file extension
+    if (!file.name.endsWith('.langconfig')) {
+      alert('Please select a .langconfig file');
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      const config = JSON.parse(content);
+
+      setImportFile(file);
+      setImportPreview(config);
+      setShowImportModal(true);
+    } catch (error) {
+      console.error('Failed to parse file:', error);
+      alert('Invalid .langconfig file. Please check the file format.');
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importPreview) return;
+
+    try {
+      setImportLoading(true);
+
+      const response = await fetch('/api/workflows/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          config: importPreview,
+          project_id: activeProject?.id || 0,
+          create_custom_tools: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to import workflow');
+      }
+
+      const result = await response.json();
+
+      // Reload workflows
+      await loadData();
+
+      setShowImportModal(false);
+      setImportFile(null);
+      setImportPreview(null);
+
+      alert(`Workflow "${result.workflow_name}" imported successfully!`);
+
+      // Select the new workflow
+      setSelectedWorkflowId(result.workflow_id);
+    } catch (error: any) {
+      console.error('Failed to import workflow:', error);
+      alert(`Failed to import workflow: ${error.message || 'Unknown error'}`);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedCode);
     alert('Code copied to clipboard!');
@@ -344,13 +497,31 @@ export default function WorkflowLibraryView({
             <h2 className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
               Workflow Library
             </h2>
-            <button
-              onClick={handleCreateWorkflow}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-primary rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1"
-            >
-              <span className="material-symbols-outlined text-sm">add</span>
-              New
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleImportClick}
+                className="px-3 py-1.5 text-sm font-medium border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center gap-1"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                <span className="material-symbols-outlined text-sm">upload</span>
+                Import
+              </button>
+              <button
+                onClick={handleCreateWorkflow}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-primary rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                New
+              </button>
+            </div>
+            {/* Hidden file input for import */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".langconfig"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
           </div>
 
           {/* Search Bar */}
@@ -671,6 +842,116 @@ export default function WorkflowLibraryView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Workflow Modal */}
+      {showImportModal && importPreview && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-panel-dark rounded-lg max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-primary text-2xl">
+                  upload_file
+                </span>
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                Import Workflow
+              </h3>
+            </div>
+
+            {/* Import Preview */}
+            <div className="mb-4 p-4 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-border-dark">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Workflow Name:</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    {importPreview.workflow?.name || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Version:</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    {importPreview.version || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Nodes:</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    {importPreview.workflow?.configuration?.nodes?.length ||
+                     importPreview.workflow?.blueprint?.nodes?.length || 0}
+                  </span>
+                </div>
+                {importPreview.custom_tools?.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Custom Tools:</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      {importPreview.custom_tools.length}
+                    </span>
+                  </div>
+                )}
+                {importPreview.metadata?.exported_at && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Exported:</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      {new Date(importPreview.metadata.exported_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {importPreview.workflow?.description && (
+              <div className="mb-4">
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                  Description:
+                </p>
+                <p className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                  {importPreview.workflow.description}
+                </p>
+              </div>
+            )}
+
+            {activeProject && (
+              <div className="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30">
+                <p className="text-xs text-blue-700 dark:text-blue-400">
+                  Will be imported to: <span className="font-medium">{activeProject.name}</span>
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportFile(null);
+                  setImportPreview(null);
+                }}
+                className="px-4 py-2 text-sm font-medium border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 hover:border-gray-400 dark:hover:border-border-light transition-all"
+                style={{ color: 'var(--color-text-primary)' }}
+                disabled={importLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmImport}
+                disabled={importLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:brightness-110 hover:shadow-lg transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {importLoading ? (
+                  <>
+                    <span className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">download</span>
+                    Import Workflow
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
