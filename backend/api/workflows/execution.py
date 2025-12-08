@@ -297,6 +297,39 @@ async def execute_workflow_background(
     except Exception as e:
         logger.error(f"Workflow execution failed for task {task_id}: {e}", exc_info=True)
 
+        # Emit error event to SSE stream so frontend doesn't hang
+        # This catches errors that happen outside the executor (e.g., during initialization)
+        try:
+            event_bus = get_event_bus()
+            channel = f"workflow:{workflow_id}"
+
+            # Emit error event
+            await event_bus.publish(channel, {
+                "type": "error",
+                "data": {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "workflow_id": workflow_id,
+                    "task_id": task_id,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+
+            # Emit complete event so SSE stream closes properly
+            await event_bus.publish(channel, {
+                "type": "complete",
+                "data": {
+                    "status": "error",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "workflow_id": workflow_id,
+                    "task_id": task_id,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+        except Exception as emit_error:
+            logger.error(f"Failed to emit error event: {emit_error}")
+
         # Update task with error
         task = db.query(Task).filter(Task.id == task_id).first()
         if task:

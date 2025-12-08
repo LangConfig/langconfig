@@ -331,6 +331,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Track current executing tools for on_tool_end events
         self.current_tool_info = {}  # {run_id: {tool_name, agent_label}}
 
+        # Track active subagent runs for nested visualization
+        # Maps run_id -> {subagent_name, parent_agent_label, parent_run_id}
+        self.active_subagents = {}
+
         logger.info(
             f"ExecutionEventCallbackHandler initialized "
             f"(project={project_id}, task={task_id}, workflow={workflow_id}, save_to_db={save_to_db})"
@@ -587,8 +591,101 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             "node_id": node_id  # Pass through to on_tool_end
         }
 
+        # SUBAGENT DETECTION: Check for known subagent invocation tool patterns
+        # DeepAgents uses 'task' tool, but other patterns might include:
+        # - delegate, handoff, invoke_agent, call_agent, run_agent
+        subagent_tool_patterns = ['task', 'delegate', 'handoff', 'invoke_agent', 'call_agent', 'run_agent']
+        is_subagent_tool = tool_name.lower() in subagent_tool_patterns or 'subagent' in tool_name.lower()
+
+        # DEBUG: Log all tool calls to help identify subagent patterns
+        logger.info(f"[TOOL DEBUG] tool_name={tool_name}, inputs_keys={list(inputs.keys()) if inputs else 'None'}, is_subagent={is_subagent_tool}")
+
+        if is_subagent_tool:
+            subagent_name = None
+            task_description = None
+
+            if inputs:
+                # First try explicit name fields
+                subagent_name = (
+                    inputs.get('name') or
+                    inputs.get('agent') or
+                    inputs.get('subagent') or
+                    inputs.get('agent_name')
+                )
+
+                # Get task description for generating a better name
+                task_description = inputs.get('description') or inputs.get('task') or inputs.get('prompt')
+
+                # If no explicit name, try to generate one from description
+                if not subagent_name and task_description:
+                    # Extract a meaningful task name from the first 50 chars of description
+                    desc_preview = task_description[:50].strip()
+                    # Find first sentence or meaningful phrase
+                    for delim in ['.', ':', '\n', ' - ']:
+                        if delim in desc_preview:
+                            desc_preview = desc_preview.split(delim)[0].strip()
+                            break
+
+                    # Get subagent type for context
+                    subagent_type = inputs.get('subagent_type', 'task')
+
+                    # Create descriptive name: "Research: AMD report" instead of "general-purpose"
+                    if desc_preview:
+                        # Capitalize and shorten the description preview
+                        short_desc = desc_preview[:30] + ('...' if len(desc_preview) > 30 else '')
+                        subagent_name = f"{subagent_type.title()}: {short_desc}"
+                    else:
+                        subagent_name = subagent_type.replace('-', ' ').title()
+
+                # Final fallback to subagent_type
+                if not subagent_name:
+                    subagent_name = inputs.get('subagent_type', 'Subagent').replace('-', ' ').title()
+
+            if not subagent_name and input_str:
+                # Try to extract from input string if structured
+                import json
+                try:
+                    parsed = json.loads(input_str)
+                    subagent_name = (
+                        parsed.get('name') or
+                        parsed.get('agent') or
+                        parsed.get('agent_name') or
+                        parsed.get('subagent_type', 'Subagent').replace('-', ' ').title()
+                    )
+                except:
+                    pass
+
+            # Fallback: use tool name if no subagent name found
+            if not subagent_name:
+                subagent_name = tool_name.replace('_', ' ').title()
+
+            # Track this as an active subagent run
+            self.active_subagents[run_id] = {
+                "subagent_name": subagent_name,
+                "parent_agent_label": agent_label,
+                "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                "task_description": task_description  # Store for reference
+            }
+
+            # Emit dedicated SUBAGENT_START event for frontend nested panels
+            # Use task_description for human-readable input, not raw dict string
+            await self._emit_event(
+                event_type="SUBAGENT_START",
+                data={
+                    "subagent_name": subagent_name,
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": agent_label,
+                    "parent_run_id": str(parent_run_id) if parent_run_id else None,
+                    "input_preview": task_description if task_description else (input_str[:500] if input_str else "")
+                }
+            )
+            logger.info(f"[SUBAGENT START] {subagent_name} invoked by {agent_label}")
+
         # Sanitize tool inputs
         sanitized_inputs = self._sanitize_arguments(inputs or {}) if self.enable_sanitization else inputs
+
+        # Get subagent context for tools used within subagent execution
+        subagent_context = self._get_subagent_context_for_run(run_id, parent_run_id)
 
         await self._emit_event(
             event_type="TOOL_START",
@@ -601,7 +698,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "tags": tags or [],
                 "tool_call_number": self.tool_call_count,
                 "agent_label": agent_label,  # User-friendly name
-                "node_id": node_id  # Frontend uses this to group tool with agent in same bubble
+                "node_id": node_id,  # Frontend uses this to group tool with agent in same bubble
+                # SUBAGENT FIELDS: Enable frontend to route to SubagentPanel
+                "subagent_run_id": subagent_context.get("subagent_run_id") if subagent_context else None,
+                "subagent_name": subagent_context.get("subagent_name") if subagent_context else None,
             }
         )
 
@@ -629,13 +729,23 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Handle case where output might not be a string
         try:
             if isinstance(output, str):
-                output_preview = output[:500] if output else ""
+                full_output = output
+                # Increase preview limit for better visibility
+                output_preview = output[:2000] if output else ""
             else:
                 # Convert to string if it's not already
-                output_preview = str(output)[:500] if output else ""
+                full_output = str(output) if output else ""
+                output_preview = full_output[:2000]
         except Exception as e:
             logger.warning(f"Error processing tool output: {e}")
             output_preview = "[Output could not be processed]"
+            full_output = output_preview
+
+        # For file_write tool, include the full output (it contains the written content)
+        include_full_output = tool_name in ['file_write', 'write_file', 'task', 'delegate']
+
+        # Get subagent context for tools used within subagent execution
+        subagent_context = self._get_subagent_context_for_run(run_id, parent_run_id)
 
         await self._emit_event(
             event_type="TOOL_END",
@@ -644,11 +754,33 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "run_id": str(run_id),
                 "parent_run_id": str(parent_run_id) if parent_run_id else None,
                 "output_preview": output_preview,
+                "full_output": full_output if include_full_output else None,
                 "success": True,
                 "agent_label": agent_label,  # User-friendly name
-                "node_id": node_id  # Maps tool to correct node for grouping
+                "node_id": node_id,  # Maps tool to correct node for grouping
+                # SUBAGENT FIELDS: Enable frontend to route to SubagentPanel
+                "subagent_run_id": subagent_context.get("subagent_run_id") if subagent_context else None,
+                "subagent_name": subagent_context.get("subagent_name") if subagent_context else None,
             }
         )
+
+        # SUBAGENT COMPLETION: If this was a subagent (task tool), emit SUBAGENT_END
+        if run_id in self.active_subagents:
+            subagent_info = self.active_subagents[run_id]
+            await self._emit_event(
+                event_type="SUBAGENT_END",
+                data={
+                    "subagent_name": subagent_info["subagent_name"],
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": subagent_info["parent_agent_label"],
+                    "parent_run_id": subagent_info["parent_run_id"],
+                    "output_preview": output_preview,
+                    "full_output": full_output,  # Full output for complete display
+                    "success": True
+                }
+            )
+            logger.info(f"[SUBAGENT END] {subagent_info['subagent_name']} completed")
+            del self.active_subagents[run_id]
 
         # Clean up tool tracking to prevent memory leaks
         if run_id in self.current_tool_info:
@@ -873,10 +1005,16 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             node_info = self.current_node_info.get(parent_run_id, {})
             agent_label = node_info.get("agent_label")
 
+            # SUBAGENT CONTEXT: Check if this streaming token belongs to an active subagent
+            # This enables the frontend to route tokens to the correct SubagentPanel
+            subagent_context = self._get_subagent_context_for_run(run_id, parent_run_id)
+            subagent_run_id = subagent_context.get("subagent_run_id") if subagent_context else None
+            subagent_name = subagent_context.get("subagent_name") if subagent_context else None
+
             # ENHANCED DEBUG: Log streaming event lookup
             logger.info(
                 f"[STREAM DEBUG] run_id={str(run_id)[:8]}, parent_run_id={str(parent_run_id)[:8] if parent_run_id else None}, "
-                f"agent_label={agent_label}, node_info={node_info}, "
+                f"agent_label={agent_label}, subagent_run_id={subagent_run_id}, "
                 f"tracked_parents={list(self.current_node_info.keys())}"
             )
 
@@ -887,9 +1025,65 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                     "parent_run_id": str(parent_run_id) if parent_run_id else None,
                     "content": chunk_content,  # Standardized field name for streaming content
                     "agent_label": agent_label,  # CRITICAL: Maps stream to correct node
-                    "tags": tags or []
+                    "tags": tags or [],
+                    # SUBAGENT FIELDS: Enable frontend to route to SubagentPanel
+                    "subagent_run_id": subagent_run_id,
+                    "subagent_name": subagent_name,
                 }
             )
+
+    def _get_subagent_context_for_run(
+        self,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find if this run_id is inside an active subagent's execution scope.
+
+        When a subagent is spawned via task() tool, all events with parent_run_id
+        matching the task tool's run_id belong to that subagent.
+
+        Returns:
+            Dict with subagent_run_id and subagent_name if found, None otherwise
+        """
+        # First check if run_id itself is a subagent
+        if run_id in self.active_subagents:
+            subagent_info = self.active_subagents[run_id]
+            return {
+                "subagent_run_id": str(run_id),
+                "subagent_name": subagent_info.get("subagent_name")
+            }
+
+        # Check if parent_run_id is a subagent (streaming happens inside tool execution)
+        if parent_run_id and parent_run_id in self.active_subagents:
+            subagent_info = self.active_subagents[parent_run_id]
+            return {
+                "subagent_run_id": str(parent_run_id),
+                "subagent_name": subagent_info.get("subagent_name")
+            }
+
+        # Walk up the parent chain to find if any ancestor is an active subagent
+        current_id = parent_run_id
+        visited = set()  # Prevent infinite loops
+
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+
+            if current_id in self.active_subagents:
+                subagent_info = self.active_subagents[current_id]
+                return {
+                    "subagent_run_id": str(current_id),
+                    "subagent_name": subagent_info.get("subagent_name")
+                }
+
+            # Look up parent from current_node_info
+            node_info = self.current_node_info.get(current_id)
+            if node_info and "parent_run_id" in node_info:
+                current_id = node_info.get("parent_run_id")
+            else:
+                break
+
+        return None
 
     # =========================================================================
     # Helper Methods
@@ -925,7 +1119,9 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "AGENT_ACTION": "on_agent_action",
                 "AGENT_FINISH": "on_agent_finish",
                 "LLM_END": "on_llm_end",
-                "CHAT_MODEL_STREAM": "on_chat_model_stream"
+                "CHAT_MODEL_STREAM": "on_chat_model_stream",
+                "SUBAGENT_START": "subagent_start",
+                "SUBAGENT_END": "subagent_end"
             }
 
             # Get SSE-compatible event type

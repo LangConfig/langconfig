@@ -156,15 +156,26 @@ class DeepAgentFactory:
         if filesystem_config and filesystem_config.enabled:
             try:
                 from deepagents.middleware.filesystem import FilesystemMiddleware
-                from deepagents.memory.backends import StateBackend
+                from deepagents.memory.backends import FilesystemBackend
+                from services.workspace_manager import get_workspace_manager
 
-                fs_middleware = FilesystemMiddleware(backend=StateBackend())
+                # Get task workspace for file storage
+                workspace_mgr = get_workspace_manager()
+                workspace_path = workspace_mgr.get_task_workspace(
+                    project_id=project_id,
+                    workflow_id=None,  # Will be set by graph execution context if available
+                    task_id=task_id
+                )
+
+                # Use FilesystemBackend with task workspace as root (files persist to disk)
+                fs_backend = FilesystemBackend(root=str(workspace_path))
+                fs_middleware = FilesystemMiddleware(backend=fs_backend)
                 instrumented_fs = instrument_deepagents_middleware(
                     fs_middleware,
                     callback_handler=callback_handler
                 )
                 middleware_instances.append(instrumented_fs)
-                logger.info("FilesystemMiddleware initialized")
+                logger.info(f"FilesystemMiddleware initialized with workspace: {workspace_path}")
             except ImportError as e:
                 logger.warning(f"FilesystemMiddleware not available: {e}")
 

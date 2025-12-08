@@ -23,7 +23,7 @@ import { useState, useEffect } from 'react';
 import { X, Minimize2, Download, Copy, Check, Activity, BarChart3, FileText, Eye, FileText as FileIcon, FolderOpen } from 'lucide-react';
 import FormattedOutputViewer, { FormattedOutput } from './output/FormattedOutputViewer';
 import { WorkflowEvent } from '../types/events';
-import WorkflowExecutionLog from './WorkflowExecutionLog';
+import ExecutionEventLog from './ExecutionEventLog';
 
 interface WorkflowResultsModalProps {
   isOpen: boolean;
@@ -300,7 +300,7 @@ export default function WorkflowResultsModal({
           )}
 
           {activeTab === 'events' && (
-            <WorkflowExecutionLog events={events} />
+            <ExecutionEventLog events={events} />
           )}
 
           {activeTab === 'diagnostics' && (

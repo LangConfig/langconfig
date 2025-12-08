@@ -37,7 +37,7 @@ class FileInfo(BaseModel):
 class WorkspaceFilesResponse(BaseModel):
     """Response with list of files in a task's workspace"""
     task_id: int
-    workflow_id: int
+    workflow_id: int | None  # Can be None for tasks created outside workflow context
     project_id: int | None
     files: List[FileInfo]
     total_files: int

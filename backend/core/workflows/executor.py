@@ -280,8 +280,14 @@ class SimpleWorkflowExecutor:
             registry = get_cancellation_registry()
 
             # SAFETY: Prevent infinite loops with max events and timeout
-            MAX_EVENTS = 10000  # Hard limit on events
-            TIMEOUT_SECONDS = 600  # 10 minute timeout
+            # These can be configured per-execution via input_data (frontend settings)
+            MAX_EVENTS = input_data.get("max_events", 10000)  # Default: 10k events
+            TIMEOUT_SECONDS = input_data.get("timeout_seconds", 600)  # Default: 10 minutes
+
+            # Enforce reasonable bounds to prevent abuse
+            MAX_EVENTS = max(1000, min(MAX_EVENTS, 100000))  # 1k - 100k range
+            TIMEOUT_SECONDS = max(60, min(TIMEOUT_SECONDS, 3600))  # 1 min - 1 hour range
+
             event_count = 0
             execution_start_time = datetime.utcnow()
 
@@ -1200,18 +1206,32 @@ class SimpleWorkflowExecutor:
                 first_node_id = entry_point_override
                 logger.info(f"Using user-specified entry point: {first_node_id}")
             else:
-                # Find the node with no incoming edges (the actual start of the workflow)
+                # Build a map of node_id -> agent_type for proper filtering
+                node_type_map = {}
+                for n in nodes:
+                    nid = n["id"]
+                    n_type = n.get("type", "default")
+                    n_data = n.get("data", {})
+                    n_data_type = n_data.get("agentType", "")
+                    # Resolve type: prefer explicit type, fallback to data.agentType
+                    resolved_type = n_type if n_type not in ["default", ""] else (n_data_type or "default")
+                    node_type_map[nid] = resolved_type
+
+                # Find regular nodes (non-control nodes)
                 regular_nodes = [n for n in nodes
-                                if n.get("data", {}).get("label", "default")
-                                not in ['START_NODE', 'END_NODE']]
+                                if node_type_map.get(n["id"], "default")
+                                not in ['START_NODE', 'END_NODE', 'CHECKPOINT_NODE']]
 
                 if not regular_nodes:
                     raise ValueError("Workflow must have at least one regular (non-control) node")
 
-                # Get all target nodes (nodes that have incoming edges)
-                target_node_ids = {e["target"] for e in edges if e["source"] != 'START_NODE'}
+                # Get all START_NODE ids for proper edge filtering
+                start_node_ids = {nid for nid, ntype in node_type_map.items() if ntype == 'START_NODE'}
 
-                # Find nodes with NO incoming edges - these are potential entry points
+                # Get all target nodes (nodes that have incoming edges from non-START nodes)
+                target_node_ids = {e["target"] for e in edges if e["source"] not in start_node_ids}
+
+                # Find nodes with NO incoming edges from regular nodes - these are potential entry points
                 entry_candidates = [n["id"] for n in regular_nodes if n["id"] not in target_node_ids]
 
                 if entry_candidates:
@@ -1607,7 +1627,83 @@ When your work is complete, deliver the final result and END."""
                     # Gemini sometimes stops with "UNEXPECTED_TOOL_CALL" but doesn't execute the tool
                     # We catch this and force a retry with an explicit instruction
                     max_retries = 2
-                    current_messages = messages
+
+                    # CONTEXT WINDOW MANAGEMENT: Trim messages if they exceed model's context limit
+                    # This prevents "context_length_exceeded" errors from crashing the workflow
+                    try:
+                        from services.context_window_manager import ContextWindowManager, ContextStrategy
+
+                        model_name = agent_config.get("model", "gpt-4o")
+
+                        # Get strategy from multiple possible sources (in priority order):
+                        # 1. guardrails.compaction_strategy (DeepAgent UI)
+                        # 2. context_management_strategy (AgentTemplate)
+                        # 3. context_mode (NodeConfigPanel)
+                        guardrails = agent_config.get("guardrails", {})
+                        compaction_strategy = guardrails.get("compaction_strategy", "none") if guardrails else "none"
+
+                        # Map DeepAgent compaction_strategy to ContextStrategy
+                        compaction_to_strategy = {
+                            "none": "smart",  # Default to smart when no compaction
+                            "trim_messages": "recent",
+                            "summarization": "summary",
+                            "filter_custom": "quarantine",
+                        }
+
+                        # Priority: guardrails.compaction_strategy > context_management_strategy > context_mode
+                        if compaction_strategy and compaction_strategy != "none":
+                            strategy_name = compaction_to_strategy.get(compaction_strategy, "smart")
+                        else:
+                            strategy_name = agent_config.get("context_management_strategy") or agent_config.get("context_mode", "smart")
+
+                        strategy_map = {
+                            "recent": ContextStrategy.RECENT,
+                            "smart": ContextStrategy.SMART,
+                            "full": ContextStrategy.FULL,
+                            "summary": ContextStrategy.SUMMARY,
+                            "quarantine": ContextStrategy.QUARANTINE,
+                        }
+                        strategy = strategy_map.get(strategy_name.lower(), ContextStrategy.SMART)
+
+                        # Get max tokens from guardrails.token_limits or direct config
+                        token_limits = guardrails.get("token_limits", {}) if guardrails else {}
+                        max_context_tokens = (
+                            token_limits.get("max_total_tokens") or
+                            agent_config.get("max_context_tokens")
+                        )
+
+                        context_manager = ContextWindowManager(
+                            model_name=model_name,
+                            max_tokens=max_context_tokens,
+                            strategy=strategy
+                        )
+
+                        original_token_count = context_manager.count_tokens(messages)
+
+                        # Only process if messages exist and might exceed limits (80% threshold)
+                        if original_token_count > context_manager.available_context_tokens * 0.8:
+                            logger.warning(
+                                f"[{display_name}] Context nearing limit: {original_token_count} tokens "
+                                f"(limit: {context_manager.available_context_tokens}, strategy: {strategy.value})"
+                            )
+
+                            # Apply configured trimming strategy
+                            current_messages = context_manager.apply_strategy(messages, strategy)
+                            trimmed_token_count = context_manager.count_tokens(current_messages)
+
+                            logger.info(
+                                f"[{display_name}] Context managed: {original_token_count} → {trimmed_token_count} tokens "
+                                f"({len(messages)} → {len(current_messages)} messages)"
+                            )
+                        else:
+                            current_messages = messages
+
+                    except ImportError:
+                        logger.debug(f"[{display_name}] Context window manager not available, using messages as-is")
+                        current_messages = messages
+                    except Exception as e:
+                        logger.warning(f"[{display_name}] Context management failed: {e}, using messages as-is")
+                        current_messages = messages
 
                     for attempt in range(max_retries + 1):
                         if attempt > 0:
@@ -1778,6 +1874,89 @@ When your work is complete, deliver the final result and END."""
                                 "timestamp": datetime.utcnow().isoformat()
                             }
                         })
+
+                    # ===== EMIT NODE COMPLETION WITH TOKEN & TOOL METRICS =====
+                    # Extract token usage from the response messages
+                    token_usage = None
+                    tool_calls_info = []
+
+                    for msg in new_messages:
+                        # Extract token usage from response_metadata
+                        if hasattr(msg, 'response_metadata') and msg.response_metadata:
+                            metadata = msg.response_metadata
+                            # OpenAI/Anthropic format
+                            if 'usage' in metadata:
+                                usage = metadata['usage']
+                                token_usage = {
+                                    'promptTokens': usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0),
+                                    'completionTokens': usage.get('completion_tokens', 0) or usage.get('output_tokens', 0),
+                                    'totalTokens': usage.get('total_tokens', 0),
+                                }
+                                if not token_usage['totalTokens']:
+                                    token_usage['totalTokens'] = token_usage['promptTokens'] + token_usage['completionTokens']
+                            # Google/LangChain format
+                            elif 'usage_metadata' in metadata:
+                                usage = metadata['usage_metadata']
+                                token_usage = {
+                                    'promptTokens': usage.get('input_tokens', 0) or usage.get('prompt_tokens', 0),
+                                    'completionTokens': usage.get('output_tokens', 0) or usage.get('completion_tokens', 0),
+                                    'totalTokens': usage.get('total_tokens', 0),
+                                }
+                                if not token_usage['totalTokens']:
+                                    token_usage['totalTokens'] = token_usage['promptTokens'] + token_usage['completionTokens']
+
+                        # Extract tool call information
+                        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                tool_calls_info.append({
+                                    'name': tc.get('name', 'unknown'),
+                                    'id': tc.get('id', ''),
+                                })
+
+                    # Count tool results from earlier messages
+                    tool_results_count = sum(1 for m in all_response_messages if hasattr(m, '__class__') and 'Tool' in m.__class__.__name__)
+
+                    # Calculate estimated cost if we have token data
+                    if token_usage:
+                        try:
+                            from lib.model_pricing import get_model_cost
+                            cost = get_model_cost(model, token_usage['promptTokens'], token_usage['completionTokens'])
+                            token_usage['costString'] = f"${cost:.6f}"
+                        except Exception:
+                            # Fallback cost estimation
+                            estimated_cost = (token_usage['promptTokens'] * 0.000003) + (token_usage['completionTokens'] * 0.000015)
+                            token_usage['costString'] = f"${estimated_cost:.6f}"
+
+                    # Emit node_completed event with all metrics
+                    try:
+                        from services.event_bus import get_event_bus
+                        event_bus = get_event_bus()
+                        channel = f"workflow:{state.get('workflow_id')}"
+
+                        completion_event = {
+                            "type": "node_completed",
+                            "data": {
+                                "node_id": node_id,
+                                "agent_label": display_name,
+                                "model": model,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        }
+
+                        if token_usage:
+                            completion_event["data"]["tokenCost"] = token_usage
+
+                        if tool_calls_info:
+                            completion_event["data"]["toolCalls"] = tool_calls_info
+                            completion_event["data"]["toolCallCount"] = len(tool_calls_info)
+
+                        if tool_results_count:
+                            completion_event["data"]["toolResultCount"] = tool_results_count
+
+                        await event_bus.publish(channel, completion_event)
+                        logger.debug(f"[{display_name}] Emitted node_completed event with token usage: {token_usage}")
+                    except Exception as event_error:
+                        logger.warning(f"[{display_name}] Failed to emit node_completed event: {event_error}")
 
                     logger.info(f"[{display_name}] Returning {len(new_messages)} new messages")
 
