@@ -679,12 +679,128 @@ OUTPUT FORMAT:
 
 
 # =============================================================================
+# RESEARCH & CONTENT EDITOR WORKFLOW RECIPE
+# =============================================================================
+# Pattern: Deep Researcher -> Editor
+
+RESEARCH_CONTENT_EDITOR_RECIPE = WorkflowRecipe(
+    recipe_id="research_content_editor",
+    name="Research & Content Editor",
+    description="Two-agent workflow that performs comprehensive research and then edits/proofreads the output. The researcher produces detailed, well-structured reports, and the editor verifies citations, enhances structure, and ensures quality.",
+    category="research",
+    icon="edit_note",
+    tags=["research", "editing", "content", "reports"],
+    nodes=[
+        {
+            "id": "node-rce-researcher",
+            "type": "custom",
+            "position": {"x": 100, "y": 200},
+            "data": {
+                "label": "Deep Researcher",
+                "agentType": "EXECUTE",
+                "model": "claude-sonnet-4-5-20250929",
+                "config": {
+                    "model": "claude-sonnet-4-5-20250929",
+                    "fallback_models": ["gpt-5"],
+                    "temperature": 0.6,
+                    "max_tokens": 4000,
+                    "system_prompt": """ROLE: Deep Research Specialist.
+
+EXPERTISE: In-depth research, comprehensive report writing, academic formatting, source synthesis.
+
+GOAL: Perform thorough research on the given topic and produce a comprehensive, well-structured report formatted as if it were an academic submission.
+
+PROCESS:
+1. Analyze the research topic and identify key areas to investigate
+2. Gather information from reliable sources
+3. Synthesize findings into a coherent narrative
+4. Structure the report with clear sections and logical flow
+5. Ensure all claims are supported with evidence
+6. Include proper citations for all sources
+
+OUTPUT REQUIREMENTS:
+- Thorough, well-structured report
+- Detailed analysis reflecting deep understanding of the topic
+- All sources credible and properly cited
+- Professional academic formatting
+- Clear, logical structure
+
+After completing your report, hand it over to the Editor who will proofread and make edits to ensure accuracy and quality.""",
+                    "native_tools": [],
+                    "tools": [],
+                    "cli_tools": [],
+                    "custom_tools": [],
+                    "timeout_seconds": 600,
+                    "max_retries": 2,
+                    "enable_model_routing": False,
+                    "enable_parallel_tools": False,
+                    "enable_memory": True,
+                    "enable_rag": False,
+                }
+            }
+        },
+        {
+            "id": "node-rce-editor",
+            "type": "custom",
+            "position": {"x": 500, "y": 200},
+            "data": {
+                "label": "Editor",
+                "agentType": "EXECUTE",
+                "model": "claude-sonnet-4-5-20250929",
+                "config": {
+                    "model": "claude-sonnet-4-5-20250929",
+                    "fallback_models": ["gpt-5"],
+                    "temperature": 0.7,
+                    "max_tokens": 4000,
+                    "system_prompt": """ROLE: Professional Editor and Quality Assurance Specialist.
+
+EXPERTISE: Proofreading, document structure enhancement, citation verification, URL validation, academic standards.
+
+GOAL: Review the research report received from the researcher. Meticulously proofread and enhance the document structure, verify citations and URLs, and ensure the final output meets professional standards.
+
+PROCESS:
+1. **Grammar & Style Review**: Correct grammatical errors, improve sentence flow, ensure consistent tone
+2. **Structure Enhancement**: Ensure logical organization, clear headings, smooth transitions
+3. **Citation Verification**: Cross-check all citations for reliability and credibility
+4. **URL Validation**: Verify that all URLs are active and lead to the intended information
+5. **Content Review**: Identify areas needing clarification or additional detail
+6. **Final Polish**: Ensure professional, publication-ready quality
+
+CRITICAL REQUIREMENTS:
+- Use 'web_search' to verify facts and citations when needed
+- Ensure documents are grammatically correct AND well-organized
+- Maintain focus on clarity and coherence
+- Provide actionable improvements, not just identification of issues
+
+OUTPUT: A fully edited and improved final report with all changes and improvements incorporated. The output should be the complete, polished document ready for publication.""",
+                    "native_tools": ["web_search", "memory_store", "memory_recall"],
+                    "tools": [],
+                    "cli_tools": [],
+                    "custom_tools": [],
+                    "timeout_seconds": 600,
+                    "max_retries": 2,
+                    "enable_model_routing": False,
+                    "enable_parallel_tools": True,
+                    "enable_memory": True,
+                    "enable_rag": False,
+                }
+            }
+        },
+    ],
+    edges=[
+        {"id": "e-rce-1", "source": "node-rce-researcher", "target": "node-rce-editor", "type": "smoothstep"},
+    ]
+)
+
+
+# =============================================================================
 # RECIPE REGISTRY
 # =============================================================================
 
 WORKFLOW_RECIPES = [
     DEEP_RESEARCH_RECIPE,
     LEARNING_RESEARCH_RECIPE,
+    RESEARCH_CONTENT_EDITOR_RECIPE,
 ]
 
 
