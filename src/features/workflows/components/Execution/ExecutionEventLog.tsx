@@ -28,8 +28,9 @@ import {
 } from 'lucide-react';
 import { WorkflowEvent } from '../types/events';
 import { calculateAndFormatCost } from '../utils/modelPricing';
+import { sanitizeAgentOutput } from '../../../../components/ui/AgentOutputRenderer';
 
-interface WorkflowExecutionLogProps {
+interface ExecutionEventLogProps {
   events: WorkflowEvent[];
   className?: string;
 }
@@ -44,7 +45,7 @@ interface LogEntry {
   type: 'info' | 'success' | 'error' | 'warning';
 }
 
-export default function WorkflowExecutionLog({ events, className = '' }: WorkflowExecutionLogProps) {
+export default function ExecutionEventLog({ events, className = '' }: ExecutionEventLogProps) {
   // Convert events to readable log entries
   const logEntries: LogEntry[] = events.map((event) => {
     const timestamp = event.timestamp || new Date().toISOString();
@@ -90,7 +91,7 @@ export default function WorkflowExecutionLog({ events, className = '' }: Workflo
           iconColor: 'text-green-600 dark:text-green-400',
           title: `Tool Completed: ${event.data?.tool_name || event.data?.name}`,
           description: typeof event.data?.output === 'string'
-            ? event.data.output.slice(0, 200) + (event.data.output.length > 200 ? '...' : '')
+            ? event.data.output.slice(0, 500) + (event.data.output.length > 500 ? '...' : '')
             : 'Tool executed successfully',
           type: 'success' as const,
         };
@@ -192,22 +193,30 @@ export default function WorkflowExecutionLog({ events, className = '' }: Workflo
         };
 
       case 'subagent_start':
+        // Sanitize input preview - may be raw dict string
+        const startDescription = sanitizeAgentOutput(
+          event.data?.input_preview || `Delegated task to ${event.data?.subagent_name}`
+        );
         return {
           timestamp,
           icon: <Users className="w-5 h-5" />,
           iconColor: 'text-purple-600 dark:text-purple-400',
           title: `🤖 Subagent Started: ${event.data?.subagent_name || 'Subagent'}`,
-          description: event.data?.input_preview || `Delegated task to ${event.data?.subagent_name}`,
+          description: startDescription.slice(0, 500) + (startDescription.length > 500 ? '...' : ''),
           type: 'info' as const,
         };
 
       case 'subagent_end':
+        // Sanitize output - may be Command() structure
+        const endOutput = sanitizeAgentOutput(
+          event.data?.full_output || event.data?.output_preview || 'Subagent task finished'
+        );
         return {
           timestamp,
           icon: event.data?.success ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />,
           iconColor: event.data?.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400',
           title: `${event.data?.success ? '✅' : '❌'} Subagent Completed: ${event.data?.subagent_name || 'Subagent'}`,
-          description: event.data?.output_preview?.slice(0, 300) || 'Subagent task finished',
+          description: endOutput.slice(0, 500) + (endOutput.length > 500 ? '...' : ''),
           type: event.data?.success ? 'success' as const : 'error' as const,
         };
 

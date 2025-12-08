@@ -30,7 +30,7 @@ import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import ThinkingToast from '../../../../components/ui/ThinkingToast';
-import LiveExecutionPanel from '../Execution/LiveExecutionPanel';
+import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
 import { MemoryView } from '../../../memory/components/MemoryView';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -4107,7 +4107,7 @@ if __name__ == "__main__":
                 </ReactFlow>
 
                 {/* Live Execution Panel - Slides in from left, independent from thinking toasts */}
-                <LiveExecutionPanel
+                <RealtimeExecutionPanel
                   isVisible={showLiveExecutionPanel}
                   events={workflowEvents}
                   latestEvent={latestEvent}
@@ -5496,7 +5496,7 @@ if __name__ == "__main__":
                 </div>
 
                 {/* Execution Log Replay Panel */}
-                <LiveExecutionPanel
+                <RealtimeExecutionPanel
                   isVisible={showReplayPanel}
                   events={replayEvents}
                   latestEvent={replayEvents.length > 0 ? replayEvents[replayEvents.length - 1] : null}

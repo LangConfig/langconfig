@@ -1,20 +1,17 @@
 /**
- * SubagentPanel Component
+ * SubAgentPanel Component
  *
- * Displays subagent execution in a stacked panel on the right side of LiveExecutionPanel.
+ * Displays subagent execution in a stacked panel on the right side of RealtimeExecutionPanel.
  * Shows subagent thinking/reasoning and tool calls in real-time.
- * Styled to match LiveExecutionPanel for visual consistency.
+ * Styled to match RealtimeExecutionPanel for visual consistency.
  */
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Maximize2, Minimize2, Bot, Loader2, Wrench, CheckCircle, XCircle, X, PenLine } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { AgentOutputRenderer, sanitizeAgentOutput } from '../../../../components/ui/AgentOutputRenderer';
 import type { WorkflowEvent } from '../../../../types/events';
 
-interface SubagentPanelProps {
+interface SubAgentPanelProps {
   subagentId: string;
   subagentLabel: string;
   events: WorkflowEvent[];
@@ -22,30 +19,49 @@ interface SubagentPanelProps {
   onToggleExpand: () => void;
   onClose?: () => void;
   status: 'running' | 'completed' | 'error';
+  inputPreview?: string;  // Task description from subagent_start
+  outputPreview?: string;  // Result from subagent_end
 }
 
-export const SubagentPanel: React.FC<SubagentPanelProps> = ({
+export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
   subagentId,
   subagentLabel,
   events,
   isExpanded,
   onToggleExpand,
   onClose,
-  status
+  status,
+  inputPreview = '',
+  outputPreview = ''
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isAutoScroll, setIsAutoScroll] = useState(true);
 
-  // Extract thinking content from streaming events
+  // Extract thinking content from streaming events, with fallback to input/output preview
   const thinkingContent = useMemo(() => {
     let content = '';
     for (const event of events) {
       if (event.type === 'on_chat_model_stream') {
-        content += event.data?.token || event.data?.content || '';
+        content += (event.data as any)?.token || (event.data as any)?.content || '';
       }
     }
+
+    // Fallback: If no streaming events, show input/output preview
+    if (!content && (inputPreview || outputPreview)) {
+      if (inputPreview) {
+        // Sanitize input preview (may be raw dict string)
+        const cleanInput = sanitizeAgentOutput(inputPreview);
+        content += `**Task:**\n${cleanInput}\n\n`;
+      }
+      if (outputPreview) {
+        // Sanitize output (may be Command() structure)
+        const cleanOutput = sanitizeAgentOutput(outputPreview);
+        content += `**Result:**\n${cleanOutput}`;
+      }
+    }
+
     return content;
-  }, [events]);
+  }, [events, inputPreview, outputPreview]);
 
   // Extract tool calls
   const toolCalls = useMemo(() => {
@@ -75,20 +91,21 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
     }
   }, [thinkingContent, toolCalls, isAutoScroll]);
 
-  const statusColor = status === 'error' ? '#ef4444' : status === 'completed' ? '#10b981' : 'var(--color-primary)';
+  const statusColor = status === 'error' ? '#ef4444' : status === 'completed' ? '#6ee7b7' : 'var(--color-primary)';
 
   return (
     <div
-      className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 shadow-lg ${isExpanded ? 'flex-1' : ''
+      className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 ${isExpanded ? 'flex-1' : ''
         }`}
       style={{
-        backgroundColor: 'var(--color-background-light)',
-        border: `1px solid var(--color-border-dark)`,
+        backgroundColor: 'transparent',
+        border: `3px solid ${statusColor}`,
         minHeight: isExpanded ? '100%' : '180px',
-        maxHeight: isExpanded ? '100%' : '300px'
+        maxHeight: isExpanded ? '100%' : '300px',
+        boxShadow: status === 'running' ? `0 0 12px ${statusColor}40` : 'none'
       }}
     >
-      {/* Header - styled like LiveExecutionPanel */}
+      {/* Header - styled like RealtimeExecutionPanel */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0"
         style={{
@@ -141,7 +158,7 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
       <div
         ref={contentRef}
         className="flex-1 overflow-auto custom-scrollbar p-4"
-        style={{ color: 'var(--color-text-primary)' }}
+        style={{ color: 'var(--color-text-primary)', backgroundColor: 'white' }}
         onScroll={() => {
           if (contentRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
@@ -158,39 +175,17 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
                 Thinking
               </span>
             </div>
-            <div
-              className="text-sm leading-relaxed pl-6 prose prose-invert max-w-none"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ node, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '');
-                    const inline = !match;
-                    return !inline ? (
-                      <SyntaxHighlighter
-                        language={match[1]}
-                        style={vscDarkPlus}
-                        customStyle={{ margin: 0, borderRadius: '0.375rem', fontSize: '0.85em' }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <code className={className} {...props}>{children}</code>
-                    );
-                  }
-                }}
-              >
-                {thinkingContent}
-              </ReactMarkdown>
+            <div className="pl-6">
+              <div className="bg-white rounded-md p-2">
+                <AgentOutputRenderer content={thinkingContent} compact />
+              </div>
             </div>
           </div>
         )}
 
         {/* Tool calls section */}
         {toolCalls.map((tool, idx) => (
-          <div key={idx} className="mb-3 rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--color-background-dark)' }}>
+          <div key={idx} className="mb-3 rounded-lg overflow-hidden" style={{ backgroundColor: 'white' }}>
             <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
               {tool.status === 'running' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-primary)' }} />
@@ -237,25 +232,27 @@ export const SubagentPanel: React.FC<SubagentPanelProps> = ({
 };
 
 /**
- * SubagentPanelStack Component
+ * SubAgentPanelStack Component
  *
- * Container for multiple SubagentPanels stacked vertically.
- * Styled to match LiveExecutionPanel.
+ * Container for multiple SubAgentPanels stacked vertically.
+ * Styled to match RealtimeExecutionPanel.
  */
-interface SubagentInfo {
+interface SubAgentInfo {
   id: string;
   label: string;
   parentRunId: string;
   events: WorkflowEvent[];
   status: 'running' | 'completed' | 'error';
+  inputPreview?: string;
+  outputPreview?: string;
 }
 
-interface SubagentPanelStackProps {
-  subagents: SubagentInfo[];
+interface SubAgentPanelStackProps {
+  subagents: SubAgentInfo[];
   isVisible: boolean;
 }
 
-export const SubagentPanelStack: React.FC<SubagentPanelStackProps> = ({
+export const SubAgentPanelStack: React.FC<SubAgentPanelStackProps> = ({
   subagents,
   isVisible
 }) => {
@@ -268,13 +265,11 @@ export const SubagentPanelStack: React.FC<SubagentPanelStackProps> = ({
   if (visibleSubagents.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3 p-4 h-full overflow-auto custom-scrollbar">
-      <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
-        Active Subagents ({visibleSubagents.length})
-      </div>
+    <div className="flex flex-col gap-3 p-4 h-full overflow-auto custom-scrollbar" style={{ backgroundColor: 'white' }}>
+
 
       {visibleSubagents.slice(0, 3).map((subagent) => (
-        <SubagentPanel
+        <SubAgentPanel
           key={subagent.id}
           subagentId={subagent.id}
           subagentLabel={subagent.label}
@@ -283,6 +278,8 @@ export const SubagentPanelStack: React.FC<SubagentPanelStackProps> = ({
           onToggleExpand={() => setExpandedId(expandedId === subagent.id ? null : subagent.id)}
           onClose={subagent.status !== 'running' ? () => setDismissedIds(new Set([...dismissedIds, subagent.id])) : undefined}
           status={subagent.status}
+          inputPreview={subagent.inputPreview}
+          outputPreview={subagent.outputPreview}
         />
       ))}
 
@@ -298,4 +295,4 @@ export const SubagentPanelStack: React.FC<SubagentPanelStackProps> = ({
   );
 };
 
-export default SubagentPanel;
+export default SubAgentPanel;
