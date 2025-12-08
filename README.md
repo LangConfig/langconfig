@@ -22,7 +22,7 @@ Build AI agent systems using LangChain and LangGraph. No coding required.
 - **Multi-Model Support** - OpenAI (GPT-4o, GPT-5), Anthropic (Claude 4.5 Sonnet/Opus/Haiku), Google (Gemini 3 Pro, Gemini 2.5), DeepSeek, local models (Ollama, LM Studio)
 - **Custom Tool Builder** - Create specialized tools beyond built-in MCP servers
 - **Real-Time Monitoring** - Watch agent execution, tool calls, token usage, and costs live
-- **Export to Code** - Generate LangGraph Python code from visual workflows
+- **Export to Code** - Generate standalone Python packages with Streamlit UI, or view LangGraph code
 - **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
 - **Local-First** - All data stays on your machine
@@ -225,10 +225,15 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 5. Review and customize (add more tools, adjust prompt)
 6. Click **Save** → use in workflows or chat testing
 
-### Example 4: Export Workflow to Code
+### Example 4: Export Workflow as Standalone App
 
 1. Build workflow visually (e.g., Research → Plan → Implement → Test)
-2. Click **Export** → **Python Code**
+2. Click **Export** → **Download Python Package**
+3. Extract the ZIP file to any folder
+4. Run `pip install -r requirements.txt`
+5. Add API keys to `.env`
+6. Run `streamlit run streamlit_app.py`
+7. Use your workflow as a standalone web app with live streaming output
 
 ---
 
