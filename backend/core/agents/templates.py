@@ -262,7 +262,7 @@ GOAL: Analyze requirements and context to design a robust architecture. Define c
 CONSTRAINTS: Prioritize maintainability. Document trade-offs. Align with existing infrastructure. Use memory tools (Type: DECISION) to record key choices.
 OUTPUT: Architectural diagrams (Mermaid), detailed schemas, and OpenAPI specifications.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "reasoning_chain"],  # Added web for research, sequential_thinking for complex reasoning
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "reasoning_chain"],  # DeepAgents standard naming
 
     enable_model_routing=False,
     enable_parallel_tools=False,
@@ -293,7 +293,7 @@ GOAL: Implement requested features or bug fixes efficiently and accurately based
 CONSTRAINTS: Adhere strictly to existing code style. Write modular, testable code. Handle errors gracefully.
 OUTPUT: Clean, functional code that meets specifications and follows best practices.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "reasoning_chain"],  # Added web (docs lookup), sequential_thinking (complex logic)
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "reasoning_chain"],  # DeepAgents standard naming
 
     enable_model_routing=True,
     enable_parallel_tools=True,
@@ -319,7 +319,7 @@ GOAL: Complete straightforward coding tasks quickly and accurately.
 CONSTRAINTS: Follow existing patterns. Minimal overthinking. Ask for clarification only if absolutely necessary.
 OUTPUT: Quick, functional implementations that follow existing code patterns.""",
 
-    mcp_tools=["file_read", "file_write", "file_list"],  # Keep minimal for speed
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep"],  # DeepAgents standard naming, minimal
 
     enable_model_routing=True,
     enable_parallel_tools=True,
@@ -344,7 +344,7 @@ GOAL: Improve code structure and maintainability without changing behavior.
 CONSTRAINTS: Preserve existing behavior (no breaking changes). Maintain test coverage. Extract reusable components. Apply design patterns appropriately.
 OUTPUT: Clean, well-structured code with improved readability and maintainability.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "reasoning_chain"],  # Added sequential_thinking for refactoring planning
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "reasoning_chain"],  # DeepAgents standard naming
 
     enable_model_routing=True,
     enable_parallel_tools=True,
@@ -382,13 +382,13 @@ REVIEW WORKFLOW:
    - [DECISION: HITL_REQUIRED] if critical/ambiguous issues require human judgment
 
 TOOLS AVAILABLE:
-- file_read, file_write, file_list: For reviewing code files
+- read_file, write_file, ls, edit_file, glob, grep: For reviewing and modifying code files
 - web_search: Look up security best practices, framework documentation
 - reasoning_chain: Structure complex code analysis
 
 CONSTRAINTS: Be thorough but concise. Prioritize critical issues. Focus on security, maintainability, and correctness.
 OUTPUT: Categorized feedback with specific code examples and clear recommendations.""",
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "reasoning_chain"],  # Only valid tools
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "reasoning_chain"],  # DeepAgents standard naming
     enable_model_routing=True,
     enable_parallel_tools=True,  # Can run tests and linters in parallel
     enable_memory=True,  # Remember past issues and patterns
@@ -414,7 +414,7 @@ EXPERTISE: Unit testing, integration testing, test-driven development, Jest/Pyte
 GOAL: Generate comprehensive, maintainable test suites covering edge cases.
 CONSTRAINTS: Follow existing test conventions. Ensure tests are isolated and deterministic. Aim for >80% coverage.
 OUTPUT: Well-structured test files with clear descriptions, comprehensive coverage, and good test data.""",
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "reasoning_chain"],  # Added web (testing framework docs), sequential_thinking (comprehensive coverage planning)
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "reasoning_chain"],  # DeepAgents standard naming
     enable_model_routing=True,
     enable_parallel_tools=True,
     enable_memory=True,  # Remember testing patterns
@@ -462,7 +462,7 @@ DEVOPS_AGENT = AgentTemplate(
 EXPERTISE: CI/CD, Docker, Kubernetes, Terraform, Cloud Infrastructure.
 GOAL: Plan and prepare infrastructure changes or deployment scripts.
 CONSTRAINTS: SAFETY FIRST. You MUST generate the plan and required commands, but DO NOT execute them directly. A human operator will review and approve the generated plan. Define clear rollback procedures.""",
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "reasoning_chain"],  # Added web (cloud docs), sequential_thinking (deployment planning)
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "reasoning_chain"],  # DeepAgents standard naming
     enable_model_routing=False,  # Use consistent powerful model
     enable_parallel_tools=False,  # DevOps must be sequential
     enable_memory=True,  # Remember infrastructure decisions
@@ -489,7 +489,7 @@ EXPERTISE: Code analysis, architecture review, technology evaluation, best pract
 GOAL: Thoroughly investigate and provide well-reasoned recommendations.
 CONSTRAINTS: Cite sources when applicable. Consider trade-offs. Provide actionable insights.
 OUTPUT: Structured analysis with clear recommendations and rationale.""",
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "browser", "reasoning_chain"],  # Added web (docs/APIs), browser (dynamic content scraping), sequential_thinking (systematic research)
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "browser", "reasoning_chain"],  # DeepAgents standard naming
     enable_model_routing=False,  # Use powerful model for deep analysis
     enable_parallel_tools=True,  # Search multiple sources
     enable_memory=True,  # Remember research findings
@@ -517,7 +517,7 @@ EXPERTISE: Clear technical communication, API documentation, user guides, Markdo
 GOAL: Create documentation that is clear, concise, and helpful for the target audience.
 CONSTRAINTS: Use examples liberally. Structure content logically. Maintain consistent tone. Keep it scannable.
 OUTPUT: Well-formatted Markdown documents with code examples and diagrams where appropriate.""",
-    mcp_tools=["file_read", "file_write", "file_list", "web_search", "browser"],  # Added web (documentation best practices), browser (capture screenshots for docs)
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "web_search", "browser"],  # DeepAgents standard naming
     enable_model_routing=True,  # Docs can use cheap models
     enable_parallel_tools=False,
     enable_memory=False,
@@ -944,8 +944,8 @@ OUTPUT:
 - Clear explanation of prompt used
 - Suggestions for variations or improvements if applicable""",
 
-    mcp_tools=["file_write", "reasoning_chain", "memory_store", "memory_recall"],
-    # file_write: Save generated images
+    mcp_tools=["write_file", "reasoning_chain", "memory_store", "memory_recall"],
+    # write_file: Save generated images
     # reasoning_chain: Complex prompt planning
     # memory_store/recall: Learn from successful prompts
 

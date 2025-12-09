@@ -138,14 +138,19 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
     };
   }, []);
 
-  // Complete tool list from backend/tools/native_tools.py and NodeConfigPanel
+  // Complete tool list from backend/tools/native_tools.py with DeepAgents standard naming
+  // See: https://docs.langchain.com/oss/python/deepagents/harness
   const AVAILABLE_TOOLS = [
     { id: 'web_search', name: 'Web Search', description: 'Search the web (DuckDuckGo)', category: 'web' },
     { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch webpage content', category: 'web' },
     { id: 'browser', name: 'Browser Automation', description: 'Advanced web interaction (Playwright)', category: 'web' },
-    { id: 'file_read', name: 'Read Files', description: 'Read file contents', category: 'files' },
-    { id: 'file_write', name: 'Write Files', description: 'Write to files', category: 'files' },
-    { id: 'file_list', name: 'List Files', description: 'List directory contents', category: 'files' },
+    // DeepAgents standard filesystem tools
+    { id: 'read_file', name: 'Read File', description: 'Read file contents with line numbers', category: 'files' },
+    { id: 'write_file', name: 'Write File', description: 'Create new files', category: 'files' },
+    { id: 'ls', name: 'List Directory', description: 'List directory contents with metadata', category: 'files' },
+    { id: 'edit_file', name: 'Edit File', description: 'Exact string replacements in files', category: 'files' },
+    { id: 'glob', name: 'Glob', description: 'Find files matching patterns', category: 'files' },
+    { id: 'grep', name: 'Grep', description: 'Search file contents with regex', category: 'files' },
     { id: 'enable_memory', name: 'Enable Memory', description: 'Capability flag: enables long‑term memory for this agent (persisted via project/workflow store). Not a tool by itself; pair with Store/Recall Memory.', category: 'memory' },
     { id: 'memory_store', name: 'Store Memory', description: 'Save information to the agent\'s long‑term memory store', category: 'memory' },
     { id: 'memory_recall', name: 'Recall Memory', description: 'Retrieve previously stored information from memory', category: 'memory' },
@@ -2625,7 +2630,7 @@ const AgentLoadouts = () => {
 6. Integrate with GitHub for version control operations
 
 Always explain your code changes and provide context for your decisions.`,
-                              mcp_tools: ['file_read', 'file_write', 'file_list'],
+                              mcp_tools: ['read_file', 'write_file', 'ls', 'edit_file', 'glob', 'grep'],
                               enable_memory: true,
                               enable_rag: false,
                               enable_model_routing: false,
@@ -2739,7 +2744,7 @@ Always provide balanced perspectives and acknowledge uncertainties when appropri
 6. Provide clear test documentation and assertions
 
 Focus on writing maintainable, reliable tests that catch real issues.`,
-                              mcp_tools: ['file_read', 'file_write', 'file_list'],
+                              mcp_tools: ['read_file', 'write_file', 'ls', 'edit_file', 'glob', 'grep'],
                               enable_memory: true,
                               enable_rag: false,
                               enable_model_routing: false,

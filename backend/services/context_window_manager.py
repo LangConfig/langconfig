@@ -515,16 +515,16 @@ class DynamicToolLoadout:
         self.category_mappings = category_mappings or self._default_mappings()
 
     def _default_mappings(self) -> Dict[str, List[str]]:
-        """Default keyword to tool category mappings"""
+        """Default keyword to tool category mappings (DeepAgents standard naming)"""
         return {
-            "code": ["file_read", "file_write", "search_code", "run_command"],
-            "file": ["file_read", "file_write", "list_directory", "search_files"],
-            "web": ["web_search", "url_fetch", "browser"],
+            "code": ["read_file", "write_file", "edit_file", "grep", "glob", "run_command"],
+            "file": ["read_file", "write_file", "ls", "glob", "grep"],
+            "web": ["web_search", "web_fetch", "browser"],
             "database": ["sql_query", "database_schema"],
             "deploy": ["run_command", "docker", "kubernetes"],
             "test": ["run_tests", "run_command"],
-            "document": ["file_read", "file_write", "search_files"],
-            "research": ["web_search", "url_fetch", "calculator"],
+            "document": ["read_file", "write_file", "glob"],
+            "research": ["web_search", "web_fetch", "calculator"],
         }
 
     def select_tools(

@@ -41,9 +41,12 @@ AVAILABLE TOOLS:
 - web_search: Search the web using DuckDuckGo (free, no API key required)
 - web_fetch: Fetch content from URLs
 - browser: Advanced browser automation with Playwright
-- file_read: Read files from the filesystem
-- file_write: Write files to the filesystem
-- file_list: List files in directories
+- read_file: Read file contents with line numbers
+- write_file: Create new files
+- ls: List directory contents with metadata
+- edit_file: Perform exact string replacements in files
+- glob: Find files matching patterns
+- grep: Search file contents with regex
 - memory_store: Store information for long-term recall
 - memory_recall: Retrieve previously stored information
 - reasoning_chain: Break down complex problems into steps
@@ -65,14 +68,17 @@ BEST PRACTICES:
 
 OUTPUT: Clear, well-structured responses with source citations when applicable.""",
     
-    # All Available Tools
+    # All Available Tools (DeepAgents standard naming)
     mcp_tools=[
         "web_search",
         "web_fetch",
         "browser",
-        "file_read",
-        "file_write",
-        "file_list",
+        "read_file",
+        "write_file",
+        "ls",
+        "edit_file",
+        "glob",
+        "grep",
         "memory_store",
         "memory_recall",
         "reasoning_chain"

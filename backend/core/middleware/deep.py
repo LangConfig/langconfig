@@ -218,12 +218,14 @@ class FilesystemMiddleware:
         """Create filesystem tools from MCP manager."""
         tools = []
 
-        # Load filesystem tools using native tools
+        # Load all filesystem tools (DeepAgents standard)
+        # See: https://docs.langchain.com/oss/python/deepagents/harness
         try:
             from core.agents.factory import AgentFactory
-            fs_tools = await AgentFactory._load_native_tools(["filesystem"])
+            from tools.native_tools import FILESYSTEM_TOOLS
+            fs_tools = await AgentFactory._load_native_tools(FILESYSTEM_TOOLS)
             tools.extend(fs_tools)
-            logger.info(f"Loaded {len(fs_tools)} filesystem tools")
+            logger.info(f"Loaded {len(fs_tools)} filesystem tools: {FILESYSTEM_TOOLS}")
         except Exception as e:
             logger.error(f"Error loading filesystem tools: {e}")
 

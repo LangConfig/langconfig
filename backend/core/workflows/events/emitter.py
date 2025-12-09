@@ -741,8 +741,9 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             output_preview = "[Output could not be processed]"
             full_output = output_preview
 
-        # For file_write tool, include the full output (it contains the written content)
-        include_full_output = tool_name in ['file_write', 'write_file', 'task', 'delegate']
+        # For write_file tool, include the full output (it contains the written content)
+        # Supports both new standard naming (write_file) and legacy aliases (file_write)
+        include_full_output = tool_name in ['write_file', 'file_write', 'task', 'delegate']
 
         # Get subagent context for tools used within subagent execution
         subagent_context = self._get_subagent_context_for_run(run_id, parent_run_id)
@@ -805,14 +806,15 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
 
         # Enhanced error messaging for common tool validation errors
         # This helps the LLM understand what went wrong and how to fix it
-        if error_type == "ValidationError" and "file_write" in error_message:
+        # Support both new (write_file) and legacy (file_write) tool names
+        if error_type == "ValidationError" and ("write_file" in error_message or "file_write" in error_message):
             if "content" in error_message and "Field required" in error_message:
                 error_message = (
-                    "file_write tool validation error: You must provide BOTH file_path AND content parameters. "
-                    "You called file_write with only file_path but forgot to include the content parameter. "
-                    "Please call file_write again with BOTH parameters: "
-                    "file_write(file_path='...', content='your full file content here'). "
-                    "Wait until you have the complete content ready before calling file_write."
+                    "write_file tool validation error: You must provide BOTH file_path AND content parameters. "
+                    "You called write_file with only file_path but forgot to include the content parameter. "
+                    "Please call write_file again with BOTH parameters: "
+                    "write_file(file_path='...', content='your full file content here'). "
+                    "Wait until you have the complete content ready before calling write_file."
                 )
 
         logger.error(f"[TOOL ERROR] {error_type}: {error_message} (run_id={run_id})")

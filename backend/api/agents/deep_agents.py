@@ -70,6 +70,8 @@ class DeepAgentResponse(BaseModel):
     chat_sessions_count: Optional[int] = 0  # Number of chat sessions for this agent
     created_at: str
     updated_at: str
+    # Always true for DeepAgents - helps frontend identify this as a DeepAgent
+    use_deepagents: bool = True
 
     class Config:
         from_attributes = True

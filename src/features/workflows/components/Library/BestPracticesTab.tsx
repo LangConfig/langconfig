@@ -86,7 +86,7 @@ code_agent = Agent(
     name="Code Agent",
     system_prompt="You are a Python developer. Write clean,
     tested code following best practices.",
-    tools=["file_read", "file_write", "code_execution"]
+    tools=["read_file", "write_file", "code_execution"]
 )
 
 # Combine in a workflow

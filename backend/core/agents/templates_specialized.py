@@ -67,7 +67,7 @@ DESIGN DELIVERABLES:
 
 OUTPUT: Complete workflow specification with architecture docs.""",
 
-    mcp_tools=["reasoning_chain", "memory_store", "file_read", "file_write", "file_list"],
+    mcp_tools=["reasoning_chain", "memory_store", "read_file", "write_file", "ls", "edit_file", "glob", "grep"],
 
     enable_model_routing=False,  # Always use best model for architecture
     enable_parallel_tools=False,  # Architecture is sequential thinking
@@ -125,7 +125,7 @@ METRICS TO TRACK:
 
 OUTPUT: Performance report with metrics, visualizations, and actionable recommendations.""",
 
-    mcp_tools=["memory_store", "reasoning_chain", "file_read", "file_write", "file_list"],
+    mcp_tools=["memory_store", "reasoning_chain", "read_file", "write_file", "ls", "edit_file", "glob", "grep"],
 
     enable_model_routing=True,  # Can use cheaper models for simple queries
     enable_parallel_tools=True,  # Parallel database queries
@@ -188,7 +188,7 @@ DOCUMENT TYPES TO HANDLE:
 
 OUTPUT: Curated knowledge base with metadata, tags, and relationship mappings.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "memory_store", "reasoning_chain", "web_search"],
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "memory_store", "reasoning_chain", "web_search"],
 
     enable_model_routing=True,  # Use cheaper models for simple docs
     enable_parallel_tools=True,  # Process multiple docs in parallel
@@ -247,7 +247,7 @@ DOCUMENTATION STANDARDS:
 
 OUTPUT: Publication-ready markdown documentation with diagrams and examples.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "memory_store", "reasoning_chain"],
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "memory_store", "reasoning_chain"],
 
     enable_model_routing=False,  # Quality writing needs best models
     enable_parallel_tools=True,  # Can process multiple files in parallel
@@ -309,7 +309,7 @@ TEST PATTERNS FOR LangConfig:
 
 OUTPUT: Complete test suites with fixtures, comprehensive coverage, and CI integration.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "memory_store", "reasoning_chain"],
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "memory_store", "reasoning_chain"],
 
     enable_model_routing=True,
     enable_parallel_tools=True,  # Generate multiple test files in parallel
@@ -371,7 +371,7 @@ INFRASTRUCTURE PATTERNS:
 
 OUTPUT: Production-ready Kubernetes manifests, Dockerfiles, and deployment documentation.""",
 
-    mcp_tools=["file_read", "file_write", "file_list", "memory_store", "reasoning_chain"],
+    mcp_tools=["read_file", "write_file", "ls", "edit_file", "glob", "grep", "memory_store", "reasoning_chain"],
 
     enable_model_routing=True,
     enable_parallel_tools=True,

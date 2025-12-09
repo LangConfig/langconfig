@@ -34,6 +34,47 @@ class FileInfo(BaseModel):
     extension: str
 
 
+class FileInfoWithContext(FileInfo):
+    """File info with project/workflow/task context"""
+    project_id: int | None = None
+    workflow_id: int | None = None
+    task_id: int | None = None
+    full_path: str | None = None
+
+
+class RenameFileRequest(BaseModel):
+    """Request to rename a file"""
+    new_name: str
+
+
+class FileContentResponse(BaseModel):
+    """Response with file content for preview"""
+    filename: str
+    content: str | None
+    mime_type: str
+    is_binary: bool
+    truncated: bool
+    size_bytes: int
+
+
+class AllFilesResponse(BaseModel):
+    """Response with list of all files across workspace"""
+    files: List[FileInfoWithContext]
+    total_files: int
+
+
+class BulkDeleteRequest(BaseModel):
+    """Request to delete multiple files"""
+    files: List[dict]  # [{ "task_id": 1, "filename": "x.md" }]
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response from bulk delete operation"""
+    deleted: int
+    failed: int
+    errors: List[str]
+
+
 class WorkspaceFilesResponse(BaseModel):
     """Response with list of files in a task's workspace"""
     task_id: int
@@ -174,3 +215,304 @@ async def list_workflow_files(
         "total_files": len(all_files),
         "total_tasks": len(tasks)
     }
+
+
+# =============================================================================
+# File Content & Preview
+# =============================================================================
+
+@router.get("/tasks/{task_id}/files/{filename}/content", response_model=FileContentResponse)
+async def get_file_content(
+    task_id: int,
+    filename: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get file content for preview.
+
+    Returns text content for text files, or binary indicator for non-text files.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    workspace_mgr = get_workspace_manager()
+
+    content_data = workspace_mgr.get_file_content(
+        project_id=task.project_id,
+        workflow_id=task.workflow_id,
+        task_id=task.id,
+        filename=filename
+    )
+
+    if not content_data:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileContentResponse(
+        filename=filename,
+        content=content_data.get("content"),
+        mime_type=content_data.get("mime_type", "text/plain"),
+        is_binary=content_data.get("is_binary", False),
+        truncated=content_data.get("truncated", False),
+        size_bytes=content_data.get("size_bytes", 0)
+    )
+
+
+# =============================================================================
+# Rename & Delete
+# =============================================================================
+
+@router.put("/tasks/{task_id}/files/{filename}")
+async def rename_file(
+    task_id: int,
+    filename: str,
+    request: RenameFileRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Rename a file in task workspace.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.rename_file(
+        project_id=task.project_id,
+        workflow_id=task.workflow_id,
+        task_id=task.id,
+        old_name=filename,
+        new_name=request.new_name
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not rename file. It may not exist, or target name already exists."
+        )
+
+    logger.info(f"Renamed file in task {task_id}: {filename} -> {request.new_name}")
+
+    return {
+        "status": "success",
+        "old_name": filename,
+        "new_name": request.new_name
+    }
+
+
+@router.delete("/tasks/{task_id}/files/{filename}")
+async def delete_file(
+    task_id: int,
+    filename: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a file from task workspace.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.delete_file(
+        project_id=task.project_id,
+        workflow_id=task.workflow_id,
+        task_id=task.id,
+        filename=filename
+    )
+
+    if not success:
+        raise HTTPException(status_code=404, detail="File not found or could not be deleted")
+
+    logger.info(f"Deleted file from task {task_id}: {filename}")
+
+    return {"status": "success", "filename": filename}
+
+
+# =============================================================================
+# All Files (for Library)
+# =============================================================================
+
+@router.get("/files", response_model=AllFilesResponse)
+async def list_all_files(
+    project_id: int | None = None,
+    workflow_id: int | None = None,
+    search: str | None = None,
+    file_type: str | None = None,
+    db: Session = Depends(get_db)
+):
+    """
+    List all files across workspace.
+
+    Use for Library Files browser. Supports filtering by project, workflow,
+    search term, and file type.
+    """
+    workspace_mgr = get_workspace_manager()
+
+    files = workspace_mgr.list_all_files(
+        project_id=project_id,
+        workflow_id=workflow_id,
+        search=search,
+        file_type=file_type
+    )
+
+    return AllFilesResponse(
+        files=files,
+        total_files=len(files)
+    )
+
+
+@router.post("/files/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_delete_files(
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete multiple files at once.
+
+    Request body: { "files": [{ "task_id": 1, "filename": "x.md" }, ...] }
+    For default files, task_id should be null/None.
+    """
+    workspace_mgr = get_workspace_manager()
+    deleted = 0
+    failed = 0
+    errors = []
+
+    for file_info in request.files:
+        task_id = file_info.get("task_id")
+        filename = file_info.get("filename")
+
+        if not filename:
+            failed += 1
+            errors.append(f"Invalid file info: {file_info}")
+            continue
+
+        # Handle default files (no task_id)
+        if task_id is None:
+            success = workspace_mgr.delete_default_file(filename)
+            if success:
+                deleted += 1
+            else:
+                failed += 1
+                errors.append(f"Could not delete default file {filename}")
+            continue
+
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            failed += 1
+            errors.append(f"Task {task_id} not found")
+            continue
+
+        success = workspace_mgr.delete_file(
+            project_id=task.project_id,
+            workflow_id=task.workflow_id,
+            task_id=task.id,
+            filename=filename
+        )
+
+        if success:
+            deleted += 1
+        else:
+            failed += 1
+            errors.append(f"Could not delete {filename} from task {task_id}")
+
+    logger.info(f"Bulk delete: {deleted} deleted, {failed} failed")
+
+    return BulkDeleteResponse(
+        deleted=deleted,
+        failed=failed,
+        errors=errors
+    )
+
+
+# =============================================================================
+# Default Folder Files (standalone/chat execution outputs)
+# =============================================================================
+
+@router.get("/default/files")
+async def list_default_files():
+    """
+    List all files in the default workspace.
+
+    These are files created during standalone/chat execution (no workflow context).
+    """
+    workspace_mgr = get_workspace_manager()
+    files = workspace_mgr.list_default_files()
+
+    return {
+        "files": files,
+        "total_files": len(files)
+    }
+
+
+@router.get("/default/files/{filename}")
+async def download_default_file(filename: str):
+    """Download a file from the default workspace."""
+    from fastapi.responses import FileResponse
+
+    workspace_mgr = get_workspace_manager()
+    file_path = workspace_mgr.get_default_file_path(filename)
+
+    if not file_path:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(
+        file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
+
+
+@router.get("/default/files/{filename}/content", response_model=FileContentResponse)
+async def get_default_file_content(filename: str):
+    """Get content of a file in the default workspace for preview."""
+    workspace_mgr = get_workspace_manager()
+
+    content_data = workspace_mgr.get_default_file_content(filename)
+
+    if not content_data:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileContentResponse(
+        filename=filename,
+        content=content_data.get("content"),
+        mime_type=content_data.get("mime_type", "text/plain"),
+        is_binary=content_data.get("is_binary", False),
+        truncated=content_data.get("truncated", False),
+        size_bytes=content_data.get("size_bytes", 0)
+    )
+
+
+@router.put("/default/files/{filename}")
+async def rename_default_file(filename: str, request: RenameFileRequest):
+    """Rename a file in the default workspace."""
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.rename_default_file(filename, request.new_name)
+
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not rename file. It may not exist, or target name already exists."
+        )
+
+    return {
+        "status": "success",
+        "old_name": filename,
+        "new_name": request.new_name
+    }
+
+
+@router.delete("/default/files/{filename}")
+async def delete_default_file(filename: str):
+    """Delete a file from the default workspace."""
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.delete_default_file(filename)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="File not found or could not be deleted")
+
+    return {"status": "success", "filename": filename}

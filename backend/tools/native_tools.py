@@ -64,11 +64,19 @@ TOOL_NAME_MAP = {
     "browser_extract": "browser_extract",
     "browser_screenshot": "browser_screenshot",
 
-    # File tools
-    "filesystem": "file_read",
-    "file_read": "file_read",
-    "file_write": "file_write",
-    "file_list": "file_list",
+    # Filesystem tools (DeepAgents standard naming)
+    # See: https://docs.langchain.com/oss/python/deepagents/harness
+    "filesystem": "read_file",
+    "ls": "ls",
+    "read_file": "read_file",
+    "write_file": "write_file",
+    "edit_file": "edit_file",
+    "glob": "glob",
+    "grep": "grep",
+    # Backwards compatibility aliases (LangConfig legacy naming)
+    "file_read": "read_file",
+    "file_write": "write_file",
+    "file_list": "ls",
 
     # Memory tools (uses existing PostgreSQL)
     "memory": "memory_store",
@@ -345,25 +353,30 @@ async def load_playwright_tools() -> List[StructuredTool]:
 
 
 # =============================================================================
-# File System Tools (Safe, sandboxed operations)
+# File System Tools (DeepAgents standard naming)
+# See: https://docs.langchain.com/oss/python/deepagents/harness
 # =============================================================================
 
 @tool
-def file_read(file_path: str, max_chars: int = 50000) -> str:
+def read_file(file_path: str, offset: int = 0, limit: int = None, max_chars: int = 50000) -> str:
     """
-    Read the contents of a file.
+    Read the contents of a file with optional line offset and limit.
 
     Supports text files including .txt, .md, .py, .json, etc.
+    Returns content with line numbers for easy reference.
 
     Args:
         file_path: Path to the file to read
+        offset: Line number to start reading from (0-indexed, default: 0)
+        limit: Maximum number of lines to read (default: None for all lines)
         max_chars: Maximum characters to read (default: 50000)
 
     Returns:
-        File contents as string
+        File contents with line numbers
 
     Example:
-        >>> file_read("C:/Users/User/Documents/notes.txt")
+        >>> read_file("src/main.py")
+        >>> read_file("logs/app.log", offset=100, limit=50)
     """
     try:
         path = Path(file_path).resolve()
@@ -375,12 +388,24 @@ def file_read(file_path: str, max_chars: int = 50000) -> str:
             return f"Error: Path is not a file: {file_path}"
 
         content = path.read_text(encoding="utf-8")
+        lines = content.split('\n')
 
-        if len(content) > max_chars:
-            content = content[:max_chars] + f"\n\n[Truncated - file is {len(content)} characters]"
+        # Apply offset and limit
+        if offset > 0:
+            lines = lines[offset:]
+        if limit is not None:
+            lines = lines[:limit]
 
-        logger.info(f"Read file: {file_path} ({len(content)} chars)")
-        return content
+        # Add line numbers
+        start_line = offset + 1
+        numbered_lines = [f"{start_line + i:4d}| {line}" for i, line in enumerate(lines)]
+        result = '\n'.join(numbered_lines)
+
+        if len(result) > max_chars:
+            result = result[:max_chars] + f"\n\n[Truncated - content exceeds {max_chars} characters]"
+
+        logger.info(f"Read file: {file_path} ({len(lines)} lines)")
+        return result
 
     except UnicodeDecodeError:
         return f"Error: File is not a text file or uses unsupported encoding"
@@ -388,9 +413,12 @@ def file_read(file_path: str, max_chars: int = 50000) -> str:
         logger.error(f"Error reading file {file_path}: {e}")
         return f"Error reading file: {str(e)}"
 
+# Backwards compatibility alias
+file_read = read_file
 
-def _file_write_impl(file_path: str, content: str, _workspace_context: dict = None) -> str:
-    """Implementation of file_write tool with workspace-aware file storage"""
+
+def _write_file_impl(file_path: str, content: str, _workspace_context: dict = None) -> str:
+    """Implementation of write_file tool with workspace-aware file storage"""
     try:
         # SECURITY: Sanitize file path to prevent dangerous directory creation
         # Extract just the filename, stripping ALL directory components
@@ -445,73 +473,88 @@ def _file_write_impl(file_path: str, content: str, _workspace_context: dict = No
         logger.error(f"Error writing file {file_path}: {e}")
         return f"Error writing file: {str(e)}"
 
-def _file_write_error_handler(error: Exception) -> str:
-    """Custom error handler for file_write validation errors"""
+def _write_file_error_handler(error: Exception) -> str:
+    """Custom error handler for write_file validation errors"""
     error_str = str(error)
 
     # Check if this is a Pydantic validation error for missing content
     if "ValidationError" in str(type(error)) and "content" in error_str and "Field required" in error_str:
         return (
-            "ERROR: file_write requires BOTH file_path AND content parameters. "
-            "You called file_write with only file_path='...' but DID NOT provide the content parameter. "
-            "This is wrong. You MUST call file_write with BOTH parameters like this: "
-            "file_write(file_path='your_file.md', content='your complete file content here'). "
-            "Do NOT call file_write until you have the full content ready to write. "
-            "Generate the full content first, then call file_write with both parameters."
+            "ERROR: write_file requires BOTH file_path AND content parameters. "
+            "You called write_file with only file_path='...' but DID NOT provide the content parameter. "
+            "This is wrong. You MUST call write_file with BOTH parameters like this: "
+            "write_file(file_path='your_file.md', content='your complete file content here'). "
+            "Do NOT call write_file until you have the full content ready to write. "
+            "Generate the full content first, then call write_file with both parameters."
         )
 
     # For other errors, return the original error message
-    return f"file_write error: {error_str}"
+    return f"write_file error: {error_str}"
 
 # Create the tool with custom error handling
 from langchain_core.tools import StructuredTool
 
-file_write = StructuredTool.from_function(
-    func=_file_write_impl,
-    name="file_write",
-    description="""Write content to a file.
+write_file = StructuredTool.from_function(
+    func=_write_file_impl,
+    name="write_file",
+    description="""Create a new file with the provided content.
 
 Creates the file if it doesn't exist, overwrites if it does.
+Files are saved to the workflow's organized output directory.
+
+FILE LOCATION: Files you create are automatically saved to an organized workspace:
+- outputs/project_{id}/workflow_{id}/task_{id}/ - for workflow executions
+- outputs/default/ - for standalone/chat executions
+Users can view, preview, download, and manage these files from the "Files" tab.
 
 CRITICAL: Both parameters are REQUIRED and MUST be provided:
-- file_path (str): The path where to write the file
+- file_path (str): The filename to create (directory path is ignored for security)
 - content (str): The complete content to write to the file
 
 You MUST provide both file_path AND content when calling this tool.
 Do NOT call this tool without the content parameter.
-If you don't have the content ready, wait until you do before calling file_write.
+If you don't have the content ready, wait until you do before calling write_file.
+
+Best practices for filenames:
+- Use descriptive names (e.g., "quarterly_report.md" not "output.txt")
+- Common formats: .md (reports), .json (data), .csv (tables), .py (code)
+- The user will see these files in the UI with preview and download options
 
 Args:
-    file_path: Path where to write the file (relative or absolute)
+    file_path: Filename to create (directory path is ignored for security)
     content: Complete text content to write to the file
 
 Returns:
     Success message with file path and character count
 
 Example:
-    >>> file_write(
-    ...     file_path="report.md",
+    >>> write_file(
+    ...     file_path="research_report.md",
     ...     content="# Research Report\\n\\nThis is the full content..."
     ... )""",
-    handle_tool_error=_file_write_error_handler
+    handle_tool_error=_write_file_error_handler
 )
+
+# Backwards compatibility alias
+file_write = write_file
 
 
 @tool
-def file_list(directory_path: str, pattern: str = "*") -> str:
+def ls(directory_path: str = ".") -> str:
     """
-    List files in a directory.
+    List directory contents with metadata.
+
+    Shows files and directories with their types and sizes.
 
     Args:
-        directory_path: Path to the directory
-        pattern: Glob pattern for filtering (default: "*" for all files)
+        directory_path: Path to the directory (default: current directory)
 
     Returns:
-        List of files matching the pattern
+        Formatted list of directory contents with metadata
 
     Example:
-        >>> file_list("C:/Users/User/Documents")
-        >>> file_list("C:/Users/User/Documents", "*.txt")
+        >>> ls()
+        >>> ls("/home/user/projects")
     """
     try:
         path = Path(directory_path).resolve()
@@ -522,22 +565,213 @@ def file_list(directory_path: str, pattern: str = "*") -> str:
         if not path.is_dir():
             return f"Error: Path is not a directory: {directory_path}"
 
-        files = list(path.glob(pattern))
+        entries = list(path.iterdir())
 
-        if not files:
-            return f"No files found matching pattern '{pattern}' in {directory_path}"
+        if not entries:
+            return f"Empty directory: {directory_path}"
 
-        file_list_str = "\n".join([
-            f"{'[DIR]' if f.is_dir() else '[FILE]'} {f.name}"
-            for f in sorted(files)
-        ])
+        # Format with metadata
+        lines = []
+        for entry in sorted(entries, key=lambda x: (not x.is_dir(), x.name.lower())):
+            if entry.is_dir():
+                lines.append(f"[DIR]  {entry.name}/")
+            else:
+                size = entry.stat().st_size
+                if size < 1024:
+                    size_str = f"{size}B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f}KB"
+                else:
+                    size_str = f"{size / (1024 * 1024):.1f}MB"
+                lines.append(f"[FILE] {entry.name} ({size_str})")
 
-        logger.info(f"Listed {len(files)} files in {directory_path}")
-        return file_list_str
+        logger.info(f"Listed {len(entries)} entries in {directory_path}")
+        return "\n".join(lines)
 
     except Exception as e:
         logger.error(f"Error listing directory {directory_path}: {e}")
         return f"Error listing directory: {str(e)}"
+
+# Backwards compatibility alias
+file_list = ls
+
+
+@tool
+def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+    """
+    Perform exact string replacement in a file.
+
+    Finds the old_string in the file and replaces it with new_string.
+    The old_string must be unique in the file to avoid ambiguous edits.
+
+    Args:
+        file_path: Path to the file to edit
+        old_string: The exact string to find and replace
+        new_string: The string to replace it with
+
+    Returns:
+        Success message or error if old_string not found/not unique
+
+    Example:
+        >>> edit_file("config.py", "DEBUG = False", "DEBUG = True")
+    """
+    try:
+        path = Path(file_path).resolve()
+
+        if not path.exists():
+            return f"Error: File not found: {file_path}"
+
+        if not path.is_file():
+            return f"Error: Path is not a file: {file_path}"
+
+        content = path.read_text(encoding="utf-8")
+
+        # Check if old_string exists and is unique
+        count = content.count(old_string)
+        if count == 0:
+            return f"Error: String not found in file: '{old_string[:50]}...'"
+        if count > 1:
+            return f"Error: String found {count} times. Must be unique for safe replacement."
+
+        # Perform replacement
+        new_content = content.replace(old_string, new_string, 1)
+        path.write_text(new_content, encoding="utf-8")
+
+        logger.info(f"Edited file: {file_path}")
+        return f"Successfully replaced string in {path.name}"
+
+    except UnicodeDecodeError:
+        return f"Error: File is not a text file or uses unsupported encoding"
+    except Exception as e:
+        logger.error(f"Error editing file {file_path}: {e}")
+        return f"Error editing file: {str(e)}"
+
+
+@tool
+def glob(pattern: str, path: str = ".") -> str:
+    """
+    Find files matching a glob pattern.
+
+    Supports patterns like "**/*.py" (all Python files) or "src/*.ts" (TypeScript in src).
+
+    Args:
+        pattern: Glob pattern to match (e.g., "**/*.py", "*.md", "src/**/*.tsx")
+        path: Base directory to search from (default: current directory)
+
+    Returns:
+        List of matching file paths
+
+    Example:
+        >>> glob("**/*.py")
+        >>> glob("*.md", path="/docs")
+        >>> glob("src/**/*.tsx")
+    """
+    try:
+        base_path = Path(path).resolve()
+
+        if not base_path.exists():
+            return f"Error: Path not found: {path}"
+
+        matches = list(base_path.glob(pattern))
+
+        if not matches:
+            return f"No files found matching pattern '{pattern}' in {path}"
+
+        # Format results with relative paths
+        result_lines = []
+        for match in sorted(matches):
+            try:
+                rel_path = match.relative_to(base_path)
+                result_lines.append(str(rel_path))
+            except ValueError:
+                result_lines.append(str(match))
+
+        logger.info(f"Glob '{pattern}' found {len(matches)} files")
+        return "\n".join(result_lines)
+
+    except Exception as e:
+        logger.error(f"Error with glob pattern {pattern}: {e}")
+        return f"Error searching for files: {str(e)}"
+
+
+@tool
+def grep(pattern: str, path: str = ".", file_pattern: str = None) -> str:
+    """
+    Search file contents for a regex pattern.
+
+    Searches through files and returns matching lines with context.
+
+    Args:
+        pattern: Regular expression pattern to search for
+        path: File or directory to search (default: current directory)
+        file_pattern: Optional glob pattern to filter files (e.g., "*.py")
+
+    Returns:
+        Matching lines with file paths and line numbers
+
+    Example:
+        >>> grep("def main", path="src/")
+        >>> grep("TODO", file_pattern="*.py")
+        >>> grep("import.*requests", path=".", file_pattern="*.py")
+    """
+    import re
+
+    try:
+        base_path = Path(path).resolve()
+
+        if not base_path.exists():
+            return f"Error: Path not found: {path}"
+
+        # Compile regex
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error as e:
+            return f"Error: Invalid regex pattern: {e}"
+
+        results = []
+
+        # Determine files to search
+        if base_path.is_file():
+            files_to_search = [base_path]
+        else:
+            glob_pattern = file_pattern or "**/*"
+            files_to_search = [f for f in base_path.glob(glob_pattern) if f.is_file()]
+
+        # Search through files
+        for file_path in files_to_search:
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                lines = content.split('\n')
+
+                for i, line in enumerate(lines, 1):
+                    if regex.search(line):
+                        try:
+                            rel_path = file_path.relative_to(base_path)
+                        except ValueError:
+                            rel_path = file_path.name
+                        results.append(f"{rel_path}:{i}: {line.strip()}")
+
+            except (UnicodeDecodeError, PermissionError):
+                # Skip binary files or files we can't read
+                continue
+
+        if not results:
+            return f"No matches found for pattern '{pattern}'"
+
+        # Limit results to prevent huge outputs
+        max_results = 100
+        if len(results) > max_results:
+            output = "\n".join(results[:max_results])
+            output += f"\n\n... and {len(results) - max_results} more matches"
+        else:
+            output = "\n".join(results)
+
+        logger.info(f"Grep '{pattern}' found {len(results)} matches")
+        return output
+
+    except Exception as e:
+        logger.error(f"Error searching with pattern {pattern}: {e}")
+        return f"Error searching: {str(e)}"
 
 
 # =============================================================================
@@ -658,15 +892,27 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
 
     logger.info(f"Loading native tools: {tool_names}")
 
-    # Available tools registry
+    # Available tools registry (DeepAgents standard naming)
+    # See: https://docs.langchain.com/oss/python/deepagents/harness
     available_tools = {
+        # Web tools
         "web_search": web_search,
         "web_fetch": web_fetch,
-        "file_read": file_read,
-        "file_write": file_write,
-        "file_list": file_list,
+        # Filesystem tools (DeepAgents standard)
+        "ls": ls,
+        "read_file": read_file,
+        "write_file": write_file,
+        "edit_file": edit_file,
+        "glob": glob,
+        "grep": grep,
+        # Backwards compatibility aliases
+        "file_read": read_file,
+        "file_write": write_file,
+        "file_list": ls,
+        # Memory tools
         "memory_store": memory_store,
         "memory_recall": memory_recall,
+        # Reasoning tools
         "reasoning_chain": reasoning_chain,
         # Note: Playwright tools are loaded separately via get_playwright_tools()
         # because they require async initialization
@@ -707,18 +953,32 @@ def get_available_tool_names() -> List[str]:
     Get list of all available native tool names.
 
     Useful for frontend UI to display available tools.
+    Uses DeepAgents standard naming.
+
+    See: https://docs.langchain.com/oss/python/deepagents/harness
 
     Returns:
         List of tool names that can be loaded
     """
     return [
+        # Web tools
         "web_search",
         "web_fetch",
         "browser",  # Playwright browser toolkit (advanced web interaction)
-        "file_read",
-        "file_write",
-        "file_list",
+        # Filesystem tools (DeepAgents standard)
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "glob",
+        "grep",
+        # Memory tools
         "memory_store",
         "memory_recall",
+        # Reasoning tools
         "reasoning_chain",
     ]
+
+
+# Registry of filesystem tools for DeepAgents harness
+FILESYSTEM_TOOLS = ["ls", "read_file", "write_file", "edit_file", "glob", "grep"]

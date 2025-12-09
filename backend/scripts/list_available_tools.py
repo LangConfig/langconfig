@@ -12,13 +12,17 @@ This script lists all available tools that agents can use.
 """
 
 # Hardcoded list since imports may fail
+# DeepAgents standard filesystem tool names
 AVAILABLE_TOOLS = [
     "web_search",
     "web_fetch",
     "browser",
-    "file_read",
-    "file_write",
-    "file_list",
+    "read_file",
+    "write_file",
+    "ls",
+    "edit_file",
+    "glob",
+    "grep",
     "memory_store",
     "memory_recall",
     "reasoning_chain",
@@ -27,11 +31,15 @@ AVAILABLE_TOOLS = [
 TOOL_NAME_MAP = {
     "web": "web_search",
     "fetch": "web_fetch",
-    "filesystem": "file_read",
+    "filesystem": "read_file",
     "memory": "memory_store",
     "sequential_thinking": "reasoning_chain",
     "thinking": "reasoning_chain",
     "reasoning": "reasoning_chain",
+    # Legacy aliases for backwards compatibility
+    "file_read": "read_file",
+    "file_write": "write_file",
+    "file_list": "ls",
 }
 
 def main():
@@ -74,9 +82,12 @@ def main():
         "web_search": "Search the web using DuckDuckGo (FREE, no API key)",
         "web_fetch": "Fetch webpage content via HTTP",
         "browser": "Playwright browser automation (navigate, click, extract)",
-        "file_read": "Read files from the filesystem",
-        "file_write": "Write files to the filesystem",
-        "file_list": "List files in a directory",
+        "read_file": "Read file contents with line numbers",
+        "write_file": "Create new files",
+        "ls": "List directory contents with metadata",
+        "edit_file": "Perform exact string replacements in files",
+        "glob": "Find files matching patterns",
+        "grep": "Search file contents with regex",
         "memory_store": "Store information in PostgreSQL for long-term memory",
         "memory_recall": "Recall information from PostgreSQL memory",
         "reasoning_chain": "Structured reasoning and task decomposition"

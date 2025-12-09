@@ -19,11 +19,14 @@
  * - Close/minimize to monitoring panel
  */
 
-import { useState, useEffect } from 'react';
-import { X, Minimize2, Download, Copy, Check, Activity, BarChart3, FileText, Eye, FileText as FileIcon, FolderOpen } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Minimize2, Download, Copy, Check, Activity, BarChart3, FileText, Eye, FileText as FileIcon, FolderOpen, Trash2, Edit3, Search, ArrowUpDown, ClipboardCopy } from 'lucide-react';
 import FormattedOutputViewer, { FormattedOutput } from './output/FormattedOutputViewer';
 import { WorkflowEvent } from '../types/events';
 import ExecutionEventLog from './ExecutionEventLog';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface WorkflowResultsModalProps {
   isOpen: boolean;
@@ -62,7 +65,69 @@ interface TaskFile {
   size_human: string;
   modified_at: string;
   extension: string;
+  task_id?: number;
 }
+
+interface FileContent {
+  filename: string;
+  content: string | null;
+  mime_type: string;
+  is_binary: boolean;
+  truncated: boolean;
+  size_bytes: number;
+}
+
+// File type icons
+const getFileIcon = (extension: string): string => {
+  const ext = extension.toLowerCase().replace('.', '');
+  const icons: Record<string, string> = {
+    md: '📝',
+    txt: '📄',
+    json: '📊',
+    csv: '📊',
+    py: '🐍',
+    js: '💛',
+    ts: '💙',
+    tsx: '💙',
+    jsx: '💛',
+    html: '🌐',
+    css: '🎨',
+    sql: '🗃️',
+    yaml: '⚙️',
+    yml: '⚙️',
+    xml: '📋',
+    log: '📜',
+    pdf: '📕',
+    png: '🖼️',
+    jpg: '🖼️',
+    jpeg: '🖼️',
+    gif: '🖼️',
+    svg: '🎨',
+  };
+  return icons[ext] || '📄';
+};
+
+// Get language for syntax highlighting
+const getLanguage = (extension: string): string => {
+  const ext = extension.toLowerCase().replace('.', '');
+  const languages: Record<string, string> = {
+    py: 'python',
+    js: 'javascript',
+    ts: 'typescript',
+    tsx: 'tsx',
+    jsx: 'jsx',
+    json: 'json',
+    html: 'html',
+    css: 'css',
+    sql: 'sql',
+    yaml: 'yaml',
+    yml: 'yaml',
+    xml: 'xml',
+    sh: 'bash',
+    bash: 'bash',
+  };
+  return languages[ext] || 'text';
+};
 
 export default function WorkflowResultsModal({
   isOpen,
@@ -81,6 +146,18 @@ export default function WorkflowResultsModal({
   const [files, setFiles] = useState<TaskFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
+
+  // Enhanced Files tab state
+  const [selectedFile, setSelectedFile] = useState<TaskFile | null>(null);
+  const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  const [fileContentLoading, setFileContentLoading] = useState(false);
+  const [fileSearch, setFileSearch] = useState('');
+  const [fileSortBy, setFileSortBy] = useState<'name' | 'date' | 'size'>('date');
+  const [fileSortDesc, setFileSortDesc] = useState(true);
+  const [renamingFile, setRenamingFile] = useState<string | null>(null);
+  const [newFileName, setNewFileName] = useState('');
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
+  const [pathCopied, setPathCopied] = useState(false);
 
   // Fetch files when modal opens and taskId is available
   useEffect(() => {
@@ -115,6 +192,121 @@ export default function WorkflowResultsModal({
     if (!taskId) return;
     window.open(`/api/workspace/tasks/${taskId}/files/${filename}`, '_blank');
   };
+
+  // Fetch file content for preview
+  const fetchFileContent = async (file: TaskFile) => {
+    if (!taskId) return;
+
+    setFileContentLoading(true);
+    try {
+      const response = await fetch(`/api/workspace/tasks/${taskId}/files/${file.filename}/content`);
+      if (!response.ok) throw new Error('Failed to fetch content');
+      const data = await response.json();
+      setFileContent(data);
+    } catch (error) {
+      console.error('Error fetching file content:', error);
+      setFileContent(null);
+    } finally {
+      setFileContentLoading(false);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (file: TaskFile) => {
+    setSelectedFile(file);
+    fetchFileContent(file);
+  };
+
+  // Rename file
+  const handleRenameFile = async (oldName: string, newName: string) => {
+    if (!taskId || !newName.trim()) return;
+
+    try {
+      const response = await fetch(`/api/workspace/tasks/${taskId}/files/${oldName}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_name: newName.trim() })
+      });
+
+      if (!response.ok) throw new Error('Failed to rename file');
+
+      // Refresh file list
+      await fetchFiles();
+      setRenamingFile(null);
+      setNewFileName('');
+
+      // Update selected file if it was renamed
+      if (selectedFile?.filename === oldName) {
+        setSelectedFile(prev => prev ? { ...prev, filename: newName.trim() } : null);
+      }
+    } catch (error) {
+      console.error('Error renaming file:', error);
+      alert('Failed to rename file. The new name may already exist.');
+    }
+  };
+
+  // Delete file
+  const handleDeleteFile = async (filename: string) => {
+    if (!taskId) return;
+
+    try {
+      const response = await fetch(`/api/workspace/tasks/${taskId}/files/${filename}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) throw new Error('Failed to delete file');
+
+      // Refresh file list
+      await fetchFiles();
+      setDeleteConfirmFile(null);
+
+      // Clear selection if deleted file was selected
+      if (selectedFile?.filename === filename) {
+        setSelectedFile(null);
+        setFileContent(null);
+      }
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      alert('Failed to delete file.');
+    }
+  };
+
+  // Copy file path
+  const handleCopyPath = async (path: string) => {
+    await navigator.clipboard.writeText(path);
+    setPathCopied(true);
+    setTimeout(() => setPathCopied(false), 2000);
+  };
+
+  // Filter and sort files
+  const filteredAndSortedFiles = useMemo(() => {
+    let result = [...files];
+
+    // Filter by search
+    if (fileSearch.trim()) {
+      const search = fileSearch.toLowerCase();
+      result = result.filter(f => f.filename.toLowerCase().includes(search));
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (fileSortBy) {
+        case 'name':
+          comparison = a.filename.localeCompare(b.filename);
+          break;
+        case 'date':
+          comparison = new Date(a.modified_at).getTime() - new Date(b.modified_at).getTime();
+          break;
+        case 'size':
+          comparison = a.size_bytes - b.size_bytes;
+          break;
+      }
+      return fileSortDesc ? -comparison : comparison;
+    });
+
+    return result;
+  }, [files, fileSearch, fileSortBy, fileSortDesc]);
 
   if (!isOpen) return null;
 
@@ -423,7 +615,7 @@ export default function WorkflowResultsModal({
           )}
 
           {activeTab === 'files' && (
-            <div className="space-y-4">
+            <div className="h-full">
               {filesLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="text-center">
@@ -459,53 +651,227 @@ export default function WorkflowResultsModal({
                   </p>
                 </div>
               ) : (
-                <>
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600 dark:text-text-muted">
-                      Files created by agents during workflow execution. All files are stored in the workspace directory.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    {files.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                <div className="flex h-[calc(60vh-2rem)] gap-4">
+                  {/* File List Sidebar */}
+                  <div className="w-80 flex flex-col border-r border-gray-200 dark:border-border-dark pr-4">
+                    {/* Search and Sort */}
+                    <div className="flex gap-2 mb-3">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search files..."
+                          value={fileSearch}
+                          onChange={(e) => setFileSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                      </div>
+                      <select
+                        value={`${fileSortBy}-${fileSortDesc ? 'desc' : 'asc'}`}
+                        onChange={(e) => {
+                          const [sort, order] = e.target.value.split('-');
+                          setFileSortBy(sort as 'name' | 'date' | 'size');
+                          setFileSortDesc(order === 'desc');
+                        }}
+                        className="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="p-2 rounded-lg bg-primary/10" style={{ color: 'var(--color-primary)' }}>
-                            <FileIcon className="w-5 h-5" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 dark:text-white truncate">
-                              {file.filename}
-                            </p>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-text-muted mt-1">
-                              <span>{file.size_human}</span>
-                              <span>•</span>
-                              <span>{new Date(file.modified_at).toLocaleString()}</span>
-                              {file.extension && (
-                                <>
-                                  <span>•</span>
-                                  <span className="uppercase">{file.extension.replace('.', '')}</span>
-                                </>
-                              )}
+                        <option value="date-desc">Newest</option>
+                        <option value="date-asc">Oldest</option>
+                        <option value="name-asc">A-Z</option>
+                        <option value="name-desc">Z-A</option>
+                        <option value="size-desc">Largest</option>
+                        <option value="size-asc">Smallest</option>
+                      </select>
+                    </div>
+
+                    {/* File List */}
+                    <div className="flex-1 overflow-y-auto space-y-1">
+                      {filteredAndSortedFiles.map((file, index) => (
+                        <div
+                          key={index}
+                          onClick={() => handleFileSelect(file)}
+                          className={`p-2.5 rounded-lg cursor-pointer transition-colors ${
+                            selectedFile?.filename === file.filename
+                              ? 'bg-primary/10 border border-primary/30'
+                              : 'hover:bg-gray-50 dark:hover:bg-white/5 border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{getFileIcon(file.extension)}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                                {file.filename}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-text-muted">
+                                {file.size_human} • {new Date(file.modified_at).toLocaleDateString()}
+                              </p>
                             </div>
                           </div>
                         </div>
-
-                        <button
-                          onClick={() => handleDownloadFile(file.filename)}
-                          className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-text-muted"
-                          title="Download file"
-                        >
-                          <Download className="w-4 h-4" />
-                          Download
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </>
+
+                  {/* Preview Panel */}
+                  <div className="flex-1 flex flex-col min-w-0">
+                    {selectedFile ? (
+                      <>
+                        {/* File Header */}
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-border-dark mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xl">{getFileIcon(selectedFile.extension)}</span>
+                            {renamingFile === selectedFile.filename ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={newFileName}
+                                  onChange={(e) => setNewFileName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameFile(selectedFile.filename, newFileName);
+                                    if (e.key === 'Escape') { setRenamingFile(null); setNewFileName(''); }
+                                  }}
+                                  autoFocus
+                                  className="px-2 py-1 text-sm rounded border border-gray-300 dark:border-border-dark bg-white dark:bg-panel-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                />
+                                <button
+                                  onClick={() => handleRenameFile(selectedFile.filename, newFileName)}
+                                  className="px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/90"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => { setRenamingFile(null); setNewFileName(''); }}
+                                  className="px-2 py-1 text-xs text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10 rounded"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                                {selectedFile.filename}
+                              </h3>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { setRenamingFile(selectedFile.filename); setNewFileName(selectedFile.filename); }}
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                              title="Rename"
+                            >
+                              <Edit3 className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                            </button>
+                            <button
+                              onClick={() => handleCopyPath(selectedFile.path)}
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                              title="Copy path"
+                            >
+                              {pathCopied ? (
+                                <Check className="w-4 h-4 text-green-600" />
+                              ) : (
+                                <ClipboardCopy className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleDownloadFile(selectedFile.filename)}
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                              title="Download"
+                            >
+                              <Download className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                            </button>
+                            {deleteConfirmFile === selectedFile.filename ? (
+                              <div className="flex items-center gap-1 ml-2">
+                                <span className="text-xs text-red-600">Delete?</span>
+                                <button
+                                  onClick={() => handleDeleteFile(selectedFile.filename)}
+                                  className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirmFile(null)}
+                                  className="px-2 py-1 text-xs text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10 rounded"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeleteConfirmFile(selectedFile.filename)}
+                                className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* File Content Preview */}
+                        <div className="flex-1 overflow-auto rounded-lg border border-gray-200 dark:border-border-dark bg-gray-50 dark:bg-black/20">
+                          {fileContentLoading ? (
+                            <div className="flex items-center justify-center h-full">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>
+                            </div>
+                          ) : fileContent?.is_binary ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                              <span className="text-4xl mb-3">{getFileIcon(selectedFile.extension)}</span>
+                              <p className="text-gray-600 dark:text-text-muted">Binary file - preview not available</p>
+                              <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-1">
+                                {selectedFile.size_human}
+                              </p>
+                              <button
+                                onClick={() => handleDownloadFile(selectedFile.filename)}
+                                className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium flex items-center gap-2"
+                                style={{ color: 'var(--color-primary)' }}
+                              >
+                                <Download className="w-4 h-4" />
+                                Download to view
+                              </button>
+                            </div>
+                          ) : fileContent?.content ? (
+                            <div className="p-4">
+                              {selectedFile.extension === '.md' ? (
+                                <div className="prose prose-sm max-w-none" style={{ color: '#1f2937' }}>
+                                  <ReactMarkdown>{fileContent.content}</ReactMarkdown>
+                                </div>
+                              ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
+                                <SyntaxHighlighter
+                                  language={getLanguage(selectedFile.extension)}
+                                  style={oneDark}
+                                  customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.8rem' }}
+                                  showLineNumbers
+                                >
+                                  {fileContent.content}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: '#1f2937' }}>
+                                  {fileContent.content}
+                                </pre>
+                              )}
+                              {fileContent.truncated && (
+                                <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                                  File content truncated. Download to see full content.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500 dark:text-text-muted">
+                              Unable to load file content
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center">
+                        <FileIcon className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
+                        <p className="text-gray-600 dark:text-text-muted">
+                          Select a file to preview
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
