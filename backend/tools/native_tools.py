@@ -417,8 +417,21 @@ def read_file(file_path: str, offset: int = 0, limit: int = None, max_chars: int
 file_read = read_file
 
 
-def _write_file_impl(file_path: str, content: str, _workspace_context: dict = None) -> str:
-    """Implementation of write_file tool with workspace-aware file storage"""
+def _write_file_impl(
+    file_path: str,
+    content: str,
+    _workspace_context: dict = None,
+    _agent_context: dict = None
+) -> str:
+    """
+    Implementation of write_file tool with workspace-aware file storage.
+
+    Args:
+        file_path: The filename to create
+        content: The content to write
+        _workspace_context: Context about the workspace (project_id, workflow_id, task_id)
+        _agent_context: Context about the agent creating the file (agent_label, agent_type, node_id, etc.)
+    """
     try:
         # SECURITY: Sanitize file path to prevent dangerous directory creation
         # Extract just the filename, stripping ALL directory components
@@ -467,11 +480,109 @@ def _write_file_impl(file_path: str, content: str, _workspace_context: dict = No
         path.write_text(content, encoding="utf-8")
 
         logger.info(f"Wrote file: {path} ({len(content)} chars)")
+
+        # Record file metadata in database if we have context
+        _record_file_metadata(
+            filename=filename,
+            file_path=path,
+            workspace=workspace,
+            content=content,
+            workspace_context=_workspace_context,
+            agent_context=_agent_context
+        )
+
         return f"Successfully wrote {len(content)} characters to {path.name}"
 
     except Exception as e:
         logger.error(f"Error writing file {file_path}: {e}")
         return f"Error writing file: {str(e)}"
+
+
+def _record_file_metadata(
+    filename: str,
+    file_path: Path,
+    workspace: Path,
+    content: str,
+    workspace_context: dict = None,
+    agent_context: dict = None
+) -> None:
+    """
+    Record file metadata in the database for tracking and organization.
+
+    This creates a WorkspaceFile record that tracks which agent created the file,
+    the workflow context, and other metadata for later retrieval.
+    """
+    try:
+        from db.database import SessionLocal
+        from models.workspace_file import WorkspaceFile
+        import mimetypes
+
+        # Compute relative path from outputs/ directory
+        outputs_dir = Path("outputs").resolve()
+        try:
+            relative_path = str(file_path.relative_to(outputs_dir))
+        except ValueError:
+            # File is not under outputs/, use absolute path
+            relative_path = str(file_path)
+
+        # Get file extension and mime type
+        extension = file_path.suffix.lower() if file_path.suffix else None
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+
+        # Create database session
+        db = SessionLocal()
+        try:
+            # Check if file record already exists (update if so)
+            existing = db.query(WorkspaceFile).filter(
+                WorkspaceFile.file_path == relative_path
+            ).first()
+
+            if existing:
+                # Update existing record
+                existing.size_bytes = len(content.encode('utf-8'))
+                existing.mime_type = mime_type
+                if agent_context:
+                    existing.agent_label = agent_context.get('agent_label')
+                    existing.agent_type = agent_context.get('agent_type')
+                    existing.node_id = agent_context.get('node_id')
+                    existing.description = agent_context.get('description')
+                    existing.content_type = agent_context.get('content_type')
+                    existing.original_query = agent_context.get('original_query')
+                db.commit()
+                logger.debug(f"Updated file metadata for: {relative_path}")
+            else:
+                # Create new record
+                file_record = WorkspaceFile(
+                    filename=filename,
+                    file_path=relative_path,
+                    size_bytes=len(content.encode('utf-8')),
+                    mime_type=mime_type,
+                    extension=extension,
+                    # Workspace context
+                    project_id=workspace_context.get('project_id') if workspace_context else None,
+                    workflow_id=workspace_context.get('workflow_id') if workspace_context else None,
+                    workflow_name=workspace_context.get('workflow_name') if workspace_context else None,
+                    task_id=workspace_context.get('task_id') if workspace_context else None,
+                    execution_id=workspace_context.get('execution_id') if workspace_context else None,
+                    # Agent context
+                    agent_label=agent_context.get('agent_label') if agent_context else None,
+                    agent_type=agent_context.get('agent_type') if agent_context else None,
+                    node_id=agent_context.get('node_id') if agent_context else None,
+                    description=agent_context.get('description') if agent_context else None,
+                    content_type=agent_context.get('content_type') if agent_context else None,
+                    original_query=agent_context.get('original_query') if agent_context else None,
+                    tags=agent_context.get('tags', []) if agent_context else [],
+                )
+                db.add(file_record)
+                db.commit()
+                logger.debug(f"Recorded file metadata for: {relative_path}")
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        # Don't fail the file write if metadata recording fails
+        logger.warning(f"Could not record file metadata: {e}")
 
 def _write_file_error_handler(error: Exception) -> str:
     """Custom error handler for write_file validation errors"""

@@ -214,7 +214,8 @@ class AgentFactory:
         task_id: int,
         context: str,
         mcp_manager: Optional[Any] = None,
-        vector_store: Optional[Any] = None
+        vector_store: Optional[Any] = None,
+        agent_context: Optional[Dict[str, Any]] = None
     ) -> Tuple[CompiledStateGraph, List[BaseTool], List[Any]]:
         """
         Create a fully configured agent ready for execution.
@@ -360,7 +361,22 @@ class AgentFactory:
 
         # 3. Load Tools (Native, CLI, Memory, and RAG)
         tools: List[BaseTool] = []
-        tools.extend(await AgentFactory._load_native_tools(native_tool_names))
+
+        # Build workspace context for file-writing tools
+        workspace_context = {
+            "project_id": project_id,
+            "task_id": task_id,
+            "workflow_id": agent_config.get("workflow_id"),
+            "workflow_name": agent_config.get("workflow_name"),
+            "execution_id": agent_config.get("execution_id"),
+        }
+
+        # Load native tools with context for file tracking
+        tools.extend(await AgentFactory._load_native_tools(
+            native_tool_names,
+            workspace_context=workspace_context,
+            agent_context=agent_context
+        ))
 
         # Load CLI tools if specified
         cli_tools = agent_config.get("cli_tools", [])
@@ -1042,11 +1058,21 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 
 
     @staticmethod
-    async def _load_native_tools(native_tool_names: List[str]) -> List[BaseTool]:
+    async def _load_native_tools(
+        native_tool_names: List[str],
+        workspace_context: Optional[Dict[str, Any]] = None,
+        agent_context: Optional[Dict[str, Any]] = None
+    ) -> List[BaseTool]:
         """
         Helper to load native Python tools.
 
         Special handling for "browser" tool which uses Playwright (async).
+        For write_file tool, binds workspace_context and agent_context for file metadata tracking.
+
+        Args:
+            native_tool_names: List of tool names to load
+            workspace_context: Context about the workspace (project_id, workflow_id, task_id, etc.)
+            agent_context: Context about the agent (agent_label, agent_type, node_id, etc.)
         """
         if not native_tool_names:
             return []
@@ -1060,6 +1086,15 @@ You have been equipped with the following tools: {', '.join(tool_names)}
             # Load regular native tools (synchronous)
             if non_browser_tools:
                 native_tools = load_native_tools(non_browser_tools)
+
+                # Wrap write_file tool with context for file metadata tracking
+                if workspace_context or agent_context:
+                    native_tools = AgentFactory._wrap_file_tools_with_context(
+                        native_tools,
+                        workspace_context,
+                        agent_context
+                    )
+
                 all_tools.extend(native_tools)
                 logger.info(f"✓ Loaded {len(native_tools)} native Python tools")
 
@@ -1078,6 +1113,57 @@ You have been equipped with the following tools: {', '.join(tool_names)}
         except Exception as e:
             logger.error(f"Failed to load native tools: {e}. Proceeding without them.")
             return []
+
+    @staticmethod
+    def _wrap_file_tools_with_context(
+        tools: List[BaseTool],
+        workspace_context: Optional[Dict[str, Any]],
+        agent_context: Optional[Dict[str, Any]]
+    ) -> List[BaseTool]:
+        """
+        Wrap file-writing tools with context for metadata tracking.
+
+        This creates a new write_file tool that has workspace_context and agent_context
+        pre-bound, so when the agent calls write_file, the metadata is automatically recorded.
+        """
+        import functools
+        from langchain_core.tools import StructuredTool
+
+        wrapped_tools = []
+
+        for tool in tools:
+            if tool.name == "write_file":
+                # Get the original implementation function
+                from tools.native_tools import _write_file_impl, _write_file_error_handler
+
+                # Create a new function with context pre-bound
+                def create_bound_write_file(ws_ctx, ag_ctx):
+                    def bound_write_file(file_path: str, content: str) -> str:
+                        return _write_file_impl(
+                            file_path=file_path,
+                            content=content,
+                            _workspace_context=ws_ctx,
+                            _agent_context=ag_ctx
+                        )
+                    return bound_write_file
+
+                bound_func = create_bound_write_file(workspace_context, agent_context)
+
+                # Create new StructuredTool with the bound function
+                wrapped_tool = StructuredTool.from_function(
+                    func=bound_func,
+                    name="write_file",
+                    description=tool.description,
+                    handle_tool_error=_write_file_error_handler
+                )
+
+                wrapped_tools.append(wrapped_tool)
+                logger.debug(f"Wrapped write_file tool with context: workspace={workspace_context}, agent={agent_context}")
+            else:
+                # Keep other tools as-is
+                wrapped_tools.append(tool)
+
+        return wrapped_tools
 
     @staticmethod
     async def _load_cli_tools(cli_tool_names: List[str]) -> List[BaseTool]:

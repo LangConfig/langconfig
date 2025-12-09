@@ -12,11 +12,20 @@
  * Supports tree view and list view with search, filter, and file actions.
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import { Download, Trash2, Search, FolderOpen, ChevronRight, ChevronDown, List, TreeDeciduous, Eye, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Download, Trash2, Search, FolderOpen, ChevronRight, ChevronDown, List, TreeDeciduous, Eye, RefreshCw, Tag, Database, Link2, Copy, MoreVertical } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useProject } from '../../../../contexts/ProjectContext';
+
+// Context menu types
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  file: FileWithContext | null;
+}
 
 interface FileWithContext {
   filename: string;
@@ -29,6 +38,11 @@ interface FileWithContext {
   size_human: string;
   modified_at: string;
   extension: string;
+  // Additional metadata (populated from DB if available)
+  agent_label?: string | null;
+  agent_type?: string | null;
+  tags?: string[];
+  metadata_id?: number | null;
 }
 
 interface FileContent {
@@ -104,6 +118,7 @@ interface TreeNode {
 }
 
 export default function FilesLibraryTab() {
+  const { projects } = useProject();
   const [files, setFiles] = useState<FileWithContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +141,186 @@ export default function FilesLibraryTab() {
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<FileWithContext | null>(null);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    file: null
+  });
+
+  // Tags edit modal
+  const [tagsModalOpen, setTagsModalOpen] = useState(false);
+  const [tagsModalFile, setTagsModalFile] = useState<FileWithContext | null>(null);
+  const [editingTags, setEditingTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(prev => ({ ...prev, visible: false }));
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(prev => ({ ...prev, visible: false }));
+    };
+
+    if (contextMenu.visible) {
+      document.addEventListener('click', handleClick);
+      document.addEventListener('keydown', handleEscape);
+      return () => {
+        document.removeEventListener('click', handleClick);
+        document.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [contextMenu.visible]);
+
+  // Handle right-click on file
+  const handleContextMenu = useCallback((e: React.MouseEvent, file: FileWithContext) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Position context menu near click, but within viewport
+    const menuWidth = 200;
+    const menuHeight = 280;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+    setContextMenu({ visible: true, x, y, file });
+  }, []);
+
+  // Knowledge base modal state
+  const [kbModalOpen, setKbModalOpen] = useState(false);
+  const [kbModalFile, setKbModalFile] = useState<FileWithContext | null>(null);
+  const [kbProjectId, setKbProjectId] = useState<string>('');
+  const [kbIndexing, setKbIndexing] = useState(false);
+
+  // Context menu actions
+  const handleAddToKnowledgeBase = async () => {
+    if (!contextMenu.file) return;
+
+    // If we know the project_id, use it. Otherwise, show modal to select
+    if (contextMenu.file.project_id) {
+      setKbProjectId(String(contextMenu.file.project_id));
+    } else {
+      setKbProjectId('');
+    }
+
+    setKbModalFile(contextMenu.file);
+    setKbModalOpen(true);
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleConfirmIndexToKnowledgeBase = async () => {
+    if (!kbModalFile || !kbProjectId) return;
+
+    setKbIndexing(true);
+
+    try {
+      // Call the indexing API
+      const url = kbModalFile.task_id
+        ? `/api/workspace/tasks/${kbModalFile.task_id}/files/${kbModalFile.filename}/index`
+        : `/api/workspace/default/files/${kbModalFile.filename}/index`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: parseInt(kbProjectId) })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.status === 'success') {
+        alert(`Success! ${data.message}`);
+      } else {
+        alert(`Error: ${data.message || data.detail || 'Failed to index file'}`);
+      }
+    } catch (error) {
+      console.error('Error indexing file:', error);
+      alert('Failed to index file to knowledge base');
+    } finally {
+      setKbIndexing(false);
+      setKbModalOpen(false);
+      setKbModalFile(null);
+    }
+  };
+
+  const handleAttachToWorkflow = async () => {
+    if (!contextMenu.file) return;
+    // TODO: Implement workflow attachment
+    alert(`Attach to Workflow: ${contextMenu.file.filename}\n\nThis feature will add the file as context document to a selected workflow.`);
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleCopyToProject = async () => {
+    if (!contextMenu.file) return;
+    // TODO: Implement copy to project
+    alert(`Copy to Project: ${contextMenu.file.filename}\n\nThis feature will copy the file to another project's folder.`);
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleEditTags = async () => {
+    if (!contextMenu.file) return;
+
+    // Fetch current metadata to get existing tags
+    try {
+      const response = await fetch(`/api/workspace/files/by-path?file_path=${encodeURIComponent(contextMenu.file.path)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.has_metadata && data.metadata) {
+          setEditingTags(data.metadata.tags || []);
+        } else {
+          setEditingTags([]);
+        }
+      } else {
+        setEditingTags([]);
+      }
+    } catch {
+      setEditingTags([]);
+    }
+
+    setTagsModalFile(contextMenu.file);
+    setTagsModalOpen(true);
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleSaveTags = async () => {
+    if (!tagsModalFile) return;
+
+    try {
+      // First get the file metadata ID
+      const response = await fetch(`/api/workspace/files/by-path?file_path=${encodeURIComponent(tagsModalFile.path)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.has_metadata && data.metadata) {
+          // Update the tags
+          await fetch(`/api/workspace/files/metadata/${data.metadata.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: editingTags })
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving tags:', error);
+    }
+
+    setTagsModalOpen(false);
+    setTagsModalFile(null);
+    setEditingTags([]);
+  };
+
+  const addTag = () => {
+    if (newTag.trim() && !editingTags.includes(newTag.trim())) {
+      setEditingTags([...editingTags, newTag.trim()]);
+      setNewTag('');
+    }
+  };
+
+  const removeTag = (tag: string) => {
+    setEditingTags(editingTags.filter(t => t !== tag));
+  };
+
   // Fetch all files
   useEffect(() => {
     fetchFiles();
@@ -136,10 +331,41 @@ export default function FilesLibraryTab() {
     setError(null);
 
     try {
+      // Fetch files from filesystem
       const response = await fetch('/api/workspace/files');
       if (!response.ok) throw new Error('Failed to fetch files');
       const data = await response.json();
-      setFiles(data.files || []);
+      const filesFromFs = data.files || [];
+
+      // Also fetch metadata from database to get agent info
+      try {
+        const metadataResponse = await fetch('/api/workspace/files/with-metadata');
+        if (metadataResponse.ok) {
+          const metadataData = await metadataResponse.json();
+          const metadataMap = new Map<string, any>();
+
+          // Build a map of file_path -> metadata
+          for (const meta of metadataData.files || []) {
+            metadataMap.set(meta.file_path, meta);
+          }
+
+          // Enrich filesystem files with metadata
+          for (const file of filesFromFs) {
+            const metadata = metadataMap.get(file.path);
+            if (metadata) {
+              file.agent_label = metadata.agent_label;
+              file.agent_type = metadata.agent_type;
+              file.tags = metadata.tags;
+              file.metadata_id = metadata.id;
+            }
+          }
+        }
+      } catch (metadataErr) {
+        console.warn('Could not fetch file metadata:', metadataErr);
+        // Continue without metadata - files will still be displayed
+      }
+
+      setFiles(filesFromFs);
     } catch (err) {
       console.error('Error fetching files:', err);
       setError(err instanceof Error ? err.message : 'Failed to load files');
@@ -353,11 +579,38 @@ export default function FilesLibraryTab() {
           }`}
           style={{ paddingLeft: paddingLeft + 28 }}
           onClick={() => handlePreview(node.file!)}
+          onContextMenu={(e) => handleContextMenu(e, node.file!)}
         >
           <span className="text-base">{getFileIcon(node.file.extension)}</span>
-          <span className="flex-1 text-sm text-gray-900 dark:text-white truncate">{node.name}</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm text-gray-900 dark:text-white truncate block">{node.name}</span>
+            {node.file.agent_label && (
+              <span className="text-xs text-gray-500 dark:text-text-muted/70">
+                by {node.file.agent_label}
+              </span>
+            )}
+          </div>
+          {node.file.tags && node.file.tags.length > 0 && (
+            <div className="hidden group-hover:flex items-center gap-1 mr-1">
+              {node.file.tags.slice(0, 2).map((tag) => (
+                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary">
+                  {tag}
+                </span>
+              ))}
+              {node.file.tags.length > 2 && (
+                <span className="text-[10px] text-gray-400">+{node.file.tags.length - 2}</span>
+              )}
+            </div>
+          )}
           <span className="text-xs text-gray-500 dark:text-text-muted">{node.file.size_human}</span>
           <div className="hidden group-hover:flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleContextMenu(e, node.file!); }}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+              title="More actions"
+            >
+              <MoreVertical className="w-3.5 h-3.5 text-gray-500" />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleDownload(node.file!); }}
               className="p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10"
@@ -543,10 +796,11 @@ export default function FilesLibraryTab() {
               <thead className="bg-gray-50 dark:bg-white/5 sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Name</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Created By</th>
                   <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Location</th>
                   <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Size</th>
                   <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Modified</th>
-                  <th className="w-24"></th>
+                  <th className="w-28"></th>
                 </tr>
               </thead>
               <tbody>
@@ -557,12 +811,36 @@ export default function FilesLibraryTab() {
                       selectedFile?.path === file.path ? 'bg-primary/10' : ''
                     }`}
                     onClick={() => handlePreview(file)}
+                    onContextMenu={(e) => handleContextMenu(e, file)}
                   >
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <span className="text-base">{getFileIcon(file.extension)}</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{file.filename}</span>
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white block truncate">{file.filename}</span>
+                          {file.tags && file.tags.length > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {file.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary">
+                                  {tag}
+                                </span>
+                              ))}
+                              {file.tags.length > 3 && (
+                                <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {file.agent_label ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                          🤖 {file.agent_label}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="text-xs text-gray-500 dark:text-text-muted">
@@ -577,6 +855,13 @@ export default function FilesLibraryTab() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleContextMenu(e, file); }}
+                          className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+                          title="More actions"
+                        >
+                          <MoreVertical className="w-4 h-4 text-gray-500" />
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
                           className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10"
@@ -686,23 +971,318 @@ export default function FilesLibraryTab() {
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-panel-dark rounded-lg p-6 max-w-md mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete File?</h3>
-            <p className="text-sm text-gray-600 dark:text-text-muted mb-4">
+          <div
+            className="rounded-lg p-6 max-w-md mx-4 shadow-xl border"
+            style={{
+              backgroundColor: 'var(--color-background-light)',
+              borderColor: 'var(--color-border-dark)'
+            }}
+          >
+            <h3
+              className="text-lg font-semibold mb-2"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              Delete File?
+            </h3>
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               Are you sure you want to delete "{deleteConfirm.filename}"? This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5"
+                className="px-4 py-2 text-sm rounded-lg border transition-colors"
+                style={{
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm)}
-                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu.visible && contextMenu.file && (
+        <div
+          className="fixed z-50 w-56 rounded-lg shadow-xl border py-1"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            backgroundColor: 'var(--color-background-light, #ffffff)',
+            borderColor: 'var(--color-border-dark, #e5e7eb)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="px-4 py-2 border-b"
+            style={{ borderColor: 'var(--color-border-dark, #e5e7eb)' }}
+          >
+            <div
+              className="text-xs font-semibold uppercase truncate"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {contextMenu.file.filename}
+            </div>
+          </div>
+
+          <button
+            onClick={() => { handlePreview(contextMenu.file!); setContextMenu(prev => ({ ...prev, visible: false })); }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Eye className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Preview</span>
+          </button>
+
+          <button
+            onClick={() => { handleDownload(contextMenu.file!); setContextMenu(prev => ({ ...prev, visible: false })); }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Download className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Download</span>
+          </button>
+
+          <div className="my-1 border-t" style={{ borderColor: 'var(--color-border-dark, #e5e7eb)' }} />
+
+          <button
+            onClick={handleAddToKnowledgeBase}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Database className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Add to Knowledge Base</span>
+          </button>
+
+          <button
+            onClick={handleAttachToWorkflow}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Link2 className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Attach to Workflow</span>
+          </button>
+
+          <button
+            onClick={handleCopyToProject}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Copy className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Copy to Project...</span>
+          </button>
+
+          <div className="my-1 border-t" style={{ borderColor: 'var(--color-border-dark, #e5e7eb)' }} />
+
+          <button
+            onClick={handleEditTags}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Tag className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Edit Tags</span>
+          </button>
+
+          <div className="my-1 border-t" style={{ borderColor: 'var(--color-border-dark, #e5e7eb)' }} />
+
+          <button
+            onClick={() => { setDeleteConfirm(contextMenu.file!); setContextMenu(prev => ({ ...prev, visible: false })); }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-red-50 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 hover:pl-5"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="font-medium">Delete</span>
+          </button>
+        </div>
+      )}
+
+      {/* Tags Edit Modal */}
+      {tagsModalOpen && tagsModalFile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border"
+            style={{
+              backgroundColor: 'var(--color-background-light)',
+              borderColor: 'var(--color-border-dark)'
+            }}
+          >
+            <h3
+              className="text-lg font-semibold mb-2"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              Edit Tags
+            </h3>
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Add tags to "{tagsModalFile.filename}" for easy filtering.
+            </p>
+
+            {/* Current tags */}
+            <div className="flex flex-wrap gap-2 mb-4 min-h-8">
+              {editingTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-primary/10"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  {tag}
+                  <button
+                    onClick={() => removeTag(tag)}
+                    className="hover:text-red-500"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {editingTags.length === 0 && (
+                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No tags yet</span>
+              )}
+            </div>
+
+            {/* Add new tag */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="Add a tag..."
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                className="flex-1 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                style={{
+                  backgroundColor: 'var(--color-input-background)',
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+              />
+              <button
+                onClick={addTag}
+                className="px-4 py-2 text-sm rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                Add
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setTagsModalOpen(false); setTagsModalFile(null); setEditingTags([]); }}
+                className="px-4 py-2 text-sm rounded-lg border transition-colors"
+                style={{
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTags}
+                className="px-4 py-2 text-sm rounded-lg text-white transition-colors"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                Save Tags
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Knowledge Base Modal */}
+      {kbModalOpen && kbModalFile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border"
+            style={{
+              backgroundColor: 'var(--color-background-light)',
+              borderColor: 'var(--color-border-dark)'
+            }}
+          >
+            <h3
+              className="text-lg font-semibold mb-2"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              Add to Knowledge Base
+            </h3>
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Index "{kbModalFile.filename}" into a project's knowledge base for RAG queries.
+            </p>
+
+            <div className="mb-4">
+              <label
+                className="block text-sm font-medium mb-2"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                Select Project
+              </label>
+              <select
+                value={kbProjectId}
+                onChange={(e) => setKbProjectId(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                style={{
+                  backgroundColor: 'var(--color-input-background)',
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+              >
+                <option value="">Choose a project...</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={String(project.id)}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <p
+                className="text-xs mt-2"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                The file will be chunked and indexed into this project's vector store for semantic search.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setKbModalOpen(false); setKbModalFile(null); setKbProjectId(''); }}
+                className="px-4 py-2 text-sm rounded-lg border transition-colors"
+                style={{
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+                disabled={kbIndexing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmIndexToKnowledgeBase}
+                disabled={!kbProjectId || kbIndexing}
+                className="px-4 py-2 text-sm rounded-lg text-white flex items-center gap-2 disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                {kbIndexing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Indexing...
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-4 h-4" />
+                    Index File
+                  </>
+                )}
               </button>
             </div>
           </div>
