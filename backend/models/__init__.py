@@ -35,6 +35,7 @@ from .settings import Settings
 from .local_model import LocalModel
 from .background_task import BackgroundTask
 from .audit_log import AuditLog, AuditAction
+from .workspace_file import WorkspaceFile
 
 __all__ = [
     "Project",
@@ -65,5 +66,6 @@ __all__ = [
     "LocalModel",
     "BackgroundTask",
     "AuditLog",
-    "AuditAction"
+    "AuditAction",
+    "WorkspaceFile"
 ]

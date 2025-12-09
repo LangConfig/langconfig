@@ -1474,6 +1474,18 @@ class SimpleWorkflowExecutor:
                     "max_tokens": agent_config.get("max_tokens"),
                     # Add middleware configuration if present (LangChain 1.0)
                     "middleware": agent_config.get("middleware", []),
+                    # Workflow context for file organization
+                    "workflow_id": state.get("workflow_id"),
+                    "workflow_name": state.get("workflow_name"),
+                    "execution_id": state.get("execution_id"),
+                }
+
+                # Build agent context for file metadata tracking
+                agent_context = {
+                    "agent_label": display_name,
+                    "agent_type": agent_type,
+                    "node_id": node_id,
+                    "original_query": query,
                 }
 
                 # Shared setup: MCP manager and vector store
@@ -1585,7 +1597,8 @@ When your work is complete, deliver the final result and END."""
                         task_id=state.get("task_id", 0),
                         context=context_with_criteria,
                         mcp_manager=mcp_manager,
-                        vector_store=vector_store
+                        vector_store=vector_store,
+                        agent_context=agent_context
                     )
 
                 # Execute the agent graph with messages

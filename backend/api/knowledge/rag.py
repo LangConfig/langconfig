@@ -38,18 +38,35 @@ class DocumentUploadResponse(BaseModel):
 class DocumentResponse(BaseModel):
     id: int
     project_id: int
-    filename: str
+    name: str  # Mapped from filename for frontend compatibility
     original_filename: str
     document_type: DocumentType
-    file_size: int
+    size: int  # Mapped from file_size for frontend compatibility
     mime_type: Optional[str]
     indexing_status: IndexingStatus
-    indexed_chunks_count: Optional[int]
+    chunk_count: Optional[int]  # Mapped from indexed_chunks_count for frontend compatibility
     created_at: datetime
     indexed_at: Optional[datetime]
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_orm_model(cls, doc):
+        """Create response from ORM model with field mapping"""
+        return cls(
+            id=doc.id,
+            project_id=doc.project_id,
+            name=doc.filename,
+            original_filename=doc.original_filename,
+            document_type=doc.document_type,
+            size=doc.file_size,
+            mime_type=doc.mime_type,
+            indexing_status=doc.indexing_status,
+            chunk_count=doc.indexed_chunks_count,
+            created_at=doc.created_at,
+            indexed_at=doc.indexed_at,
+        )
 
 
 class SearchRequest(BaseModel):
@@ -531,7 +548,8 @@ async def list_documents(
         query = query.filter(ContextDocument.indexing_status == status)
 
     documents = query.offset(skip).limit(limit).all()
-    return documents
+    # Map ORM models to response models with field name mapping
+    return [DocumentResponse.from_orm_model(doc) for doc in documents]
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
@@ -543,7 +561,7 @@ async def get_document(
     doc = db.query(ContextDocument).filter(ContextDocument.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    return doc
+    return DocumentResponse.from_orm_model(doc)
 
 
 @router.delete("/documents/{document_id}", status_code=204)
