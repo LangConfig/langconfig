@@ -7,9 +7,17 @@
 [![LangChain](https://img.shields.io/badge/LangChain-v1.0-orange.svg)](https://langchain.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-latest-orange.svg)](https://langchain-ai.github.io/langgraph/)
 
-**Visual, no-code interface for building LangChain agents and LangGraph multi-agent workflows.**
+**Open-source visual platform for building, testing, and deploying LangChain agents and LangGraph workflows.**
 
-Build AI agent systems using LangChain and LangGraph. No coding required.
+LangConfig makes agentic AI accessible. Build LangChain Agents and Deep Agents with full control over their toolsets, prompts, and memory configurations—no coding required.
+
+Drop agents onto a visual canvas and connect them into multi-agent LangGraph workflows. Run workflows and watch agent thinking, tool selection, outputs, and errors in real-time. Test a workflow, review the output, tweak tools or RAG settings, run it again, and compare results—all in one place.
+
+Create custom tools using LangChain's middleware system, or use prebuilt templates for Discord, Slack, and other integrations. Open a chat interface with any agent to collaboratively improve its system prompt, test behavior, and get feedback. Conversation context flows seamlessly into workflow execution with simple on/off controls.
+
+When you're ready to share or deploy, export your workflow as a JSON config that anyone with LangConfig can import instantly. Or download a complete Python package—LangChain/LangGraph code, execution scripts, and a Streamlit web UI—ready to run anywhere.
+
+LangConfig includes workflow templates for research and content creation. We're actively building new features and templates to make it easy to pick up and start experimenting with agentic AI.
 
 ---
 
