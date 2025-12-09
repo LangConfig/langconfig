@@ -373,6 +373,7 @@ async def bulk_delete_files(
     Delete multiple files at once.
 
     Request body: { "files": [{ "task_id": 1, "filename": "x.md" }, ...] }
+    For default files, task_id should be null/None.
     """
     workspace_mgr = get_workspace_manager()
     deleted = 0
@@ -383,9 +384,19 @@ async def bulk_delete_files(
         task_id = file_info.get("task_id")
         filename = file_info.get("filename")
 
-        if not task_id or not filename:
+        if not filename:
             failed += 1
             errors.append(f"Invalid file info: {file_info}")
+            continue
+
+        # Handle default files (no task_id)
+        if task_id is None:
+            success = workspace_mgr.delete_default_file(filename)
+            if success:
+                deleted += 1
+            else:
+                failed += 1
+                errors.append(f"Could not delete default file {filename}")
             continue
 
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -414,3 +425,94 @@ async def bulk_delete_files(
         failed=failed,
         errors=errors
     )
+
+
+# =============================================================================
+# Default Folder Files (standalone/chat execution outputs)
+# =============================================================================
+
+@router.get("/default/files")
+async def list_default_files():
+    """
+    List all files in the default workspace.
+
+    These are files created during standalone/chat execution (no workflow context).
+    """
+    workspace_mgr = get_workspace_manager()
+    files = workspace_mgr.list_default_files()
+
+    return {
+        "files": files,
+        "total_files": len(files)
+    }
+
+
+@router.get("/default/files/{filename}")
+async def download_default_file(filename: str):
+    """Download a file from the default workspace."""
+    from fastapi.responses import FileResponse
+
+    workspace_mgr = get_workspace_manager()
+    file_path = workspace_mgr.get_default_file_path(filename)
+
+    if not file_path:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(
+        file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
+
+
+@router.get("/default/files/{filename}/content", response_model=FileContentResponse)
+async def get_default_file_content(filename: str):
+    """Get content of a file in the default workspace for preview."""
+    workspace_mgr = get_workspace_manager()
+
+    content_data = workspace_mgr.get_default_file_content(filename)
+
+    if not content_data:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileContentResponse(
+        filename=filename,
+        content=content_data.get("content"),
+        mime_type=content_data.get("mime_type", "text/plain"),
+        is_binary=content_data.get("is_binary", False),
+        truncated=content_data.get("truncated", False),
+        size_bytes=content_data.get("size_bytes", 0)
+    )
+
+
+@router.put("/default/files/{filename}")
+async def rename_default_file(filename: str, request: RenameFileRequest):
+    """Rename a file in the default workspace."""
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.rename_default_file(filename, request.new_name)
+
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not rename file. It may not exist, or target name already exists."
+        )
+
+    return {
+        "status": "success",
+        "old_name": filename,
+        "new_name": request.new_name
+    }
+
+
+@router.delete("/default/files/{filename}")
+async def delete_default_file(filename: str):
+    """Delete a file from the default workspace."""
+    workspace_mgr = get_workspace_manager()
+
+    success = workspace_mgr.delete_default_file(filename)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="File not found or could not be deleted")
+
+    return {"status": "success", "filename": filename}

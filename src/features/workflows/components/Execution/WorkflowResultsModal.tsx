@@ -832,7 +832,7 @@ export default function WorkflowResultsModal({
                           ) : fileContent?.content ? (
                             <div className="p-4">
                               {selectedFile.extension === '.md' ? (
-                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                <div className="prose prose-sm max-w-none" style={{ color: '#1f2937' }}>
                                   <ReactMarkdown>{fileContent.content}</ReactMarkdown>
                                 </div>
                               ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
@@ -845,7 +845,7 @@ export default function WorkflowResultsModal({
                                   {fileContent.content}
                                 </SyntaxHighlighter>
                               ) : (
-                                <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-800 dark:text-gray-200">
+                                <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: '#1f2937' }}>
                                   {fileContent.content}
                                 </pre>
                               )}

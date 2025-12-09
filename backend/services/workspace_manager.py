@@ -139,21 +139,167 @@ class WorkspaceManager:
     ) -> Optional[Path]:
         """
         Get full path to a file in task workspace.
-        
+
         Returns None if file doesn't exist or is outside workspace (security).
         """
         workspace = self.get_task_workspace(project_id, workflow_id, task_id)
         file_path = (workspace / filename).resolve()
-        
+
         # Security: Ensure file is within workspace
         if not str(file_path).startswith(str(workspace)):
             logger.warning(f"Path traversal attempt blocked: {filename}")
             return None
-        
+
         if not file_path.exists() or not file_path.is_file():
             return None
-        
+
         return file_path
+
+    def get_default_file_path(self, filename: str) -> Optional[Path]:
+        """
+        Get full path to a file in the default workspace.
+
+        Returns None if file doesn't exist or is outside workspace (security).
+        """
+        default_dir = self.base_dir / "default"
+        file_path = (default_dir / filename).resolve()
+
+        # Security: Ensure file is within default directory
+        if not str(file_path).startswith(str(default_dir)):
+            logger.warning(f"Path traversal attempt blocked: {filename}")
+            return None
+
+        if not file_path.exists() or not file_path.is_file():
+            return None
+
+        return file_path
+
+    def list_default_files(self) -> list[dict]:
+        """
+        List all files in the default workspace.
+
+        Returns:
+            List of file info dicts
+        """
+        default_dir = self.base_dir / "default"
+
+        if not default_dir.exists():
+            return []
+
+        files = []
+        for file_path in default_dir.iterdir():
+            if file_path.is_file():
+                stat = file_path.stat()
+                files.append({
+                    "filename": file_path.name,
+                    "path": str(file_path.relative_to(self.base_dir)),
+                    "size_bytes": stat.st_size,
+                    "size_human": self._format_size(stat.st_size),
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "extension": file_path.suffix,
+                })
+
+        files.sort(key=lambda x: x['modified_at'], reverse=True)
+        return files
+
+    def get_default_file_content(
+        self,
+        filename: str,
+        max_size: int = 1024 * 1024
+    ) -> Optional[dict]:
+        """Get content of a file in the default workspace."""
+        file_path = self.get_default_file_path(filename)
+
+        if not file_path:
+            return None
+
+        # Determine mime type
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        if mime_type is None:
+            mime_type = "text/plain"
+
+        # Check if text-based
+        text_types = [
+            "text/", "application/json", "application/javascript",
+            "application/xml", "application/yaml", "application/x-yaml"
+        ]
+        is_text = any(mime_type.startswith(t) for t in text_types)
+
+        text_extensions = {
+            '.md', '.txt', '.py', '.js', '.ts', '.tsx', '.jsx', '.json',
+            '.yaml', '.yml', '.xml', '.html', '.css', '.scss', '.sql',
+            '.sh', '.bash', '.env', '.gitignore', '.csv', '.toml', '.ini',
+            '.cfg', '.conf', '.log', '.rst', '.tex'
+        }
+        if file_path.suffix.lower() in text_extensions:
+            is_text = True
+
+        if not is_text:
+            return {
+                "content": None,
+                "mime_type": mime_type,
+                "is_binary": True,
+                "truncated": False,
+                "size_bytes": file_path.stat().st_size
+            }
+
+        try:
+            file_size = file_path.stat().st_size
+            truncated = file_size > max_size
+
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read(max_size)
+
+            return {
+                "content": content,
+                "mime_type": mime_type,
+                "is_binary": False,
+                "truncated": truncated,
+                "size_bytes": file_size
+            }
+        except Exception as e:
+            logger.error(f"Error reading file content: {e}")
+            return None
+
+    def delete_default_file(self, filename: str) -> bool:
+        """Delete a file from the default workspace."""
+        file_path = self.get_default_file_path(filename)
+
+        if not file_path:
+            return False
+
+        try:
+            file_path.unlink()
+            logger.info(f"Deleted default file: {filename}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            return False
+
+    def rename_default_file(self, old_name: str, new_name: str) -> bool:
+        """Rename a file in the default workspace."""
+        default_dir = self.base_dir / "default"
+        old_path = (default_dir / old_name).resolve()
+        new_path = (default_dir / new_name).resolve()
+
+        # Security checks
+        if not str(old_path).startswith(str(default_dir)):
+            return False
+        if not str(new_path).startswith(str(default_dir)):
+            return False
+
+        if not old_path.exists():
+            return False
+        if new_path.exists():
+            return False
+
+        try:
+            old_path.rename(new_path)
+            logger.info(f"Renamed default file: {old_name} -> {new_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error renaming file: {e}")
+            return False
     
     def rename_file(
         self,
@@ -347,7 +493,11 @@ class WorkspaceManager:
             # Extract project ID from folder name
             proj_name = project_dir.name
             if proj_name.startswith("project_"):
-                proj_id = int(proj_name.replace("project_", ""))
+                try:
+                    proj_id = int(proj_name.replace("project_", ""))
+                except ValueError:
+                    # Skip malformed project directories
+                    continue
             elif proj_name == "standalone":
                 proj_id = None
             elif proj_name == "default":
@@ -363,7 +513,11 @@ class WorkspaceManager:
                 if not workflow_dir.name.startswith("workflow_"):
                     continue
 
-                wf_id = int(workflow_dir.name.replace("workflow_", ""))
+                try:
+                    wf_id = int(workflow_dir.name.replace("workflow_", ""))
+                except ValueError:
+                    # Skip malformed workflow directories
+                    continue
 
                 # Filter by workflow_id if specified
                 if workflow_id and wf_id != workflow_id:
@@ -377,7 +531,11 @@ class WorkspaceManager:
                     if not task_dir.name.startswith("task_"):
                         continue
 
-                    t_id = int(task_dir.name.replace("task_", ""))
+                    try:
+                        t_id = int(task_dir.name.replace("task_", ""))
+                    except ValueError:
+                        # Skip malformed task directories
+                        continue
 
                     # List files in this task
                     for file_path in task_dir.iterdir():

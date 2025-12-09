@@ -150,11 +150,14 @@ export default function FilesLibraryTab() {
 
   // Fetch file content for preview
   const fetchFileContent = async (file: FileWithContext) => {
-    if (!file.task_id) return;
-
     setContentLoading(true);
     try {
-      const response = await fetch(`/api/workspace/tasks/${file.task_id}/files/${file.filename}/content`);
+      // Use different endpoint for default files (no task_id)
+      const url = file.task_id
+        ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}/content`
+        : `/api/workspace/default/files/${file.filename}/content`;
+
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch content');
       const data = await response.json();
       setFileContent(data);
@@ -175,16 +178,22 @@ export default function FilesLibraryTab() {
 
   // Handle download
   const handleDownload = (file: FileWithContext) => {
-    if (!file.task_id) return;
-    window.open(`/api/workspace/tasks/${file.task_id}/files/${file.filename}`, '_blank');
+    // Use different endpoint for default files (no task_id)
+    const url = file.task_id
+      ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}`
+      : `/api/workspace/default/files/${file.filename}`;
+    window.open(url, '_blank');
   };
 
   // Handle delete
   const handleDelete = async (file: FileWithContext) => {
-    if (!file.task_id) return;
-
     try {
-      const response = await fetch(`/api/workspace/tasks/${file.task_id}/files/${file.filename}`, {
+      // Use different endpoint for default files (no task_id)
+      const url = file.task_id
+        ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}`
+        : `/api/workspace/default/files/${file.filename}`;
+
+      const response = await fetch(url, {
         method: 'DELETE'
       });
 
@@ -641,7 +650,7 @@ export default function FilesLibraryTab() {
               ) : fileContent?.content ? (
                 <div>
                   {selectedFile.extension === '.md' ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="prose prose-sm max-w-none" style={{ color: '#1f2937' }}>
                       <ReactMarkdown>{fileContent.content}</ReactMarkdown>
                     </div>
                   ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
@@ -654,7 +663,7 @@ export default function FilesLibraryTab() {
                       {fileContent.content}
                     </SyntaxHighlighter>
                   ) : (
-                    <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-800 dark:text-gray-200">
+                    <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: '#1f2937' }}>
                       {fileContent.content}
                     </pre>
                   )}
