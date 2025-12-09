@@ -54,10 +54,14 @@ async def generate_agent_config(request: GenerateAgentRequest) -> dict:
         "gemini-2.0-flash-exp"
     ]
 
+    # DeepAgents standard filesystem tool names
     available_tools = [
-        "file_read",
-        "file_write",
-        "file_list",
+        "read_file",
+        "write_file",
+        "ls",
+        "edit_file",
+        "glob",
+        "grep",
         "web_search",
         "web_fetch",
         "browser",
@@ -111,9 +115,12 @@ INSTRUCTIONS:
    - 0.8-1.0: Creative tasks (brainstorming, content generation)
 
 3. Select ONLY the MCP tools actually needed (from available list above)
-   - file_read: Read files from filesystem
-   - file_write: Write/create files
-   - file_list: List directory contents
+   - read_file: Read file contents with line numbers
+   - write_file: Create new files
+   - ls: List directory contents with metadata
+   - edit_file: Perform exact string replacements in files
+   - glob: Find files matching patterns
+   - grep: Search file contents with regex
    - web_search: Search the web for information
    - web_fetch: Fetch content from URLs
    - browser: Automated browser actions (scraping, screenshots)

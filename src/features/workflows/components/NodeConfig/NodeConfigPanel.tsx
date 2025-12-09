@@ -88,15 +88,20 @@ const MIDDLEWARE_TYPES = [
 ];
 
 // Native Python Tools (local-first, no Node.js required)
-// These map to backend/tools/native_tools.py
+// These map to backend/tools/native_tools.py with DeepAgents standard naming
+// See: https://docs.langchain.com/oss/python/deepagents/harness
 // Note: Memory tools (enable_memory, memory_store, memory_recall, enable_rag) moved to unified Context & Memory section
 const AVAILABLE_TOOLS = [
   { id: 'web_search', name: 'Web Search', description: 'Search the web (DuckDuckGo)', category: 'web' },
   { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch webpage content', category: 'web' },
   { id: 'browser', name: 'Browser Automation', description: 'Advanced web interaction (Playwright)', category: 'web' },
-  { id: 'file_read', name: 'Read Files', description: 'Read file contents', category: 'files' },
-  { id: 'file_write', name: 'Write Files', description: 'Write to files', category: 'files' },
-  { id: 'file_list', name: 'List Files', description: 'List directory contents', category: 'files' },
+  // DeepAgents standard filesystem tools
+  { id: 'read_file', name: 'Read File', description: 'Read file contents with line numbers', category: 'files' },
+  { id: 'write_file', name: 'Write File', description: 'Create new files', category: 'files' },
+  { id: 'ls', name: 'List Directory', description: 'List directory contents with metadata', category: 'files' },
+  { id: 'edit_file', name: 'Edit File', description: 'Exact string replacements in files', category: 'files' },
+  { id: 'glob', name: 'Glob', description: 'Find files matching patterns', category: 'files' },
+  { id: 'grep', name: 'Grep', description: 'Search file contents with regex', category: 'files' },
   { id: 'reasoning_chain', name: 'Reasoning Chain', description: 'Multi-step reasoning', category: 'reasoning' },
 ];
 
@@ -106,7 +111,11 @@ const LEGACY_TOOL_MAP: Record<string, string> = {
   'fetch': 'web_fetch',
   'memory': 'memory_store',
   'sequential_thinking': 'reasoning_chain',
-  'filesystem': 'file_read',  // Will show all file tools
+  'filesystem': 'read_file',  // Will show all file tools
+  // Legacy filesystem tool aliases
+  'file_read': 'read_file',
+  'file_write': 'write_file',
+  'file_list': 'ls',
 };
 
 const NodeConfigPanel = ({
@@ -236,6 +245,7 @@ const NodeConfigPanel = ({
       }
     } else if (toolType === 'mcp') {
       // MCP tools have simple schemas
+      // DeepAgents standard tool schemas
       const mcpSchemas: Record<string, any> = {
         web_search: {
           type: 'object',
@@ -244,14 +254,15 @@ const NodeConfigPanel = ({
           },
           required: ['query']
         },
-        file_read: {
+        read_file: {
           type: 'object',
           properties: {
-            file_path: { type: 'string', description: 'Path to file' }
+            file_path: { type: 'string', description: 'Path to file' },
+            max_chars: { type: 'number', description: 'Maximum characters to read (default: 50000)' }
           },
           required: ['file_path']
         },
-        file_write: {
+        write_file: {
           type: 'object',
           properties: {
             file_path: { type: 'string', description: 'Path to file' },
@@ -259,12 +270,39 @@ const NodeConfigPanel = ({
           },
           required: ['file_path', 'content']
         },
-        file_list: {
+        ls: {
           type: 'object',
           properties: {
-            directory: { type: 'string', description: 'Directory path' }
+            directory_path: { type: 'string', description: 'Directory path (default: current dir)' },
+            pattern: { type: 'string', description: 'Glob pattern for filtering' }
           },
-          required: ['directory']
+          required: []
+        },
+        edit_file: {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string', description: 'Path to file' },
+            old_string: { type: 'string', description: 'Text to find and replace' },
+            new_string: { type: 'string', description: 'Replacement text' }
+          },
+          required: ['file_path', 'old_string', 'new_string']
+        },
+        glob: {
+          type: 'object',
+          properties: {
+            pattern: { type: 'string', description: 'Glob pattern (e.g., "**/*.py")' },
+            path: { type: 'string', description: 'Base path to search from' }
+          },
+          required: ['pattern']
+        },
+        grep: {
+          type: 'object',
+          properties: {
+            pattern: { type: 'string', description: 'Regex pattern to search for' },
+            path: { type: 'string', description: 'Directory to search in' },
+            file_pattern: { type: 'string', description: 'Glob pattern to filter files' }
+          },
+          required: ['pattern']
         }
       };
       setToolInputSchema(mcpSchemas[toolId] || null);
@@ -322,12 +360,15 @@ const NodeConfigPanel = ({
         const customToolsRes = await apiClient.listCustomTools();
         const customTools = customToolsRes.data || [];
 
-        // MCP tools - hardcoded list
+        // MCP tools - DeepAgents standard naming
         const mcpTools = [
           { tool_id: 'web_search', name: 'Web Search', description: 'Search the web' },
-          { tool_id: 'file_read', name: 'Read File', description: 'Read file contents' },
-          { tool_id: 'file_write', name: 'Write File', description: 'Write to files' },
-          { tool_id: 'file_list', name: 'List Files', description: 'List directory contents' }
+          { tool_id: 'read_file', name: 'Read File', description: 'Read file contents with line numbers' },
+          { tool_id: 'write_file', name: 'Write File', description: 'Create new files' },
+          { tool_id: 'ls', name: 'List Directory', description: 'List directory contents with metadata' },
+          { tool_id: 'edit_file', name: 'Edit File', description: 'Exact string replacements in files' },
+          { tool_id: 'glob', name: 'Glob', description: 'Find files matching patterns' },
+          { tool_id: 'grep', name: 'Grep', description: 'Search file contents with regex' }
         ];
 
         setToolNodeAvailableTools({ custom: customTools, mcp: mcpTools, cli: [] });
@@ -672,6 +713,21 @@ const NodeConfigPanel = ({
 
       return newConfig;
     });
+  };
+
+  // Check if FilesystemMiddleware is enabled - if so, file tools are already equipped
+  const filesystemMiddlewareEnabled = enabledMiddleware.includes('filesystem') ||
+    (config as any)?.middleware?.some((m: any) => m.type === 'filesystem' && m.enabled !== false);
+
+  // Tools that are automatically provided by FilesystemMiddleware
+  const FILESYSTEM_MIDDLEWARE_TOOLS = ['read_file', 'write_file', 'ls', 'edit_file', 'glob', 'grep'];
+
+  // Check if a tool is already equipped via middleware
+  const isToolEquippedViaMiddleware = (toolId: string): boolean => {
+    if (filesystemMiddlewareEnabled && FILESYSTEM_MIDDLEWARE_TOOLS.includes(toolId)) {
+      return true;
+    }
+    return false;
   };
 
   return (
@@ -1474,31 +1530,48 @@ const NodeConfigPanel = ({
 
                 {/* File Tools */}
                 <div>
-                  <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-primary)' }}>File Operations</p>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <p className="text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>File Operations</p>
+                    {filesystemMiddlewareEnabled && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">
+                        via Middleware
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {AVAILABLE_TOOLS.filter(t => t.category === 'files').map(tool => (
-                      <label
-                        key={tool.id}
-                        className="flex items-start gap-1.5 p-2 rounded cursor-pointer transition-colors group border hover:border-primary/50"
-                        style={{
-                          backgroundColor: 'var(--color-background-dark, #f9fafb)',
-                          borderColor: 'var(--color-border-dark)'
-                        }}
-                        title={tool.description}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={((config as any).native_tools || []).includes(tool.id)}
-                          onChange={() => toggleNativeTool(tool.id)}
-                          className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                            {tool.name}
-                          </span>
-                        </div>
-                      </label>
-                    ))}
+                    {AVAILABLE_TOOLS.filter(t => t.category === 'files').map(tool => {
+                      const equippedViaMiddleware = isToolEquippedViaMiddleware(tool.id);
+                      return (
+                        <label
+                          key={tool.id}
+                          className={`flex items-start gap-1.5 p-2 rounded transition-colors group border ${equippedViaMiddleware ? 'cursor-default' : 'cursor-pointer hover:border-primary/50'}`}
+                          style={{
+                            backgroundColor: equippedViaMiddleware ? 'var(--color-success-subtle, #f0fdf4)' : 'var(--color-background-dark, #f9fafb)',
+                            borderColor: equippedViaMiddleware ? 'var(--color-success, #22c55e)' : 'var(--color-border-dark)',
+                            opacity: equippedViaMiddleware ? 0.85 : 1
+                          }}
+                          title={equippedViaMiddleware ? `${tool.description} (Equipped via FilesystemMiddleware)` : tool.description}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={equippedViaMiddleware || ((config as any).native_tools || []).includes(tool.id)}
+                            onChange={() => !equippedViaMiddleware && toggleNativeTool(tool.id)}
+                            disabled={equippedViaMiddleware}
+                            className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0 disabled:opacity-60"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                              {tool.name}
+                            </span>
+                            {equippedViaMiddleware && (
+                              <span className="text-[9px] text-green-600 dark:text-green-400">
+                                Equipped
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 

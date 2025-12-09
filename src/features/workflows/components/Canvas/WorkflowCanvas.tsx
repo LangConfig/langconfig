@@ -4986,9 +4986,11 @@ if __name__ == "__main__":
                                               if (aiMessages.length > 0) {
                                                 const lastAgent = aiMessages[aiMessages.length - 1];
 
-                                                // Check for tool_calls with file_write content
+                                                // Check for tool_calls with write_file content (supports both new and legacy names)
                                                 if (lastAgent.tool_calls && lastAgent.tool_calls.length > 0) {
-                                                  const fileWriteCall = lastAgent.tool_calls.find((tc: any) => tc.name === 'file_write');
+                                                  const fileWriteCall = lastAgent.tool_calls.find((tc: any) =>
+                                                    tc.name === 'write_file' || tc.name === 'file_write'
+                                                  );
                                                   if (fileWriteCall?.args?.content) {
                                                     return fileWriteCall.args.content;
                                                   }

@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import LearnLangChainTab from './LearnLangChainTab';
 import BestPracticesTab from './BestPracticesTab';
+import FilesLibraryTab from './FilesLibraryTab';
 import WorkflowDetailedView from './WorkflowDetailedView';
 import type { Project, Workflow } from '../../types/workflow';
 
@@ -30,7 +31,7 @@ export default function LibraryContentPanel({
   onDelete,
   onExportCode
 }: LibraryContentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'workflows' | 'projects' | 'learn' | 'best-practices'>('workflows');
+  const [activeTab, setActiveTab] = useState<'workflows' | 'projects' | 'files' | 'learn' | 'best-practices'>('workflows');
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
@@ -64,6 +65,18 @@ export default function LibraryContentPanel({
               </span>
             </button>
             <button
+              onClick={() => setActiveTab('files')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'files'
+                ? 'bg-primary/10 text-primary'
+                : 'text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base">folder_open</span>
+                Files
+              </span>
+            </button>
+            <button
               onClick={() => setActiveTab('learn')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'learn'
                 ? 'bg-primary/10 text-primary'
@@ -89,7 +102,7 @@ export default function LibraryContentPanel({
             </button>
           </div>
 
-          {/* Search - only show on learn and best practices tabs */}
+          {/* Search - only show on learn, best practices, and files tabs */}
           {(activeTab === 'learn' || activeTab === 'best-practices') && (
             <div className="relative">
               <span
@@ -321,6 +334,7 @@ export default function LibraryContentPanel({
           </div>
         )}
 
+        {activeTab === 'files' && <FilesLibraryTab />}
         {activeTab === 'learn' && <LearnLangChainTab />}
         {activeTab === 'best-practices' && <BestPracticesTab />}
       </div>

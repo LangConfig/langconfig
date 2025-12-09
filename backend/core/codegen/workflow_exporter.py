@@ -1357,14 +1357,24 @@ from .state import WorkflowState
         if "web_fetch" in self._used_native_tools:
             tool_implementations.append(self._get_web_fetch_impl())
 
-        if "file_read" in self._used_native_tools:
-            tool_implementations.append(self._get_file_read_impl())
+        # Filesystem tools (DeepAgents standard naming)
+        if "read_file" in self._used_native_tools or "file_read" in self._used_native_tools:
+            tool_implementations.append(self._get_read_file_impl())
 
-        if "file_write" in self._used_native_tools:
-            tool_implementations.append(self._get_file_write_impl())
+        if "write_file" in self._used_native_tools or "file_write" in self._used_native_tools:
+            tool_implementations.append(self._get_write_file_impl())
 
-        if "file_list" in self._used_native_tools:
-            tool_implementations.append(self._get_file_list_impl())
+        if "ls" in self._used_native_tools or "file_list" in self._used_native_tools:
+            tool_implementations.append(self._get_ls_impl())
+
+        if "edit_file" in self._used_native_tools:
+            tool_implementations.append(self._get_edit_file_impl())
+
+        if "glob" in self._used_native_tools:
+            tool_implementations.append(self._get_glob_impl())
+
+        if "grep" in self._used_native_tools:
+            tool_implementations.append(self._get_grep_impl())
 
         if "reasoning_chain" in self._used_native_tools:
             tool_implementations.append(self._get_reasoning_chain_impl())
@@ -1495,13 +1505,13 @@ def get_tool_by_name(name: str):
                     return f"Fetch error: {str(e)}"
         ''').strip()
 
-    def _get_file_read_impl(self) -> str:
-        """Get file_read tool implementation."""
+    def _get_read_file_impl(self) -> str:
+        """Get read_file tool implementation (DeepAgents standard naming)."""
         return dedent('''
             @tool
-            def file_read(file_path: str, max_chars: int = 50000) -> str:
+            def read_file(file_path: str, max_chars: int = 50000) -> str:
                 """
-                Read contents of a file.
+                Read file contents with optional line numbers.
 
                 Args:
                     file_path: Path to the file
@@ -1527,13 +1537,13 @@ def get_tool_by_name(name: str):
                     return f"Read error: {str(e)}"
         ''').strip()
 
-    def _get_file_write_impl(self) -> str:
-        """Get file_write tool implementation."""
+    def _get_write_file_impl(self) -> str:
+        """Get write_file tool implementation (DeepAgents standard naming)."""
         return dedent('''
             @tool
-            def file_write(file_path: str, content: str) -> str:
+            def write_file(file_path: str, content: str) -> str:
                 """
-                Write content to a file.
+                Create a new file with the specified content.
 
                 Args:
                     file_path: Path to write to
@@ -1553,20 +1563,20 @@ def get_tool_by_name(name: str):
                     return f"Write error: {str(e)}"
         ''').strip()
 
-    def _get_file_list_impl(self) -> str:
-        """Get file_list tool implementation."""
+    def _get_ls_impl(self) -> str:
+        """Get ls tool implementation (DeepAgents standard naming)."""
         return dedent('''
             @tool
-            def file_list(directory_path: str, pattern: str = "*") -> str:
+            def ls(directory_path: str = ".", pattern: str = "*") -> str:
                 """
-                List files in a directory.
+                List directory contents with metadata.
 
                 Args:
-                    directory_path: Path to the directory
+                    directory_path: Path to the directory (default: current dir)
                     pattern: Glob pattern for filtering
 
                 Returns:
-                    List of files
+                    List of files with metadata
                 """
                 try:
                     path = Path(directory_path).resolve()
@@ -1582,12 +1592,162 @@ def get_tool_by_name(name: str):
                     results = []
                     for f in sorted(files):
                         file_type = "DIR" if f.is_dir() else "FILE"
-                        results.append(f"[{file_type}] {f.name}")
+                        size = f.stat().st_size if f.is_file() else 0
+                        results.append(f"[{file_type}] {f.name} ({size} bytes)")
 
                     return "\\n".join(results)
 
                 except Exception as e:
                     return f"List error: {str(e)}"
+        ''').strip()
+
+    def _get_edit_file_impl(self) -> str:
+        """Get edit_file tool implementation (DeepAgents standard naming)."""
+        return dedent('''
+            @tool
+            def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+                """
+                Perform exact string replacement in a file.
+
+                Args:
+                    file_path: Path to the file to edit
+                    old_string: The exact text to find and replace
+                    new_string: The text to replace it with
+
+                Returns:
+                    Success message or error
+                """
+                try:
+                    path = Path(file_path).resolve()
+
+                    if not path.exists():
+                        return f"File not found: {file_path}"
+
+                    content = path.read_text(encoding="utf-8")
+
+                    if old_string not in content:
+                        return f"String not found in file: {old_string[:50]}..."
+
+                    # Check for uniqueness
+                    count = content.count(old_string)
+                    if count > 1:
+                        return f"String appears {count} times. Please provide a more unique string."
+
+                    new_content = content.replace(old_string, new_string, 1)
+                    path.write_text(new_content, encoding="utf-8")
+
+                    return f"Successfully replaced text in {file_path}"
+
+                except Exception as e:
+                    return f"Edit error: {str(e)}"
+        ''').strip()
+
+    def _get_glob_impl(self) -> str:
+        """Get glob tool implementation (DeepAgents standard naming)."""
+        return dedent('''
+            @tool
+            def glob(pattern: str, path: str = ".") -> str:
+                """
+                Find files matching a glob pattern.
+
+                Args:
+                    pattern: Glob pattern (e.g., "**/*.py", "src/*.ts")
+                    path: Base path to search from (default: current dir)
+
+                Returns:
+                    List of matching file paths
+                """
+                try:
+                    base_path = Path(path).resolve()
+
+                    if not base_path.exists():
+                        return f"Path not found: {path}"
+
+                    matches = list(base_path.glob(pattern))
+
+                    if not matches:
+                        return f"No files matching pattern: {pattern}"
+
+                    # Sort by modification time (most recent first)
+                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+                    results = []
+                    for f in matches[:100]:  # Limit to 100 results
+                        rel_path = f.relative_to(base_path) if f.is_relative_to(base_path) else f
+                        results.append(str(rel_path))
+
+                    result = "\\n".join(results)
+                    if len(matches) > 100:
+                        result += f"\\n\\n[{len(matches) - 100} more matches not shown]"
+
+                    return result
+
+                except Exception as e:
+                    return f"Glob error: {str(e)}"
+        ''').strip()
+
+    def _get_grep_impl(self) -> str:
+        """Get grep tool implementation (DeepAgents standard naming)."""
+        return dedent('''
+            @tool
+            def grep(pattern: str, path: str = ".", file_pattern: str = "*") -> str:
+                """
+                Search file contents using regex.
+
+                Args:
+                    pattern: Regex pattern to search for
+                    path: Directory to search in (default: current dir)
+                    file_pattern: Glob pattern to filter files (default: all files)
+
+                Returns:
+                    Matching lines with file paths and line numbers
+                """
+                import re
+
+                try:
+                    base_path = Path(path).resolve()
+
+                    if not base_path.exists():
+                        return f"Path not found: {path}"
+
+                    regex = re.compile(pattern)
+                    results = []
+                    files_searched = 0
+                    max_results = 50
+
+                    for file_path in base_path.rglob(file_pattern):
+                        if not file_path.is_file():
+                            continue
+
+                        files_searched += 1
+
+                        try:
+                            content = file_path.read_text(encoding="utf-8", errors="ignore")
+                            for line_num, line in enumerate(content.splitlines(), 1):
+                                if regex.search(line):
+                                    rel_path = file_path.relative_to(base_path)
+                                    results.append(f"{rel_path}:{line_num}: {line.strip()}")
+                                    if len(results) >= max_results:
+                                        break
+                        except Exception:
+                            continue
+
+                        if len(results) >= max_results:
+                            break
+
+                    if not results:
+                        return f"No matches found for pattern: {pattern}"
+
+                    result = "\\n".join(results)
+                    if len(results) >= max_results:
+                        result += f"\\n\\n[Results limited to {max_results} matches]"
+
+                    return result
+
+                except re.error as e:
+                    return f"Invalid regex pattern: {str(e)}"
+                except Exception as e:
+                    return f"Grep error: {str(e)}"
         ''').strip()
 
     def _get_reasoning_chain_impl(self) -> str:

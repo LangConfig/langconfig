@@ -22,7 +22,9 @@ import {
   Sparkles,
   ArrowLeft,
   AlertTriangle,
-  X
+  X,
+  Wrench,
+  Info
 } from 'lucide-react';
 import { useNotification } from '../../../hooks/useNotification';
 import { ModelSelectorInline } from '../../../components/common/ModelSelector';
@@ -160,12 +162,16 @@ const REGULAR_AGENT_DEFAULTS = {
   enforce_tool_constraints: false  // Disabled by default - users can enable for production safety
 };
 
+// DeepAgents standard filesystem tools
+// See: https://docs.langchain.com/oss/python/deepagents/harness
+const FILESYSTEM_TOOLS = ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'];
+
 const DEFAULT_CONFIG: DeepAgentConfig = {
   model: 'claude-sonnet-4-5-20250929',
   temperature: 0.7,
   system_prompt: 'You are a helpful AI assistant with planning and research capabilities.',
   tools: [],
-  native_tools: ['file_read', 'file_write', 'file_list'],
+  native_tools: FILESYSTEM_TOOLS,  // DeepAgents standard: ls, read_file, write_file, edit_file, glob, grep
   cli_tools: [],
   use_deepagents: true,
   middleware: [
@@ -211,15 +217,24 @@ const DEFAULT_CONFIG: DeepAgentConfig = {
   enforce_tool_constraints: false  // Disabled by default - users can enable for production safety
 };
 
+// Native tools registry with DeepAgents standard naming
+// See: https://docs.langchain.com/oss/python/deepagents/harness
 const NATIVE_TOOLS = [
-  { id: 'file_read', name: 'Read Files', description: 'Read the contents of text files. Supports .txt, .md, .py, .json, etc. Maximum 50,000 characters per file.' },
-  { id: 'file_write', name: 'Write Files', description: 'Create or overwrite files with text content. Automatically creates parent directories if needed. Workspace-aware for organized file storage.' },
-  { id: 'file_list', name: 'List Files', description: 'List files and directories with optional glob pattern filtering (e.g., *.txt, *.py). Shows file/directory indicators.' },
+  // Filesystem tools (DeepAgents standard)
+  { id: 'ls', name: 'List Directory', description: 'List directory contents with metadata (file sizes, types). Shows files and subdirectories.' },
+  { id: 'read_file', name: 'Read File', description: 'Read file contents with line numbers. Supports offset and limit for large files.' },
+  { id: 'write_file', name: 'Write File', description: 'Create new files with content. Workspace-aware for organized file storage.' },
+  { id: 'edit_file', name: 'Edit File', description: 'Perform exact string replacements in files. The search string must be unique.' },
+  { id: 'glob', name: 'Find Files', description: 'Find files matching a glob pattern (e.g., **/*.py, src/*.ts).' },
+  { id: 'grep', name: 'Search Contents', description: 'Search file contents for a regex pattern. Returns matching lines with file paths and line numbers.' },
+  // Web tools
   { id: 'web_search', name: 'Web Search', description: 'Search the web using DuckDuckGo (FREE, no API key required). Perfect for finding current information, news, and general knowledge.' },
   { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch and extract text content from webpages using HTTP requests. Useful for reading articles, documentation, and web pages.' },
   { id: 'browser', name: 'Browser Automation', description: 'Advanced web interaction using Playwright. Navigate, click, extract text, take screenshots, and interact with JavaScript-rendered content.' },
+  // Memory tools
   { id: 'memory_store', name: 'Store Memory', description: 'Save information to agent memory for later recall. Uses PostgreSQL for persistence across sessions. Supports key-value storage with context categories.' },
   { id: 'memory_recall', name: 'Recall Memory', description: 'Retrieve previously stored information from memory by key. Access saved data across different conversation sessions.' },
+  // Reasoning tools
   { id: 'reasoning_chain', name: 'Reasoning Chain', description: 'Break down complex tasks into logical reasoning steps. Provides structured framework for multi-step problem solving and analysis.' },
 ];
 
@@ -357,6 +372,26 @@ export default function DeepAgentBuilder({
     });
     return currentState !== initialConfigRef;
   }, [config, selectedCustomTools, initialConfigRef]);
+
+  // Warning: System prompt mentions file operations but filesystem tools are disabled
+  const fileToolWarning = useMemo(() => {
+    if (agentType !== 'deep') return null;
+
+    const prompt = config.system_prompt?.toLowerCase() || '';
+    const fileKeywords = ['write file', 'create file', 'save file', 'output file', 'read file', 'edit file'];
+    const mentionsFiles = fileKeywords.some(keyword => prompt.includes(keyword));
+
+    if (!mentionsFiles) return null;
+
+    const fsMiddlewareEnabled = config.middleware?.some(m => m.type === 'filesystem' && m.enabled);
+    const hasFileTools = config.native_tools?.some(t =>
+      ['write_file', 'read_file', 'edit_file', 'ls', 'glob', 'grep'].includes(t)
+    );
+
+    if (fsMiddlewareEnabled || hasFileTools) return null;
+
+    return 'System prompt mentions file operations, but FilesystemMiddleware is disabled. Enable it in the Middleware section or the agent will not have access to file tools.';
+  }, [config.system_prompt, config.middleware, config.native_tools, agentType]);
 
   // Fetch custom tools on mount with cleanup for race condition
   useEffect(() => {
@@ -809,6 +844,16 @@ export default function DeepAgentBuilder({
                 placeholder="Enter the system prompt that defines the agent's behavior and capabilities... (or use AI Generate to auto-fill)"
                 className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
               />
+
+              {/* Warning badge for missing file tools */}
+              {fileToolWarning && (
+                <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {fileToolWarning}
+                  </p>
+                </div>
+              )}
             </div>
           </ConfigSection>
 
@@ -1579,7 +1624,11 @@ export default function DeepAgentBuilder({
                           </div>
                           <div className="text-xs text-gray-600 dark:text-gray-400">
                             {mw.type === 'todo_list' && 'Automatically create and track tasks as the agent works. Provides structured task management with status tracking (pending, in_progress, completed).'}
-                            {mw.type === 'filesystem' && 'Automatically save large tool outputs (>10KB) to disk to prevent memory overflow. Configurable size threshold and output directory.'}
+                            {mw.type === 'filesystem' && (
+                              <span>
+                                Enables filesystem tools: <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">ls</code>, <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">read_file</code>, <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">write_file</code>, <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">edit_file</code>, <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">glob</code>, <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">grep</code>. Also auto-evicts large outputs to disk.
+                              </span>
+                            )}
                             {mw.type === 'subagent' && 'Dynamically spawn specialized sub-agents for complex tasks. Enables hierarchical agent architectures with task delegation and result aggregation.'}
                           </div>
                         </div>
@@ -1712,6 +1761,97 @@ export default function DeepAgentBuilder({
                     )}
                   </div>
                 ))}
+              </div>
+            </ConfigSection>
+          )}
+
+          {/* Available Tools Reference - Deep Agent Only */}
+          {agentType === 'deep' && (
+            <ConfigSection
+              title="Available Tools Reference"
+              icon={<Wrench className="w-5 h-5" />}
+              expanded={expandedSections.tools || false}
+              onToggle={() => toggleSection('tools')}
+            >
+              <div className="space-y-4">
+                <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    DeepAgents have access to the tools below based on enabled middleware. If your agent tries to call a tool that isn't available, enable the corresponding middleware.
+                  </p>
+                </div>
+
+                {/* Filesystem Tools */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                    Filesystem Tools
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                      {config.middleware?.find(m => m.type === 'filesystem')?.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {[
+                      { name: 'ls', desc: 'List directory contents with metadata' },
+                      { name: 'read_file', desc: 'Read file contents with line numbers' },
+                      { name: 'write_file', desc: 'Create new files with content' },
+                      { name: 'edit_file', desc: 'Exact string replacement in files' },
+                      { name: 'glob', desc: 'Find files matching patterns' },
+                      { name: 'grep', desc: 'Search file contents with regex' },
+                    ].map(tool => (
+                      <div key={tool.name} className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <code className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-800 dark:text-gray-200">
+                          {tool.name}
+                        </code>
+                        <span className="text-xs text-gray-600 dark:text-gray-400">{tool.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Task Management Tools */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                    Task Management
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                      {config.middleware?.find(m => m.type === 'todo_list')?.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <code className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-800 dark:text-gray-200">
+                        write_todos
+                      </code>
+                      <span className="text-xs text-gray-600 dark:text-gray-400">Create and update task lists</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Web Tools */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                    Web Tools
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                      {config.native_tools?.some(t => ['web_search', 'web_fetch'].includes(t)) ? 'Configured' : 'Not configured'}
+                    </span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {[
+                      { name: 'web_search', desc: 'Search the web (DuckDuckGo)' },
+                      { name: 'web_fetch', desc: 'Fetch webpage content' },
+                    ].map(tool => (
+                      <div key={tool.name} className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <code className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-800 dark:text-gray-200">
+                          {tool.name}
+                        </code>
+                        <span className="text-xs text-gray-600 dark:text-gray-400">{tool.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                  See <a href="https://docs.langchain.com/oss/python/deepagents/harness" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">DeepAgents Harness docs</a> for full tool documentation.
+                </p>
               </div>
             </ConfigSection>
           )}

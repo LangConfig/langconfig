@@ -1235,17 +1235,17 @@ export default function RealtimeExecutionPanel({
                                   </p>
                                 ),
                                 ul: ({ children }: any) => (
-                                  <ul className="list-disc list-inside mb-4 space-y-2" style={{ color: 'var(--color-text-primary)' }}>
+                                  <ul className="list-disc mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
                                     {children}
                                   </ul>
                                 ),
                                 ol: ({ children }: any) => (
-                                  <ol className="list-decimal list-inside mb-4 space-y-2" style={{ color: 'var(--color-text-primary)' }}>
+                                  <ol className="list-decimal mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
                                     {children}
                                   </ol>
                                 ),
                                 li: ({ children }: any) => (
-                                  <li className="ml-4" style={{ color: 'var(--color-text-primary)' }}>
+                                  <li className="pl-1" style={{ color: 'var(--color-text-primary)' }}>
                                     {children}
                                   </li>
                                 ),

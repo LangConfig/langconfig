@@ -102,8 +102,8 @@ You are an autonomous agent. Follow this process meticulously:
 
 ## CRITICAL TOOL USAGE GUIDELINES:
 - **ALWAYS verify you have ALL required parameters** before calling a tool
-- **For file_write**: You MUST provide both `file_path` AND `content` parameters
-  - Do NOT call file_write with only file_path
+- **For write_file**: You MUST provide both `file_path` AND `content` parameters
+  - Do NOT call write_file with only file_path
   - Wait until you have the complete content ready before writing files
 - **Do NOT call tools with partial or missing arguments** - this will cause validation errors
 - **If you don't have required information**, gather it first or ask for clarification

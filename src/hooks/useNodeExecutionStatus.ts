@@ -287,7 +287,7 @@ export function useNodeExecutionStatus(
           // Extract relevant info from tool inputs to show user what's happening
           let toolContext = '';
 
-          // Check for enhanced file_write info from backend
+          // Check for enhanced write_file info from backend
           if (event.data?.file_action && event.data?.filename) {
             // Use the backend's smart "Creating" or "Working on" message
             toolContext = `${event.data.file_action} ${event.data.filename}`;
@@ -298,15 +298,21 @@ export function useNodeExecutionStatus(
             toolContext = `Searching: "${toolInputs.query}"`;
           } else if (toolName === 'web_fetch' && toolInputs.url) {
             toolContext = `Fetching: ${toolInputs.url}`;
-          } else if (toolName === 'file_write' && toolInputs.file_path) {
+          } else if ((toolName === 'write_file' || toolName === 'file_write') && toolInputs.file_path) {
             toolContext = `Writing to: ${toolInputs.file_path}`;
-          } else if (toolName === 'file_read' && toolInputs.file_path) {
+          } else if ((toolName === 'read_file' || toolName === 'file_read') && toolInputs.file_path) {
             toolContext = `Reading: ${toolInputs.file_path}`;
+          } else if ((toolName === 'edit_file') && toolInputs.file_path) {
+            toolContext = `Editing: ${toolInputs.file_path}`;
+          } else if ((toolName === 'glob') && toolInputs.pattern) {
+            toolContext = `Finding files: ${toolInputs.pattern}`;
+          } else if ((toolName === 'grep') && toolInputs.pattern) {
+            toolContext = `Searching for: ${toolInputs.pattern}`;
           } else if (event.data?.input_preview) {
             toolContext = event.data.input_preview.substring(0, 150);
           }
 
-          // Format tool name for display
+          // Format tool name for display (supports both new DeepAgents standard and legacy names)
           let displayToolName = toolName;
           if (toolName === 'web_search' || toolName === 'search_web') {
             displayToolName = 'Searching web';
@@ -314,12 +320,18 @@ export function useNodeExecutionStatus(
             displayToolName = 'Fetching webpage';
           } else if (toolName === 'browser' || toolName === 'browser_navigate') {
             displayToolName = 'Browser automation';
-          } else if (toolName === 'file_read') {
+          } else if (toolName === 'read_file' || toolName === 'file_read') {
             displayToolName = 'Reading file';
-          } else if (toolName === 'file_write') {
+          } else if (toolName === 'write_file' || toolName === 'file_write') {
             displayToolName = 'Writing file';
-          } else if (toolName === 'file_list') {
+          } else if (toolName === 'ls' || toolName === 'file_list') {
             displayToolName = 'Listing files';
+          } else if (toolName === 'edit_file') {
+            displayToolName = 'Editing file';
+          } else if (toolName === 'glob') {
+            displayToolName = 'Finding files';
+          } else if (toolName === 'grep') {
+            displayToolName = 'Searching files';
           } else if (toolName === 'memory_store') {
             displayToolName = 'Storing memory';
           } else if (toolName === 'memory_recall') {

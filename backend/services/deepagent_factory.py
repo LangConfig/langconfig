@@ -549,12 +549,16 @@ class DeepAgentFactory:
             create_default_guardrails_config
         )
 
+        # Use DeepAgents standard filesystem tools
+        # See: https://docs.langchain.com/oss/python/deepagents/harness
+        from tools.native_tools import FILESYSTEM_TOOLS
+
         config = {
             "model": "claude-sonnet-4-5-20250929",
             "temperature": 0.7,
             "system_prompt": "You are a helpful AI assistant with planning and research capabilities.",
             "tools": [],
-            "native_tools": ["file_read", "file_write", "file_list"],
+            "native_tools": FILESYSTEM_TOOLS,  # ls, read_file, write_file, edit_file, glob, grep
             "cli_tools": [],
             "custom_tools": [],
             "use_deepagents": True,

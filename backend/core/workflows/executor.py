@@ -446,9 +446,10 @@ class SimpleWorkflowExecutor:
                                     if node_id and node_id in self.node_metadata:
                                         tool_call_buffer[tool_call_id]["agent_label"] = self.node_metadata[node_id]["label"]
 
-                                    # Try to extract filename early for file_write tool
+                                    # Try to extract filename early for write_file tool
+                                    # Support both new (write_file) and legacy (file_write) tool names
                                     tool_name = tool_call_buffer[tool_call_id].get("name")
-                                    if tool_name == "file_write" and not tool_call_buffer[tool_call_id].get("notified"):
+                                    if tool_name in ("write_file", "file_write") and not tool_call_buffer[tool_call_id].get("notified"):
                                         # Reconstruct JSON so far to check if we have file_path
                                         json_so_far = ''.join(tool_call_buffer[tool_call_id]["json_parts"])
 

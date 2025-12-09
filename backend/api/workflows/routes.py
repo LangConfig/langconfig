@@ -324,6 +324,13 @@ def _should_auto_export(workflow: WorkflowProfile) -> bool:
     Determine if workflow needs auto-export.
 
     Checks if workflow contains DeepAgent nodes that require export.
+    DeepAgents are identified by:
+    - node.type == 'deepagent'
+    - node.data.use_deepagents == True
+    - node.data.config.use_deepagents == True
+    - node.data.config.middleware (has DeepAgent middleware configured)
+    - node.data.deepAgentId (references a DeepAgent template)
+    - node.data.agentType == 'deep' (agent type selector)
 
     Args:
         workflow: WorkflowProfile instance
@@ -337,8 +344,59 @@ def _should_auto_export(workflow: WorkflowProfile) -> bool:
     # Check for DeepAgent nodes
     if isinstance(workflow.blueprint, dict):
         nodes = workflow.blueprint.get('nodes', [])
+        logger.debug(f"Checking {len(nodes)} nodes for DeepAgent indicators")
         for node in nodes:
-            if node.get('type') == 'deepagent' or node.get('data', {}).get('use_deepagents'):
+            node_id = node.get('id', 'unknown')
+            node_type = node.get('type', 'unknown')
+            node_data = node.get('data', {})
+            logger.debug(f"  Node {node_id}: type={node_type}, data_keys={list(node_data.keys())}")
+            # Check explicit type
+            if node.get('type') == 'deepagent':
+                logger.debug(f"Node {node.get('id')} is deepagent type")
+                return True
+
+            # Check use_deepagents flag in data
+            node_data = node.get('data', {})
+            if node_data.get('use_deepagents'):
+                logger.debug(f"Node {node.get('id')} has use_deepagents=True in data")
+                return True
+
+            # Check if node references a DeepAgent template (deepAgentId)
+            if node_data.get('deepAgentId') or node_data.get('deep_agent_id'):
+                logger.debug(f"Node {node.get('id')} references DeepAgent template")
+                return True
+
+            # Check agentType field (from agent builder)
+            agent_type = node_data.get('agentType') or node_data.get('agent_type')
+            if agent_type == 'deep':
+                logger.debug(f"Node {node.get('id')} has agentType=deep")
+                return True
+
+            # Check use_deepagents in config
+            config = node_data.get('config', {})
+            if config.get('use_deepagents'):
+                logger.debug(f"Node {node.get('id')} has use_deepagents=True in config")
+                return True
+
+            # Check agentType in config
+            config_agent_type = config.get('agentType') or config.get('agent_type')
+            if config_agent_type == 'deep':
+                logger.debug(f"Node {node.get('id')} has config.agentType=deep")
+                return True
+
+            # Check for DeepAgent middleware (todo_list, filesystem, subagent)
+            middleware = config.get('middleware', [])
+            if middleware:
+                # If middleware is configured, it's likely a DeepAgent
+                middleware_types = [m.get('type') for m in middleware if isinstance(m, dict)]
+                deepagent_middleware = {'todo_list', 'filesystem', 'subagent'}
+                if set(middleware_types) & deepagent_middleware:
+                    logger.debug(f"Node {node.get('id')} has DeepAgent middleware: {middleware_types}")
+                    return True
+
+            # Check for subagents configuration
+            if config.get('subagents') or node_data.get('subagents'):
+                logger.debug(f"Node {node.get('id')} has subagents configured")
                 return True
 
     return False
@@ -656,14 +714,40 @@ async def auto_export_deepagent_workflow(workflow: WorkflowProfile, db: Session)
     if not workflow.blueprint:
         return
 
-    # Look for DeepAgent nodes in the blueprint
+    # Look for DeepAgent nodes in the blueprint using same logic as _should_auto_export
     has_deepagent = False
     deepagent_nodes = []
 
     if isinstance(workflow.blueprint, dict):
         nodes = workflow.blueprint.get('nodes', [])
         for node in nodes:
-            if node.get('type') == 'deepagent' or node.get('data', {}).get('use_deepagents'):
+            node_data = node.get('data', {})
+            config = node_data.get('config', {})
+
+            # Check all DeepAgent indicators
+            is_deepagent = (
+                node.get('type') == 'deepagent' or
+                node_data.get('use_deepagents') or
+                node_data.get('deepAgentId') or
+                node_data.get('deep_agent_id') or
+                node_data.get('agentType') == 'deep' or
+                node_data.get('agent_type') == 'deep' or
+                config.get('use_deepagents') or
+                config.get('agentType') == 'deep' or
+                config.get('agent_type') == 'deep' or
+                config.get('subagents') or
+                node_data.get('subagents')
+            )
+
+            # Also check middleware
+            middleware = config.get('middleware', [])
+            if middleware:
+                middleware_types = [m.get('type') for m in middleware if isinstance(m, dict)]
+                deepagent_middleware = {'todo_list', 'filesystem', 'subagent'}
+                if set(middleware_types) & deepagent_middleware:
+                    is_deepagent = True
+
+            if is_deepagent:
                 has_deepagent = True
                 deepagent_nodes.append(node)
 
