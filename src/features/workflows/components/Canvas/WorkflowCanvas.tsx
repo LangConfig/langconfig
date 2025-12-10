@@ -31,7 +31,9 @@ import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import ThinkingToast from '../../../../components/ui/ThinkingToast';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
+import InlineFilePreview, { FileContent } from '../Execution/InlineFilePreview';
 import { MemoryView } from '../../../memory/components/MemoryView';
+import { getFileIcon } from '../../utils/fileHelpers';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -964,6 +966,9 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [files, setFiles] = useState<TaskFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
+  const [selectedPreviewFile, setSelectedPreviewFile] = useState<TaskFile | null>(null);
+  const [filePreviewContent, setFilePreviewContent] = useState<FileContent | null>(null);
+  const [filePreviewLoading, setFilePreviewLoading] = useState(false);
   const [showThinkingStream, setShowThinkingStream] = useState(false); // Toggle for thinking toast notifications on canvas
   const [showLiveExecutionPanel, setShowLiveExecutionPanel] = useState(false); // Toggle for live execution panel
   const [showAnimatedReveal, setShowAnimatedReveal] = useState(true);
@@ -1310,6 +1315,35 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     if (!currentTaskId) return;
     window.open(`/api/workspace/tasks/${currentTaskId}/files/${filename}`, '_blank');
   }, [currentTaskId]);
+
+  // Fetch file content for preview
+  const fetchFileContent = useCallback(async (file: TaskFile) => {
+    setFilePreviewLoading(true);
+    try {
+      const url = `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch content');
+      const data = await response.json();
+      setFilePreviewContent(data);
+    } catch (error) {
+      console.error('Error fetching file content:', error);
+      setFilePreviewContent(null);
+    } finally {
+      setFilePreviewLoading(false);
+    }
+  }, []);
+
+  // Handle file selection for preview
+  const handleFileSelect = useCallback((file: TaskFile) => {
+    setSelectedPreviewFile(file);
+    fetchFileContent(file);
+  }, [fetchFileContent]);
+
+  // Close file preview
+  const closeFilePreview = useCallback(() => {
+    setSelectedPreviewFile(null);
+    setFilePreviewContent(null);
+  }, []);
 
   // Fetch files when Results tab is active and Files subtab is selected
   useEffect(() => {
@@ -3517,9 +3551,8 @@ if __name__ == "__main__":
   return (
     <WorkflowCanvasContext.Provider value={{ updateNodeConfig, openNodeContextMenu }}>
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Workflow Toolbar */}
-        {nodes.length > 0 && (
-          <div className="bg-white dark:bg-panel-dark border-b border-gray-200 dark:border-border-dark px-4 py-2.5">
+        {/* Workflow Toolbar - Always visible so users can select workflows even with empty canvas */}
+        <div className="bg-white dark:bg-panel-dark border-b border-gray-200 dark:border-border-dark px-4 py-2.5">
             <div className="flex items-center gap-4">
               {/* LEFT SECTION: Workflow Switcher with integrated name */}
               <div className="relative flex items-center">
@@ -3832,7 +3865,6 @@ if __name__ == "__main__":
 
             </div>
           </div>
-        )}
 
         {/* Tab Navigation */}
         {nodes.length > 0 && (
@@ -5418,89 +5450,109 @@ if __name__ == "__main__":
 
                   {/* Files Subtab */}
                   {resultsSubTab === 'files' && (
-                    <div className="flex-1 overflow-y-auto p-6">
-                      {filesLoading ? (
-                        <div className="flex items-center justify-center py-16">
-                          <div className="text-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
-                            <p className="text-sm text-gray-600 dark:text-text-muted">Loading files...</p>
+                    <div className="flex-1 overflow-hidden flex">
+                      {/* File List - shrinks when preview open */}
+                      <div className={`${selectedPreviewFile ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 transition-all duration-200`}>
+                        {filesLoading ? (
+                          <div className="flex items-center justify-center py-16">
+                            <div className="text-center">
+                              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
+                              <p className="text-sm text-gray-600 dark:text-text-muted">Loading files...</p>
+                            </div>
                           </div>
-                        </div>
-                      ) : filesError ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <FileIcon className="w-16 h-16 text-red-300 dark:text-red-900/30 mb-4" />
-                          <p className="text-lg font-medium text-red-600 dark:text-red-400">
-                            Failed to load files
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                            {filesError}
-                          </p>
-                          <button
-                            onClick={fetchFiles}
-                            className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
-                            style={{ color: 'var(--color-primary)' }}
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      ) : files.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <FolderOpen className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
-                          <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                            No files generated
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                            This workflow didn't create any output files.
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="mb-4">
-                            <p className="text-sm text-gray-600 dark:text-text-muted">
-                              Files created by agents during workflow execution. All files are stored in the workspace directory.
+                        ) : filesError ? (
+                          <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <FileIcon className="w-16 h-16 text-red-300 dark:text-red-900/30 mb-4" />
+                            <p className="text-lg font-medium text-red-600 dark:text-red-400">
+                              Failed to load files
+                            </p>
+                            <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
+                              {filesError}
+                            </p>
+                            <button
+                              onClick={fetchFiles}
+                              className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
+                              style={{ color: 'var(--color-primary)' }}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : files.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <FolderOpen className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
+                            <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
+                              No files generated
+                            </p>
+                            <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
+                              This workflow didn't create any output files.
                             </p>
                           </div>
+                        ) : (
+                          <>
+                            <div className="mb-4">
+                              <p className="text-sm text-gray-600 dark:text-text-muted">
+                                Click a file to preview. {files.length} file{files.length !== 1 ? 's' : ''} generated.
+                              </p>
+                            </div>
 
-                          <div className="space-y-2">
-                            {files.map((file, index) => (
-                              <div
-                                key={index}
-                                className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                              >
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                  <div className="p-2 rounded-lg bg-primary/10" style={{ color: 'var(--color-primary)' }}>
-                                    <FileIcon className="w-5 h-5" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-gray-900 dark:text-white truncate">
-                                      {file.filename}
-                                    </p>
-                                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-text-muted mt-1">
-                                      <span>{file.size_human}</span>
-                                      <span>•</span>
-                                      <span>{new Date(file.modified_at).toLocaleString()}</span>
-                                      {file.extension && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="uppercase">{file.extension.replace('.', '')}</span>
-                                        </>
-                                      )}
+                            <div className="space-y-2">
+                              {files.map((file, index) => (
+                                <div
+                                  key={index}
+                                  onClick={() => handleFileSelect(file)}
+                                  className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${
+                                    selectedPreviewFile?.path === file.path
+                                      ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
+                                      : 'border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <span className="text-2xl flex-shrink-0">{getFileIcon(file.extension)}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-medium text-gray-900 dark:text-white truncate">
+                                        {file.filename}
+                                      </p>
+                                      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-text-muted mt-1">
+                                        <span>{file.size_human}</span>
+                                        <span>•</span>
+                                        <span>{new Date(file.modified_at).toLocaleDateString()}</span>
+                                        {file.extension && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="uppercase">{file.extension.replace('.', '')}</span>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
 
-                                <button
-                                  onClick={() => handleDownloadFile(file.filename)}
-                                  className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-text-muted"
-                                  title="Download file"
-                                >
-                                  <Download className="w-4 h-4" />
-                                  Download
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDownloadFile(file.filename);
+                                    }}
+                                    className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-text-muted"
+                                    title="Download file"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    {!selectedPreviewFile && 'Download'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Preview Panel */}
+                      {selectedPreviewFile && (
+                        <InlineFilePreview
+                          file={selectedPreviewFile}
+                          content={filePreviewContent}
+                          loading={filePreviewLoading}
+                          onClose={closeFilePreview}
+                          onDownload={handleDownloadFile}
+                        />
                       )}
                     </div>
                   )}
@@ -5749,19 +5801,6 @@ if __name__ == "__main__":
               </div>
             </div>
           )}
-
-          {/* Enhanced Live Monitoring Panel with SSE Streaming - Commented out since we use toasts now */}
-          {/* <EnhancedLiveMonitoringPanel
-        workflowId={currentWorkflowId}
-        taskId={currentTaskId}
-        isVisible={monitoringVisible}
-        onToggle={() => setMonitoringVisible(!monitoringVisible)}
-        onStatusChange={handleWorkflowStatusChange}
-        events={workflowEvents}
-        isConnected={latestEvent !== null}
-        error={null}
-      /> */}
-
 
           {/* Save Workflow Modal */}
           {showSaveModal && (

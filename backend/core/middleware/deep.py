@@ -520,6 +520,13 @@ class DeepAgentsMiddlewareFactory:
             middleware_type = middleware_config["type"]
             config = middleware_config.get("config", {})
 
+            # IMPORTANT: Skip SUBAGENT middleware - the deepagents library automatically
+            # creates SubAgentMiddleware with the `task` tool when `subagents=` is passed
+            # to create_deep_agent(). Creating tools here would conflict with that.
+            if middleware_type == MiddlewareType.SUBAGENT or middleware_type == "subagent":
+                logger.info(f"Skipping local SUBAGENT middleware tools - handled by deepagents library")
+                continue
+
             try:
                 middleware = DeepAgentsMiddlewareFactory.create_middleware(
                     middleware_type=middleware_type,

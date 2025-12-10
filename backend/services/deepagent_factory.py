@@ -179,23 +179,13 @@ class DeepAgentFactory:
             except ImportError as e:
                 logger.warning(f"FilesystemMiddleware not available: {e}")
 
-        # Initialize SubAgentMiddleware if subagents configured
+        # NOTE: SubAgentMiddleware is NOT manually created here.
+        # The deepagents library automatically creates SubAgentMiddleware (with the `task` tool)
+        # when `subagents=` is passed to create_deep_agent().
+        # Manually creating it causes conflicts and prevents the `task` tool from working.
+        # See: https://docs.langchain.com/oss/python/deepagents/subagents
         if subagents_config:
-            try:
-                from deepagents.middleware.subagents import SubAgentMiddleware
-
-                subagent_middleware = SubAgentMiddleware(
-                    subagents=subagents_config,
-                    default_model=config.model
-                )
-                instrumented_subagent = instrument_deepagents_middleware(
-                    subagent_middleware,
-                    callback_handler=callback_handler
-                )
-                middleware_instances.append(instrumented_subagent)
-                logger.info(f"SubAgentMiddleware initialized ({len(subagents_config)} subagents)")
-            except ImportError as e:
-                logger.warning(f"SubAgentMiddleware not available: {e}")
+            logger.info(f"SubAgents configured ({len(subagents_config)}) - will be auto-initialized by create_deep_agent")
 
         # Get PostgreSQL checkpointer for conversation persistence
         from core.workflows.checkpointing.manager import get_checkpointer
@@ -226,6 +216,17 @@ class DeepAgentFactory:
                 "subagents": subagents_config if subagents_config else None,
                 "checkpointer": checkpointer,
             }
+
+            # Debug logging for subagent configuration
+            if subagents_config:
+                logger.info(f"Subagent configuration being passed to create_deep_agent:")
+                for i, sub in enumerate(subagents_config):
+                    if isinstance(sub, dict):
+                        sub_tools = sub.get('tools', [])
+                        tool_names = [getattr(t, 'name', str(t)) for t in sub_tools] if sub_tools else []
+                        logger.info(f"  [{i}] {sub.get('name')}: {len(sub_tools)} tools ({tool_names})")
+                    else:
+                        logger.info(f"  [{i}] CompiledSubAgent: {getattr(sub, 'name', 'unknown')}")
 
             # Try to pass guardrails if supported
             try:
@@ -325,11 +326,24 @@ class DeepAgentFactory:
         for sub_config in subagent_configs:
             # Dictionary-based subagent (simple)
             if sub_config.type == SubAgentType.DICTIONARY:
+                # IMPORTANT: Load actual tool objects, not just tool names
+                # The deepagents library expects tools as BaseTool/Callable/dict objects,
+                # not string names. We need to resolve tool names to actual tools.
+                subagent_tools = []
+                if sub_config.tools:
+                    try:
+                        from core.agents.factory import AgentFactory
+                        # Load native tools by name
+                        subagent_tools = await AgentFactory._load_native_tools(sub_config.tools)
+                        logger.info(f"Loaded {len(subagent_tools)} tools for subagent '{sub_config.name}': {sub_config.tools}")
+                    except Exception as e:
+                        logger.warning(f"Failed to load tools for subagent '{sub_config.name}': {e}")
+
                 subagent = {
                     "name": sub_config.name,
                     "description": sub_config.description,
                     "system_prompt": sub_config.system_prompt or "",
-                    "tools": sub_config.tools,
+                    "tools": subagent_tools,  # Actual tool objects, not string names
                 }
 
                 if sub_config.model:
@@ -339,7 +353,7 @@ class DeepAgentFactory:
                     subagent["interrupt_on"] = sub_config.interrupt_on
 
                 subagents.append(subagent)
-                logger.info(f"Dictionary subagent prepared: {sub_config.name}")
+                logger.info(f"Dictionary subagent prepared: {sub_config.name} with {len(subagent_tools)} tools")
 
             # Workflow-based CompiledSubAgent
             elif sub_config.type == SubAgentType.COMPILED:
@@ -549,16 +563,19 @@ class DeepAgentFactory:
             create_default_guardrails_config
         )
 
-        # Use DeepAgents standard filesystem tools
+        # Use DeepAgents standard filesystem tools + web_search for research
         # See: https://docs.langchain.com/oss/python/deepagents/harness
         from tools.native_tools import FILESYSTEM_TOOLS
+
+        # Default tools: filesystem + web_search for research capabilities
+        default_tools = FILESYSTEM_TOOLS + ["web_search"]
 
         config = {
             "model": "claude-sonnet-4-5-20250929",
             "temperature": 0.7,
             "system_prompt": "You are a helpful AI assistant with planning and research capabilities.",
             "tools": [],
-            "native_tools": FILESYSTEM_TOOLS,  # ls, read_file, write_file, edit_file, glob, grep
+            "native_tools": default_tools,  # Filesystem + web_search for research
             "cli_tools": [],
             "custom_tools": [],
             "use_deepagents": True,
