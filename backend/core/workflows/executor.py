@@ -486,14 +486,50 @@ class SimpleWorkflowExecutor:
                                                 tool_call_buffer[tool_call_id]["notified"] = True
 
                                 # Check for tool_use start (contains tool name)
-                                elif item.get('type') == 'tool_use' and 'name' in item:
+                                # This fires when we first see a tool being called, BEFORE the JSON args stream
+                                if item.get('type') == 'tool_use' and 'name' in item:
                                     tool_name = item['name']
                                     tool_call_index = item.get('index', 0)
                                     tool_call_id = f"{node_id}_{tool_call_index}"
 
-                                    if tool_call_id in tool_call_buffer:
-                                        tool_call_buffer[tool_call_id]["name"] = tool_name
-                                        tool_call_buffer[tool_call_id]["tool_use_id"] = item.get('id')  # Store for later filename extraction
+                                    logger.info(f"[TOOL_USE DETECTED] tool={tool_name}, index={tool_call_index}, node_id={node_id}")
+
+                                    # Initialize buffer if not exists
+                                    if tool_call_id not in tool_call_buffer:
+                                        tool_call_buffer[tool_call_id] = {
+                                            "name": None,
+                                            "json_parts": [],
+                                            "agent_label": None,
+                                            "notified": False,
+                                            "preparing_notified": False  # Track if we've sent preparing notification
+                                        }
+
+                                    tool_call_buffer[tool_call_id]["name"] = tool_name
+                                    tool_call_buffer[tool_call_id]["tool_use_id"] = item.get('id')
+
+                                    # Get agent label for this node
+                                    agent_label = None
+                                    if node_id and node_id in self.node_metadata:
+                                        agent_label = self.node_metadata[node_id]["label"]
+                                        tool_call_buffer[tool_call_id]["agent_label"] = agent_label
+
+                                    # IMMEDIATE: Emit tool_preparing event so frontend shows something right away
+                                    # This fires as soon as we know the tool name, before JSON streaming completes
+                                    if not tool_call_buffer[tool_call_id].get("preparing_notified"):
+                                        logger.info(f"[TOOL PREPARING - EMITTING] {agent_label}: {tool_name}")
+                                        await event_bus.publish(channel, {
+                                            "type": "tool_preparing",
+                                            "data": {
+                                                "tool_name": tool_name,
+                                                "agent_label": agent_label,
+                                                "node_id": node_id,
+                                                "run_id": str(event.get("run_id", "")),
+                                                "message": f"Preparing {tool_name}...",
+                                                "timestamp": datetime.utcnow().isoformat()
+                                            }
+                                        })
+                                        logger.info(f"[TOOL PREPARING] {agent_label}: {tool_name}")
+                                        tool_call_buffer[tool_call_id]["preparing_notified"] = True
 
                     # DEBUG: Log what we extracted (debug level to avoid spam)
                     logger.debug(f"[EXTRACTED TOKEN] Provider: {model_provider}, Type: {type(token_text)}, Value: {repr(token_text)[:200]}")
@@ -774,6 +810,11 @@ class SimpleWorkflowExecutor:
                     "timestamp": datetime.utcnow().isoformat()
                 }
             })
+
+            # CRITICAL: Flush all pending database persist tasks before querying
+            # This ensures all tool_start, tool_end, and LLM events are saved to DB
+            # before we aggregate the workflow summary
+            await callback_handler.flush_pending_persists(timeout=10.0)
 
             # 7. Aggregate workflow execution summary (tool calls, token usage by agent)
             from models.execution_event import ExecutionEvent
@@ -1524,12 +1565,25 @@ class SimpleWorkflowExecutor:
                     from models.deep_agent import DeepAgentConfig, MiddlewareConfig, SubAgentConfig
 
                     # Build DeepAgentConfig from agent_config
+                    # Get native_tools from config (these are the main tools like web_search, file ops, etc.)
+                    native_tools_list = agent_config.get("native_tools", [])
+                    logger.info(f"[{display_name}] Native tools for DeepAgent: {native_tools_list}")
+
+                    # Debug: Log raw subagent configuration before Pydantic parsing
+                    raw_subagents = agent_config.get("subagents", [])
+                    if raw_subagents:
+                        logger.info(f"[{display_name}] Raw subagents from config ({len(raw_subagents)}): {raw_subagents}")
+                        for i, sub in enumerate(raw_subagents):
+                            logger.info(f"  Subagent {i}: type={sub.get('type')}, workflow_id={sub.get('workflow_id')}, name={sub.get('name')}")
+
                     deep_agent_config = DeepAgentConfig(
                         model=model,
                         temperature=temperature,
                         max_tokens=agent_config.get("max_tokens"),
                         system_prompt=system_prompt,
                         tools=[],
+                        # IMPORTANT: Pass native_tools - these are the main agent tools (web_search, etc.)
+                        native_tools=native_tools_list,
                         mcp_tools=mcp_tools_list,
                         cli_tools=cli_tools_list,
                         custom_tools=custom_tools_list,
@@ -1548,7 +1602,7 @@ class SimpleWorkflowExecutor:
                             )
                         ],
                         # Subagents can be added from agent_config if specified
-                        subagents=agent_config.get("subagents", []),
+                        subagents=raw_subagents,
                     )
 
                     # Build context with completion criteria

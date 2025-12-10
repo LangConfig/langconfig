@@ -11,6 +11,7 @@ export type WorkflowEventType =
   | 'on_chain_end'
   | 'on_tool_start'
   | 'tool_start'
+  | 'tool_preparing'  // Early notification when tool call JSON is being streamed
   | 'on_tool_end'
   | 'on_chat_model_start'
   | 'on_chat_model_stream'
@@ -33,6 +34,7 @@ export type WorkflowEventType =
   | 'node_completed'
   | 'subagent_start'
   | 'subagent_end'
+  | 'subagent_error'
   | 'keepalive';
 
 export interface BaseEvent {
@@ -136,9 +138,23 @@ export interface SubagentEndEvent extends BaseEvent {
   };
 }
 
+// Subagent error event for nested execution visualization
+export interface SubagentErrorEvent extends BaseEvent {
+  type: 'subagent_error';
+  data: {
+    subagent_name: string;
+    subagent_run_id: string;
+    parent_agent_label?: string;
+    parent_run_id?: string;
+    error_type: string;
+    error: string;
+    success: false;
+  };
+}
+
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
-  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed' | 'subagent_start' | 'subagent_end'>;
+  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed' | 'subagent_start' | 'subagent_end' | 'subagent_error'>;
   data: any;
 }
 
@@ -150,4 +166,5 @@ export type WorkflowEvent =
   | NodeCompletedEvent
   | SubagentStartEvent
   | SubagentEndEvent
+  | SubagentErrorEvent
   | GenericEvent;

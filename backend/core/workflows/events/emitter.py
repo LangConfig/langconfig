@@ -335,6 +335,9 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Maps run_id -> {subagent_name, parent_agent_label, parent_run_id}
         self.active_subagents = {}
 
+        # Track pending database persist tasks to ensure completion on workflow end
+        self._pending_persist_tasks: list = []
+
         logger.info(
             f"ExecutionEventCallbackHandler initialized "
             f"(project={project_id}, task={task_id}, workflow={workflow_id}, save_to_db={save_to_db})"
@@ -577,6 +580,16 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         agent_label = node_info.get("agent_label")
         node_id = node_info.get("node_id")  # Frontend needs this to group tool with agent
 
+        # FALLBACK: If no agent_label found, try to find ANY tracked node (for single-agent workflows)
+        # This handles cases where parent_run_id chain hierarchy doesn't match what we stored
+        if not agent_label and self.current_node_info:
+            # Use the most recently added node info as fallback
+            fallback_info = list(self.current_node_info.values())[-1] if self.current_node_info else {}
+            if fallback_info:
+                agent_label = fallback_info.get("agent_label")
+                node_id = fallback_info.get("node_id")
+                logger.debug(f"[TOOL START] Using fallback agent_label: {agent_label}")
+
         # DEBUG: Log lookup to diagnose why agent_label is missing
         logger.debug(
             f"[TOOL START] Agent label lookup: tool={tool_name}, "
@@ -680,6 +693,9 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 }
             )
             logger.info(f"[SUBAGENT START] {subagent_name} invoked by {agent_label}")
+            # IMPORTANT: Return early - don't emit TOOL_START for subagent tools
+            # This prevents duplicate events (SUBAGENT_START + TOOL_START)
+            return
 
         # Sanitize tool inputs
         sanitized_inputs = self._sanitize_arguments(inputs or {}) if self.enable_sanitization else inputs
@@ -745,6 +761,29 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Supports both new standard naming (write_file) and legacy aliases (file_write)
         include_full_output = tool_name in ['write_file', 'file_write', 'task', 'delegate']
 
+        # SUBAGENT COMPLETION: If this was a subagent (task tool), emit ONLY SUBAGENT_END
+        # This mirrors the early return in on_tool_start - we don't emit both TOOL_END and SUBAGENT_END
+        if run_id in self.active_subagents:
+            subagent_info = self.active_subagents[run_id]
+            await self._emit_event(
+                event_type="SUBAGENT_END",
+                data={
+                    "subagent_name": subagent_info["subagent_name"],
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": subagent_info["parent_agent_label"],
+                    "parent_run_id": subagent_info["parent_run_id"],
+                    "output_preview": output_preview,
+                    "full_output": full_output,  # Full output for complete display
+                    "success": True
+                }
+            )
+            logger.info(f"[SUBAGENT END] {subagent_info['subagent_name']} completed")
+            del self.active_subagents[run_id]
+            # Clean up tool tracking and return early - don't emit TOOL_END
+            if run_id in self.current_tool_info:
+                del self.current_tool_info[run_id]
+            return
+
         # Get subagent context for tools used within subagent execution
         subagent_context = self._get_subagent_context_for_run(run_id, parent_run_id)
 
@@ -764,24 +803,6 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "subagent_name": subagent_context.get("subagent_name") if subagent_context else None,
             }
         )
-
-        # SUBAGENT COMPLETION: If this was a subagent (task tool), emit SUBAGENT_END
-        if run_id in self.active_subagents:
-            subagent_info = self.active_subagents[run_id]
-            await self._emit_event(
-                event_type="SUBAGENT_END",
-                data={
-                    "subagent_name": subagent_info["subagent_name"],
-                    "subagent_run_id": str(run_id),
-                    "parent_agent_label": subagent_info["parent_agent_label"],
-                    "parent_run_id": subagent_info["parent_run_id"],
-                    "output_preview": output_preview,
-                    "full_output": full_output,  # Full output for complete display
-                    "success": True
-                }
-            )
-            logger.info(f"[SUBAGENT END] {subagent_info['subagent_name']} completed")
-            del self.active_subagents[run_id]
 
         # Clean up tool tracking to prevent memory leaks
         if run_id in self.current_tool_info:
@@ -819,6 +840,28 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
 
         logger.error(f"[TOOL ERROR] {error_type}: {error_message} (run_id={run_id})")
 
+        # Check if this was a subagent tool - emit SUBAGENT_ERROR instead of TOOL_ERROR
+        if run_id in self.active_subagents:
+            subagent_info = self.active_subagents[run_id]
+            await self._emit_event(
+                event_type="SUBAGENT_ERROR",
+                data={
+                    "subagent_name": subagent_info["subagent_name"],
+                    "subagent_run_id": str(run_id),
+                    "parent_agent_label": subagent_info["parent_agent_label"],
+                    "parent_run_id": subagent_info["parent_run_id"],
+                    "error_type": error_type,
+                    "error": error_message,
+                    "success": False
+                }
+            )
+            logger.error(f"[SUBAGENT ERROR] {subagent_info['subagent_name']} failed: {error_message}")
+            del self.active_subagents[run_id]
+            # Clean up tool tracking
+            if run_id in self.current_tool_info:
+                del self.current_tool_info[run_id]
+            return
+
         await self._emit_event(
             event_type="TOOL_ERROR",
             data={
@@ -829,6 +872,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "success": False
             }
         )
+
+        # Clean up tool tracking
+        if run_id in self.current_tool_info:
+            del self.current_tool_info[run_id]
 
     # =========================================================================
     # Agent Reasoning Hooks
@@ -1123,7 +1170,8 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "LLM_END": "on_llm_end",
                 "CHAT_MODEL_STREAM": "on_chat_model_stream",
                 "SUBAGENT_START": "subagent_start",
-                "SUBAGENT_END": "subagent_end"
+                "SUBAGENT_END": "subagent_end",
+                "SUBAGENT_ERROR": "subagent_error"
             }
 
             # Get SSE-compatible event type
@@ -1161,14 +1209,25 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             # Persist event to database for historical replay (non-blocking)
             # Use create_task to avoid blocking the event loop
             import asyncio
-            task = asyncio.create_task(self._persist_event_to_database(
+            persist_task = asyncio.create_task(self._persist_event_to_database(
                 event_type=sse_event_type,
                 event_data=event_payload["data"],
                 run_id=data.get("run_id"),
                 parent_run_id=data.get("parent_run_id")
             ))
-            # Add done callback to catch exceptions
-            task.add_done_callback(lambda t: self._handle_persist_error(t, sse_event_type))
+
+            # Track pending persist tasks for cleanup callback
+            self._pending_persist_tasks.append(persist_task)
+
+            def cleanup_task(t, event_type=sse_event_type):
+                self._handle_persist_error(t, event_type)
+                # Remove from pending list when done
+                try:
+                    self._pending_persist_tasks.remove(t)
+                except ValueError:
+                    pass
+
+            persist_task.add_done_callback(cleanup_task)
 
         except Exception as e:
             # Don't let event emission failures break workflow execution
@@ -1464,6 +1523,46 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 f"❌ Async persist task failed for {event_type}: {e}",
                 exc_info=True
             )
+
+    async def flush_pending_persists(self, timeout: float = 5.0) -> None:
+        """
+        Wait for all pending database persist tasks to complete.
+
+        Call this at the end of workflow execution to ensure all events
+        are persisted to the database before the workflow handler exits.
+
+        Args:
+            timeout: Maximum time to wait for pending tasks (seconds)
+        """
+        if not self._pending_persist_tasks:
+            return
+
+        pending_count = len(self._pending_persist_tasks)
+        logger.info(f"🔄 Flushing {pending_count} pending database persist tasks...")
+
+        try:
+            # Wait for all pending tasks with timeout
+            done, pending = await asyncio.wait(
+                self._pending_persist_tasks,
+                timeout=timeout,
+                return_when=asyncio.ALL_COMPLETED
+            )
+
+            if pending:
+                logger.warning(
+                    f"⚠️ {len(pending)} persist tasks timed out after {timeout}s - "
+                    "some events may not be saved to database"
+                )
+                # Cancel timed out tasks
+                for task in pending:
+                    task.cancel()
+            else:
+                logger.info(f"✅ All {len(done)} persist tasks completed successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Error flushing persist tasks: {e}")
+        finally:
+            self._pending_persist_tasks.clear()
 
 
 # =============================================================================

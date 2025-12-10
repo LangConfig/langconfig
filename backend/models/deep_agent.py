@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional
 from sqlalchemy import Column, Integer, String, JSON, Boolean, ForeignKey, DateTime, Text, Float, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 from db.database import Base
 from core.versioning import OptimisticLockMixin
 from models.enums import SubAgentType, MiddlewareType, BackendType, ReasoningEffort
@@ -29,13 +29,39 @@ import datetime
 class SubAgentConfig(BaseModel):
     """Configuration for a specialized subagent."""
     name: str = Field(..., description="Unique subagent identifier")
-    description: str = Field(..., description="What this subagent does")
+    description: str = Field(default="", description="What this subagent does")
 
     # Type of subagent: "dictionary" (simple) or "compiled" (workflow-based)
+    # Use string with validator to handle edge cases where type might be missing/invalid
     type: SubAgentType = Field(
         default=SubAgentType.DICTIONARY,
         description="Subagent type: 'dictionary' for simple agents, 'compiled' for workflow-based"
     )
+
+    @field_validator('type', mode='before')
+    @classmethod
+    def coerce_type(cls, v):
+        """Coerce type to SubAgentType enum, defaulting to DICTIONARY if invalid."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[SubAgentConfig] Coercing type from: {v!r} (type={type(v).__name__})")
+
+        if v is None or v == '':
+            logger.info("[SubAgentConfig] Type is None/empty, defaulting to DICTIONARY")
+            return SubAgentType.DICTIONARY
+        if isinstance(v, SubAgentType):
+            return v
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower == 'dictionary':
+                return SubAgentType.DICTIONARY
+            elif v_lower == 'compiled':
+                return SubAgentType.COMPILED
+            else:
+                logger.warning(f"[SubAgentConfig] Unknown type '{v}', defaulting to DICTIONARY")
+                return SubAgentType.DICTIONARY
+        logger.warning(f"[SubAgentConfig] Unexpected type value {v!r}, defaulting to DICTIONARY")
+        return SubAgentType.DICTIONARY
 
     # For dictionary-based subagents
     template_id: Optional[str] = Field(None, description="Base template to use from AgentTemplateRegistry")
@@ -55,6 +81,10 @@ class SubAgentConfig(BaseModel):
     @model_validator(mode='after')
     def validate_subagent_consistency(self) -> 'SubAgentConfig':
         """Ensure compiled subagents have workflow_id and dictionary subagents don't."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[SubAgentConfig] Validating '{self.name}': type={self.type}, type_value={self.type.value if hasattr(self.type, 'value') else self.type}, workflow_id={self.workflow_id}")
+
         if self.type == SubAgentType.COMPILED:
             if not self.workflow_id:
                 raise ValueError(

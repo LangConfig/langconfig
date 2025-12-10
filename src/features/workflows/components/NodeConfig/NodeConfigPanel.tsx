@@ -391,65 +391,81 @@ const NodeConfigPanel = ({
   useEffect(() => {
     if (selectedNode) {
       // Ensure arrays are initialized
-      // CRITICAL FIX: Backend uses snake_case (native_tools), not camelCase (nativeTools)
-      let nativeToolsList = (selectedNode as any).native_tools || (selectedNode as any).nativeTools || (selectedNode as any).mcp_tools || (selectedNode as any).mcpTools || [];
+      // CRITICAL FIX: Check both top-level and nested config for tools
+      // WorkflowCanvas stores tools in node.data.config.native_tools
+      // But NodeConfigPanel expects them at node.data.native_tools
+      const nodeConfig = (selectedNode as any).config || {};
+      let nativeToolsList =
+        (selectedNode as any).native_tools ||
+        (selectedNode as any).nativeTools ||
+        nodeConfig.native_tools ||
+        nodeConfig.nativeTools ||
+        (selectedNode as any).mcp_tools ||
+        (selectedNode as any).mcpTools ||
+        nodeConfig.mcp_tools ||
+        nodeConfig.mcpTools ||
+        [];
 
       // Add enable_memory and enable_rag back to UI if they're enabled in config
       // (They get filtered out when saving to backend, but need to be in UI for checkboxes)
-      if ((selectedNode as any).enable_memory && !nativeToolsList.includes('enable_memory')) {
+      const enableMemory = (selectedNode as any).enable_memory || nodeConfig.enable_memory;
+      const enableRag = (selectedNode as any).enable_rag || nodeConfig.enable_rag;
+      if (enableMemory && !nativeToolsList.includes('enable_memory')) {
         nativeToolsList = [...nativeToolsList, 'enable_memory'];
       }
-      if ((selectedNode as any).enable_rag && !nativeToolsList.includes('enable_rag')) {
+      if (enableRag && !nativeToolsList.includes('enable_rag')) {
         nativeToolsList = [...nativeToolsList, 'enable_rag'];
       }
 
       const normalizedNode = {
         ...selectedNode,
-        tools: selectedNode.tools || [],
+        ...nodeConfig,  // Spread config values to top level for easier access
+        tools: selectedNode.tools || nodeConfig.tools || [],
         native_tools: nativeToolsList
       };
 
       setConfig(normalizedNode);
 
-      // Load advanced configuration
-      setConditionExpression(selectedNode.condition || '');
-      setMaxLoopIterations(selectedNode.max_iterations || 10);
-      setLoopExitCondition(selectedNode.exit_condition || '');
-      setRecursionLimit(selectedNode.recursion_limit || 300);
-      setEnableParallelTools((selectedNode as any).enable_parallel_tools ?? true);
+      // Load advanced configuration (check both top-level and config)
+      setConditionExpression(selectedNode.condition || nodeConfig.condition || '');
+      setMaxLoopIterations(selectedNode.max_iterations || nodeConfig.max_iterations || 10);
+      setLoopExitCondition(selectedNode.exit_condition || nodeConfig.exit_condition || '');
+      setRecursionLimit(selectedNode.recursion_limit || nodeConfig.recursion_limit || 300);
+      setEnableParallelTools((selectedNode as any).enable_parallel_tools ?? nodeConfig.enable_parallel_tools ?? true);
 
       // Context Window Management (LangChain 1.1)
-      setContextStrategy((selectedNode as any).context_management_strategy || 'smart');
-      setMaxContextTokens((selectedNode as any).max_context_tokens || null);
-      setEnableAutoSummarization((selectedNode as any).enable_auto_summarization ?? true);
+      setContextStrategy((selectedNode as any).context_management_strategy || nodeConfig.context_management_strategy || 'smart');
+      setMaxContextTokens((selectedNode as any).max_context_tokens || nodeConfig.max_context_tokens || null);
+      setEnableAutoSummarization((selectedNode as any).enable_auto_summarization ?? nodeConfig.enable_auto_summarization ?? true);
 
       // Long-Term Memory & RAG (unified section)
-      setEnableLongTermMemory((selectedNode as any).enable_long_term_memory ?? false);
-      setEnableMemoryStore((selectedNode as any).enable_memory_store ?? true);
-      setEnableMemoryRecall((selectedNode as any).enable_memory_recall ?? true);
-      setEnableRAG((selectedNode as any).enable_rag ?? false);
+      setEnableLongTermMemory((selectedNode as any).enable_long_term_memory ?? nodeConfig.enable_long_term_memory ?? false);
+      setEnableMemoryStore((selectedNode as any).enable_memory_store ?? nodeConfig.enable_memory_store ?? true);
+      setEnableMemoryRecall((selectedNode as any).enable_memory_recall ?? nodeConfig.enable_memory_recall ?? true);
+      setEnableRAG((selectedNode as any).enable_rag ?? nodeConfig.enable_rag ?? false);
 
       // LangGraph HITL parameters
-      setInterruptBefore(selectedNode.interrupt_before || false);
-      setInterruptAfter(selectedNode.interrupt_after || false);
-      setEnableStructuredOutput(selectedNode.enable_structured_output || false);
-      setOutputSchemaName(selectedNode.output_schema_name || '');
-      setOutputFormat(selectedNode.output_format || 'json');
-      setStrictMode(selectedNode.strict_mode !== undefined ? selectedNode.strict_mode : true);
-      setDebugMode(selectedNode.debug || false);
-      setEnableCache(selectedNode.cache !== undefined ? selectedNode.cache : true);
+      setInterruptBefore(selectedNode.interrupt_before || nodeConfig.interrupt_before || false);
+      setInterruptAfter(selectedNode.interrupt_after || nodeConfig.interrupt_after || false);
+      setEnableStructuredOutput(selectedNode.enable_structured_output || nodeConfig.enable_structured_output || false);
+      setOutputSchemaName(selectedNode.output_schema_name || nodeConfig.output_schema_name || '');
+      setOutputFormat(selectedNode.output_format || nodeConfig.output_format || 'json');
+      setStrictMode(selectedNode.strict_mode !== undefined ? selectedNode.strict_mode : (nodeConfig.strict_mode !== undefined ? nodeConfig.strict_mode : true));
+      setDebugMode(selectedNode.debug || nodeConfig.debug || false);
+      setEnableCache(selectedNode.cache !== undefined ? selectedNode.cache : (nodeConfig.cache !== undefined ? nodeConfig.cache : true));
 
       // Load middleware configuration
-      setEnabledMiddleware(selectedNode.middleware?.filter((m: any) => m.enabled).map((m: any) => m.type) || []);
+      const middlewareList = selectedNode.middleware || nodeConfig.middleware || [];
+      setEnabledMiddleware(middlewareList.filter((m: any) => m.enabled).map((m: any) => m.type) || []);
 
       // Load agent name
-      setAgentName(selectedNode.name || selectedNode.id);
+      setAgentName(selectedNode.name || nodeConfig.name || selectedNode.id);
 
-      // Load custom tools
-      setSelectedCustomTools(selectedNode.custom_tools || []);
+      // Load custom tools (check both locations)
+      setSelectedCustomTools(selectedNode.custom_tools || nodeConfig.custom_tools || []);
 
       // Load subagents configuration (Advanced: DeepAgents)
-      setSubagents(selectedNode.subagents || []);
+      setSubagents(selectedNode.subagents || nodeConfig.subagents || []);
 
       // Tool Node configuration (instance-specific to this node)
       if (selectedNode.agentType === 'TOOL_NODE') {
@@ -648,6 +664,28 @@ const NodeConfigPanel = ({
   const updateSubagent = (index: number, field: string, value: any) => {
     const updated = [...subagents];
     updated[index] = { ...updated[index], [field]: value };
+
+    // Validation: If changing to 'compiled' type, ensure workflow_id exists
+    // If changing type to 'dictionary', clear workflow_id
+    if (field === 'type') {
+      if (value === 'compiled' && !updated[index].workflow_id) {
+        // Don't auto-save yet - user needs to select a workflow
+        // Just update local state
+        setSubagents(updated);
+        return; // Don't auto-save until workflow is selected
+      }
+      if (value === 'dictionary') {
+        // Clear workflow fields when switching to dictionary
+        updated[index].workflow_id = null;
+        updated[index].workflow_config = null;
+      }
+    }
+
+    // Validation: If setting workflow_id, ensure type is 'compiled'
+    if (field === 'workflow_id' && value) {
+      updated[index].type = 'compiled';
+    }
+
     setSubagents(updated);
 
     // Auto-save: Update node config immediately
@@ -1879,17 +1917,17 @@ const NodeConfigPanel = ({
                           {subagent.type === 'compiled' && (
                             <div>
                               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                                Workflow
+                                Workflow <span className="text-red-500">*</span>
                               </label>
                               <select
                                 value={subagent.workflow_id || ''}
-                                onChange={(e) => updateSubagent(index, 'workflow_id', parseInt(e.target.value))}
+                                onChange={(e) => updateSubagent(index, 'workflow_id', e.target.value ? parseInt(e.target.value) : null)}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onWheel={(e) => e.stopPropagation()}
-                                className="w-full px-2 py-1 text-xs rounded border"
+                                className={`w-full px-2 py-1 text-xs rounded border ${!subagent.workflow_id ? 'border-red-500' : ''}`}
                                 style={{
                                   backgroundColor: 'var(--color-background)',
-                                  borderColor: 'var(--color-border-dark)',
+                                  borderColor: !subagent.workflow_id ? '#ef4444' : 'var(--color-border-dark)',
                                   color: 'var(--color-text-primary)'
                                 }}
                               >
@@ -1900,6 +1938,11 @@ const NodeConfigPanel = ({
                                   </option>
                                 ))}
                               </select>
+                              {!subagent.workflow_id && (
+                                <p className="text-[10px] mt-1 text-red-500">
+                                  ⚠️ Required: Select a workflow or change type to "Dictionary"
+                                </p>
+                              )}
                               <p className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
                                 The selected workflow will be compiled and used as a subagent
                               </p>
