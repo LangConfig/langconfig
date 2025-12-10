@@ -64,13 +64,55 @@ const CodeBlock = ({ language, children }: { language: string, children: string 
 };
 
 // Helper component for collapsible tool calls - River Flow Style
+// File icon helper
+const getFileIcon = (filename: string): string => {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const icons: Record<string, string> = {
+    'md': '📝', 'txt': '📄', 'py': '🐍', 'js': '💛', 'ts': '💙', 'tsx': '⚛️', 'jsx': '⚛️',
+    'json': '📋', 'html': '🌐', 'css': '🎨', 'sql': '🗃️', 'yaml': '⚙️', 'yml': '⚙️',
+    'xml': '📰', 'sh': '💻', 'bash': '💻', 'csv': '📊', 'pdf': '📕', 'png': '🖼️',
+    'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'svg': '🎨'
+  };
+  return icons[ext] || '📄';
+};
+
+// File card component for write_file results
+const FileCreatedCard = ({ filename, result }: { filename: string; result: string }) => {
+  // Extract file size info from result if available
+  const sizeMatch = result.match(/(\d+)\s*characters/i);
+  const charCount = sizeMatch ? sizeMatch[1] : null;
+
+  return (
+    <div
+      className="flex items-center gap-3 p-3 rounded-lg border-2 mt-2"
+      style={{
+        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+        borderColor: 'rgba(16, 185, 129, 0.3)'
+      }}
+    >
+      <div className="text-2xl">{getFileIcon(filename)}</div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+          {filename}
+        </div>
+        <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {charCount ? `${parseInt(charCount).toLocaleString()} characters written` : 'File created successfully'}
+        </div>
+      </div>
+      <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+    </div>
+  );
+};
+
 const ToolCallItem = ({
   status,
+  toolName,
   renderedHeader,
   renderedInput,
   renderedResult
 }: {
   status: 'running' | 'completed' | 'error';
+  toolName: string;
   renderedHeader: string;
   renderedInput: string;
   renderedResult: string;
@@ -150,21 +192,37 @@ const ToolCallItem = ({
                 <ArrowDown className="w-3 h-3 opacity-30" />
                 <span className="font-medium text-xs" style={{ color: '#000000' }}>Result</span>
               </div>
-              <div className="relative">
-                <pre
-                  className="p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
-                  style={{
-                    backgroundColor: status === 'error' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)',
-                    color: '#000000',
-                    fontFamily: 'var(--font-family-mono)',
-                    border: '1px solid',
-                    borderColor: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                    maxHeight: '300px'
-                  }}
-                >
-                  {renderedResult}
-                </pre>
-              </div>
+              {/* Show file card for write_file completions */}
+              {status === 'completed' && ['write_file', 'edit_file', 'file_write', 'create_file'].includes(toolName.toLowerCase()) ? (
+                (() => {
+                  // Extract filename from input
+                  try {
+                    const inputJson = JSON.parse(renderedInput);
+                    const filename = inputJson.file_path || inputJson.path || inputJson.filename || 'file';
+                    // Get just the filename without path
+                    const displayName = filename.split('/').pop()?.split('\\').pop() || filename;
+                    return <FileCreatedCard filename={displayName} result={renderedResult} />;
+                  } catch {
+                    return <FileCreatedCard filename="file" result={renderedResult} />;
+                  }
+                })()
+              ) : (
+                <div className="relative">
+                  <pre
+                    className="p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
+                    style={{
+                      backgroundColor: status === 'error' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)',
+                      color: '#000000',
+                      fontFamily: 'var(--font-family-mono)',
+                      border: '1px solid',
+                      borderColor: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                      maxHeight: '300px'
+                    }}
+                  >
+                    {renderedResult}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -226,6 +284,7 @@ interface SectionItem {
     input: string;
     result?: string;
     status: 'running' | 'completed' | 'error';
+    runId?: string; // LangChain run_id for unique tool call matching
   };
   id: string;
 }
@@ -239,8 +298,55 @@ interface AgentSection {
 }
 
 // Lightweight token sanitizer for normal (non-diagnostics) view
-const stripHiddenTagsFromToken = (t: string): string =>
-  t.replace(/<\/?(?:think|function_results|function_calls|tool_response|system)[^>]*>?/g, '');
+// Only strips well-known hidden tags - be conservative to avoid cutting off content
+const stripHiddenTagsFromToken = (t: string): string => {
+  // Strip XML thinking/function tags (original behavior)
+  return t.replace(/<\/?(?:think|function_results|function_calls|tool_response|system)[^>]*>?/g, '');
+};
+
+// Smart truncation for tool inputs - especially for file write operations with large content
+const formatToolInput = (toolName: string, input: string | Record<string, any>): string => {
+  const MAX_CONTENT_LENGTH = 500; // Max chars to show for file content
+  const MAX_TOTAL_LENGTH = 1000; // Max total input length
+
+  // Parse input if it's a string that looks like JSON
+  let parsed = input;
+  if (typeof input === 'string') {
+    try {
+      parsed = JSON.parse(input);
+    } catch {
+      // Not JSON, keep as string
+      if (input.length > MAX_TOTAL_LENGTH) {
+        return input.slice(0, MAX_TOTAL_LENGTH) + `\n... (${input.length - MAX_TOTAL_LENGTH} more characters)`;
+      }
+      return input;
+    }
+  }
+
+  // Handle file write tools specially - truncate content field
+  if (typeof parsed === 'object' && parsed !== null) {
+    const fileWriteTools = ['write_file', 'edit_file', 'file_write', 'create_file'];
+    if (fileWriteTools.includes(toolName.toLowerCase())) {
+      const truncated = { ...parsed };
+      if (truncated.content && typeof truncated.content === 'string' && truncated.content.length > MAX_CONTENT_LENGTH) {
+        const lines = truncated.content.split('\n');
+        const lineCount = lines.length;
+        const preview = lines.slice(0, 10).join('\n');
+        truncated.content = `${preview}\n... (${lineCount} total lines, ${truncated.content.length} characters)`;
+      }
+      return JSON.stringify(truncated, null, 2);
+    }
+
+    // For other tools, just truncate if too long
+    const str = JSON.stringify(parsed, null, 2);
+    if (str.length > MAX_TOTAL_LENGTH) {
+      return str.slice(0, MAX_TOTAL_LENGTH) + `\n... (truncated)`;
+    }
+    return str;
+  }
+
+  return String(input);
+};
 
 interface MemorySnapshot {
   timestamp: string;
@@ -453,8 +559,18 @@ export default function RealtimeExecutionPanel({
       const nodeId = event.data?.node_id;
 
       if (!agentLabel && !nodeId) {
-        // Debug warning (replay mode only) - but skip the event
-        if (isReplay) {
+        // Debug warning - always log for tool events since they should always have context
+        if (event.type === 'on_tool_start' || event.type === 'on_tool_end') {
+          console.warn(
+            `[RealtimeExecutionPanel] TOOL EVENT MISSING AGENT CONTEXT - this is a bug:`,
+            {
+              type: event.type,
+              timestamp: event.timestamp,
+              tool_name: event.data?.tool_name,
+              data: event.data
+            }
+          );
+        } else if (isReplay) {
           console.warn(
             `[RealtimeExecutionPanel] Skipping event without agent context:`,
             {
@@ -537,7 +653,45 @@ export default function RealtimeExecutionPanel({
           }
           break;
 
+        case 'tool_preparing':
+          // Early notification that a tool call is being prepared (JSON streaming)
+          // This fires immediately when we detect a tool_use, before the full JSON is ready
+          {
+            // Finalize any in-progress thinking block
+            for (let i = section.items.length - 1; i >= 0; i--) {
+              const thinkingItem = section.items[i];
+              if (thinkingItem.type === 'thinking' && !thinkingItem.finalized) {
+                thinkingItem.finalized = true;
+                break;
+              }
+            }
+
+            const prepToolName = event.data?.tool_name || 'tool';
+            const prepRunId = event.data?.run_id;
+
+            // Check if we already have a tool_call for this run_id (avoid duplicates)
+            const existingPrep = section.items.find(
+              item => item.type === 'tool_call' && item.tool?.runId === prepRunId
+            );
+
+            if (!existingPrep) {
+              section.items.push({
+                type: 'tool_call',
+                tool: {
+                  toolName: prepToolName,
+                  input: 'Preparing...',
+                  status: 'running',
+                  runId: prepRunId,
+                },
+                id: `tool-prep-${prepRunId || section.items.length}`
+              });
+            }
+          }
+          break;
+
         case 'on_tool_start':
+        case 'tool_start':
+          // Full tool start event - update the preparing entry or create new one
           // IMPORTANT: Finalize any in-progress thinking block BEFORE adding tool call
           // This ensures tool calls appear AFTER the thinking content, not in the middle
           for (let i = section.items.length - 1; i >= 0; i--) {
@@ -548,31 +702,82 @@ export default function RealtimeExecutionPanel({
             }
           }
 
-          const toolName = event.data?.tool_name || event.data?.name || 'Unknown Tool';
-          const input = event.data?.input || (event.data as any)?.inputs || event.data?.input_preview || '';
-          section.items.push({
-            type: 'tool_call',
-            tool: {
-              toolName,
-              input: typeof input === 'string' ? input : JSON.stringify(input, null, 2),
-              status: 'running',
-            },
-            id: `tool-${section.items.length}`
-          });
+          {
+            const toolName = event.data?.tool_name || event.data?.name || 'Unknown Tool';
+            const rawInput = event.data?.input || (event.data as any)?.inputs || event.data?.input_preview || '';
+            const toolRunId = event.data?.run_id; // Unique ID for this tool call
+
+            // Check if we have a "preparing" entry to update
+            const existingToolIdx = section.items.findIndex(
+              item => item.type === 'tool_call' && item.tool?.runId === toolRunId && item.tool?.input === 'Preparing...'
+            );
+
+            if (existingToolIdx >= 0) {
+              // Update the existing preparing entry with full info
+              const existingTool = section.items[existingToolIdx];
+              if (existingTool.tool) {
+                existingTool.tool.toolName = toolName;
+                existingTool.tool.input = formatToolInput(toolName, rawInput);
+              }
+            } else {
+              // No preparing entry, create new one
+              section.items.push({
+                type: 'tool_call',
+                tool: {
+                  toolName,
+                  // Use smart formatting to truncate large inputs (especially file content)
+                  input: formatToolInput(toolName, rawInput),
+                  status: 'running',
+                  runId: toolRunId, // Store for matching on_tool_end
+                },
+                id: `tool-${toolRunId || section.items.length}`
+              });
+            }
+          }
           break;
 
         case 'on_tool_end':
           // Find the running tool item to update
-          // We search backwards to find the most recent running tool matching the name
+          // PRIMARY: Match by run_id (unique) if available
+          // FALLBACK: Match by tool_name for backwards compatibility
+          const endRunId = event.data?.run_id;
+          const endToolName = event.data?.tool_name;
+          let foundTool = false;
+
           for (let i = section.items.length - 1; i >= 0; i--) {
             const item = section.items[i];
-            if (item.type === 'tool_call' && item.tool?.status === 'running' && item.tool.toolName === event.data?.tool_name) {
-              item.tool.status = 'completed';
-              item.tool.result = typeof event.data?.output === 'string'
-                ? event.data.output
-                : JSON.stringify(event.data?.output, null, 2);
-              break;
+            if (item.type === 'tool_call' && item.tool?.status === 'running') {
+              // Match by run_id if available (most accurate)
+              const matchByRunId = endRunId && item.tool.runId === endRunId;
+              // Fallback to tool_name if no run_id match (legacy events or missing run_id)
+              const matchByName = !matchByRunId && item.tool.toolName === endToolName;
+
+              if (matchByRunId || matchByName) {
+                item.tool.status = 'completed';
+                // Truncate large results
+                const rawResult = typeof event.data?.output === 'string'
+                  ? event.data.output
+                  : event.data?.output != null
+                    ? JSON.stringify(event.data.output, null, 2)
+                    : '';
+                const MAX_RESULT_LENGTH = 2000;
+                item.tool.result = rawResult && rawResult.length > MAX_RESULT_LENGTH
+                  ? rawResult.slice(0, MAX_RESULT_LENGTH) + `\n... (${rawResult.length - MAX_RESULT_LENGTH} more characters)`
+                  : rawResult || '';
+                foundTool = true;
+                break;
+              }
             }
+          }
+
+          // DEBUG: Log if we couldn't find a matching tool
+          if (!foundTool) {
+            console.warn('[RealtimeExecutionPanel] on_tool_end could not find matching running tool:', {
+              run_id: endRunId,
+              tool_name: endToolName,
+              section: section.agentLabel,
+              runningTools: section.items.filter(i => i.type === 'tool_call' && i.tool?.status === 'running').map(i => ({ name: i.tool?.toolName, runId: i.tool?.runId }))
+            });
           }
           break;
 
@@ -1128,7 +1333,8 @@ export default function RealtimeExecutionPanel({
               )}
             </div>
           ) : (
-            filteredSections.map((section, sectionIdx) => {
+            <>
+            {filteredSections.map((section, sectionIdx) => {
               return (
                 <div
                   key={`${section.nodeId}-${sectionIdx}`}
@@ -1288,6 +1494,7 @@ export default function RealtimeExecutionPanel({
                           <ToolCallItem
                             key={item.id}
                             status={item.tool.status}
+                            toolName={item.tool.toolName}
                             renderedHeader={renderedHeader}
                             renderedInput={renderedInput}
                             renderedResult={renderedResult}
@@ -1300,7 +1507,8 @@ export default function RealtimeExecutionPanel({
                   </div>
                 </div>
               );
-            })
+            })}
+            </>
           )
         }
       </div >

@@ -124,6 +124,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
         >>> await web_search("Python async tutorial")
     """
     import re
+    import random
 
     try:
         logger.info(f"Web search (DuckDuckGo HTML): {query}")
@@ -132,8 +133,23 @@ async def web_search(query: str, max_results: int = 5) -> str:
         url = "https://html.duckduckgo.com/html/"
         params = {"q": query}
 
+        # Rotate User-Agents to reduce CAPTCHA rate
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        ]
+
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": random.choice(user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         }
 
         async with httpx.AsyncClient(timeout=15, headers=headers) as client:
@@ -141,6 +157,16 @@ async def web_search(query: str, max_results: int = 5) -> str:
             response.raise_for_status()
 
             html = response.text
+
+            # Check for CAPTCHA/rate limiting (DuckDuckGo returns 202 with anomaly challenge)
+            if response.status_code == 202 or 'anomaly' in html.lower() or 'challenge' in html.lower():
+                logger.warning(f"DuckDuckGo CAPTCHA/rate limit detected for query: {query}")
+                return (
+                    f"Web search is temporarily unavailable (rate limited by DuckDuckGo). "
+                    f"The search provider has blocked requests from this IP address. "
+                    f"Please try again later, or proceed without web search results for: {query}"
+                )
+
             results = []
 
             # Method 1: Extract snippets using regex (more robust than line-based)
@@ -463,15 +489,20 @@ def _write_file_impl(
                 task_id=_workspace_context.get('task_id')
             )
         else:
-            # Default to outputs/default/ for non-workflow executions
-            workspace = Path("outputs/default").resolve()
+            # Default to outputs/default/ - use workspace manager's base_dir for consistent path
+            workspace = workspace_mgr.base_dir / "default"
             workspace.mkdir(parents=True, exist_ok=True)
 
         # Write file to workspace directory (use just the filename, not full path)
         path = (workspace / filename).resolve()  # Use sanitized filename only
+        workspace_resolved = workspace.resolve()
 
         # Security: Ensure file is within workspace
-        if not str(path).startswith(str(workspace)):
+        # Use Path.is_relative_to() for robust cross-platform comparison
+        try:
+            path.relative_to(workspace_resolved)
+        except ValueError:
+            logger.warning(f"Security: Blocked write outside workspace: {path} not in {workspace_resolved}")
             return f"Error: Cannot write outside workspace directory"
 
         # Create parent directories if they don't exist
@@ -515,10 +546,12 @@ def _record_file_metadata(
     try:
         from db.database import SessionLocal
         from models.workspace_file import WorkspaceFile
+        from services.workspace_manager import get_workspace_manager
         import mimetypes
 
-        # Compute relative path from outputs/ directory
-        outputs_dir = Path("outputs").resolve()
+        # Compute relative path from outputs/ directory (use workspace manager for consistent path)
+        workspace_mgr = get_workspace_manager()
+        outputs_dir = workspace_mgr.base_dir
         try:
             relative_path = str(file_path.relative_to(outputs_dir))
         except ValueError:

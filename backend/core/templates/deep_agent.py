@@ -59,7 +59,7 @@ Always provide:
 3. Prioritized recommendations
 4. Action items
 """,
-        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
         cli_tools=[],
         use_deepagents=True,
         middleware=[
@@ -87,14 +87,14 @@ Always provide:
                 name="security_analyst",
                 description="Specialized in security vulnerability analysis",
                 system_prompt="You are a security expert. Analyze code for vulnerabilities, injection risks, and security best practices.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="performance_analyst",
                 description="Specialized in performance optimization",
                 system_prompt="You are a performance expert. Identify bottlenecks, inefficient algorithms, and optimization opportunities.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             )
         ],
@@ -138,7 +138,7 @@ Delegate to specialized subagents for:
 
 Always provide visual diagrams (mermaid syntax) and clear documentation.
 """,
-        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
         cli_tools=[],
         use_deepagents=True,
         middleware=create_default_middleware_config(),
@@ -147,21 +147,21 @@ Always provide visual diagrams (mermaid syntax) and clear documentation.
                 name="database_architect",
                 description="Database schema and optimization expert",
                 system_prompt="You design database schemas, optimize queries, and plan data models.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="api_designer",
                 description="API design and REST/GraphQL expert",
                 system_prompt="You design APIs following best practices, RESTful principles, and modern patterns.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="infrastructure_planner",
                 description="Cloud infrastructure and DevOps expert",
                 system_prompt="You plan cloud infrastructure, CI/CD pipelines, and deployment strategies.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             )
         ],
@@ -210,7 +210,7 @@ Always provide:
 - Proposed fix with explanation
 - Prevention recommendations
 """,
-        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
         cli_tools=[],
         use_deepagents=True,
         middleware=create_default_middleware_config(),
@@ -219,7 +219,7 @@ Always provide:
                 name="test_runner",
                 description="Specialized in running and analyzing tests",
                 system_prompt="You run tests, analyze failures, and provide detailed test reports.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             )
         ],
@@ -281,7 +281,7 @@ Target audiences:
 - Users (practical focus)
 - Stakeholders (high-level overview)
 """,
-        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
         cli_tools=[],
         use_deepagents=True,
         middleware=create_default_middleware_config(),
@@ -290,14 +290,14 @@ Target audiences:
                 name="code_example_generator",
                 description="Specialized in creating code examples",
                 system_prompt="You create clear, working code examples that demonstrate concepts effectively.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="researcher",
                 description="Researches topics and gathers information",
                 system_prompt="You research topics thoroughly, gathering accurate information from code and documentation.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             )
         ],
@@ -360,7 +360,7 @@ Use subagents for specialized testing:
 - Security testing
 - Accessibility testing
 """,
-        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
         cli_tools=[],
         use_deepagents=True,
         middleware=create_default_middleware_config(),
@@ -369,21 +369,21 @@ Use subagents for specialized testing:
                 name="unit_test_specialist",
                 description="Expert in unit test generation",
                 system_prompt="You create thorough unit tests with excellent edge case coverage.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="integration_test_specialist",
                 description="Expert in integration test generation",
                 system_prompt="You create integration tests that verify component interactions.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             ),
             SubAgentConfig(
                 name="e2e_test_specialist",
                 description="Expert in end-to-end test generation",
                 system_prompt="You create end-to-end tests that validate complete user workflows.",
-                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep"],
+                tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search"],
                 middleware=["filesystem"]
             )
         ],

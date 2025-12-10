@@ -27,12 +27,23 @@ interface ContextMenuState {
   file: FileWithContext | null;
 }
 
+// Folder context menu for bulk actions
+interface FolderContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  node: TreeNode | null;
+  files: FileWithContext[];  // All files in this folder
+}
+
 interface FileWithContext {
   filename: string;
   path: string;
   full_path: string;
   project_id: number | null;
+  project_name: string | null;
   workflow_id: number | null;
+  workflow_name: string | null;
   task_id: number | null;
   size_bytes: number;
   size_human: string;
@@ -149,20 +160,42 @@ export default function FilesLibraryTab() {
     file: null
   });
 
+  // Folder context menu state
+  const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    node: null,
+    files: []
+  });
+
+  // Bulk index modal state
+  const [bulkKbModalOpen, setBulkKbModalOpen] = useState(false);
+  const [bulkKbFiles, setBulkKbFiles] = useState<FileWithContext[]>([]);
+  const [bulkKbFolderName, setBulkKbFolderName] = useState('');
+  const [bulkKbProjectId, setBulkKbProjectId] = useState<string>('');
+  const [bulkKbIndexing, setBulkKbIndexing] = useState(false);
+
   // Tags edit modal
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [tagsModalFile, setTagsModalFile] = useState<FileWithContext | null>(null);
   const [editingTags, setEditingTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
 
-  // Close context menu on click outside
+  // Close context menus on click outside
   useEffect(() => {
-    const handleClick = () => setContextMenu(prev => ({ ...prev, visible: false }));
+    const handleClick = () => {
+      setContextMenu(prev => ({ ...prev, visible: false }));
+      setFolderContextMenu(prev => ({ ...prev, visible: false }));
+    };
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setContextMenu(prev => ({ ...prev, visible: false }));
+      if (e.key === 'Escape') {
+        setContextMenu(prev => ({ ...prev, visible: false }));
+        setFolderContextMenu(prev => ({ ...prev, visible: false }));
+      }
     };
 
-    if (contextMenu.visible) {
+    if (contextMenu.visible || folderContextMenu.visible) {
       document.addEventListener('click', handleClick);
       document.addEventListener('keydown', handleEscape);
       return () => {
@@ -170,7 +203,7 @@ export default function FilesLibraryTab() {
         document.removeEventListener('keydown', handleEscape);
       };
     }
-  }, [contextMenu.visible]);
+  }, [contextMenu.visible, folderContextMenu.visible]);
 
   // Handle right-click on file
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileWithContext) => {
@@ -188,6 +221,34 @@ export default function FilesLibraryTab() {
 
     setContextMenu({ visible: true, x, y, file });
   }, []);
+
+  // Collect all files from a tree node recursively
+  const collectFilesFromNode = useCallback((node: TreeNode): FileWithContext[] => {
+    if (node.type === 'file' && node.file) {
+      return [node.file];
+    }
+    return node.children.flatMap(child => collectFilesFromNode(child));
+  }, []);
+
+  // Handle right-click on folder (project/workflow/task)
+  const handleFolderContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Collect all files in this folder
+    const filesInFolder = collectFilesFromNode(node);
+
+    // Position context menu near click, but within viewport
+    const menuWidth = 220;
+    const menuHeight = 120;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+    setFolderContextMenu({ visible: true, x, y, node, files: filesInFolder });
+  }, [collectFilesFromNode]);
 
   // Knowledge base modal state
   const [kbModalOpen, setKbModalOpen] = useState(false);
@@ -217,10 +278,8 @@ export default function FilesLibraryTab() {
     setKbIndexing(true);
 
     try {
-      // Call the indexing API
-      const url = kbModalFile.task_id
-        ? `/api/workspace/tasks/${kbModalFile.task_id}/files/${kbModalFile.filename}/index`
-        : `/api/workspace/default/files/${kbModalFile.filename}/index`;
+      // Use path-based index endpoint - works for all file locations
+      const url = `/api/workspace/by-path/index?file_path=${encodeURIComponent(kbModalFile.path)}`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -242,6 +301,58 @@ export default function FilesLibraryTab() {
       setKbIndexing(false);
       setKbModalOpen(false);
       setKbModalFile(null);
+    }
+  };
+
+  // Handle folder "Add All to Knowledge Base" action
+  const handleFolderAddToKnowledgeBase = () => {
+    if (!folderContextMenu.node || folderContextMenu.files.length === 0) return;
+
+    // Pre-select project if the folder belongs to one
+    const firstFile = folderContextMenu.files[0];
+    if (firstFile.project_id) {
+      setBulkKbProjectId(String(firstFile.project_id));
+    } else {
+      setBulkKbProjectId('');
+    }
+
+    setBulkKbFiles(folderContextMenu.files);
+    setBulkKbFolderName(folderContextMenu.node.name);
+    setBulkKbModalOpen(true);
+    setFolderContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  // Confirm bulk index to knowledge base
+  const handleConfirmBulkIndexToKnowledgeBase = async () => {
+    if (bulkKbFiles.length === 0 || !bulkKbProjectId) return;
+
+    setBulkKbIndexing(true);
+
+    try {
+      const response = await fetch('/api/workspace/by-path/bulk-index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_paths: bulkKbFiles.map(f => f.path),
+          project_id: parseInt(bulkKbProjectId)
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.status === 'success') {
+        alert(`Success! Indexed ${data.indexed} files (${data.total_chunks} chunks).\n${data.failed > 0 ? `\n${data.failed} files skipped.` : ''}`);
+      } else {
+        alert(`Error: ${data.errors?.join('\n') || 'Failed to index files'}`);
+      }
+    } catch (error) {
+      console.error('Error bulk indexing files:', error);
+      alert('Failed to index files to knowledge base');
+    } finally {
+      setBulkKbIndexing(false);
+      setBulkKbModalOpen(false);
+      setBulkKbFiles([]);
+      setBulkKbFolderName('');
     }
   };
 
@@ -378,10 +489,8 @@ export default function FilesLibraryTab() {
   const fetchFileContent = async (file: FileWithContext) => {
     setContentLoading(true);
     try {
-      // Use different endpoint for default files (no task_id)
-      const url = file.task_id
-        ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}/content`
-        : `/api/workspace/default/files/${file.filename}/content`;
+      // Use path-based endpoint - works for all file locations
+      const url = `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
 
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch content');
@@ -404,20 +513,16 @@ export default function FilesLibraryTab() {
 
   // Handle download
   const handleDownload = (file: FileWithContext) => {
-    // Use different endpoint for default files (no task_id)
-    const url = file.task_id
-      ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}`
-      : `/api/workspace/default/files/${file.filename}`;
+    // Use path-based endpoint - works for all file locations
+    const url = `/api/workspace/by-path/download?file_path=${encodeURIComponent(file.path)}`;
     window.open(url, '_blank');
   };
 
   // Handle delete
   const handleDelete = async (file: FileWithContext) => {
     try {
-      // Use different endpoint for default files (no task_id)
-      const url = file.task_id
-        ? `/api/workspace/tasks/${file.task_id}/files/${file.filename}`
-        : `/api/workspace/default/files/${file.filename}`;
+      // Use path-based endpoint - works for all file locations
+      const url = `/api/workspace/by-path?file_path=${encodeURIComponent(file.path)}`;
 
       const response = await fetch(url, {
         method: 'DELETE'
@@ -478,6 +583,20 @@ export default function FilesLibraryTab() {
     const workflowMap = new Map<string, TreeNode>();
     const taskMap = new Map<string, TreeNode>();
 
+    // Track names for lookup (first file with a name wins)
+    const projectNames = new Map<number, string>();
+    const workflowNames = new Map<number, string>();
+
+    // First pass: collect names
+    filteredFiles.forEach(file => {
+      if (file.project_id !== null && file.project_name && !projectNames.has(file.project_id)) {
+        projectNames.set(file.project_id, file.project_name);
+      }
+      if (file.workflow_id !== null && file.workflow_name && !workflowNames.has(file.workflow_id)) {
+        workflowNames.set(file.workflow_id, file.workflow_name);
+      }
+    });
+
     filteredFiles.forEach(file => {
       const projectKey = file.project_id !== null ? `project_${file.project_id}` : 'standalone';
       const workflowKey = file.workflow_id !== null ? `${projectKey}/workflow_${file.workflow_id}` : null;
@@ -485,8 +604,12 @@ export default function FilesLibraryTab() {
 
       // Create/get project node
       if (!projectMap.has(projectKey)) {
+        // Use actual project name if available, fall back to ID
+        const projectName = file.project_id !== null
+          ? (projectNames.get(file.project_id) || `Project ${file.project_id}`)
+          : 'Standalone & Default';
         const projectNode: TreeNode = {
-          name: file.project_id !== null ? `Project ${file.project_id}` : 'Standalone & Default',
+          name: projectName,
           path: projectKey,
           type: 'project',
           id: file.project_id,
@@ -512,8 +635,12 @@ export default function FilesLibraryTab() {
 
       // Create/get workflow node
       if (!workflowMap.has(workflowKey)) {
+        // Use actual workflow name if available, fall back to ID
+        const workflowDisplayName = file.workflow_id !== null
+          ? (workflowNames.get(file.workflow_id) || `Workflow ${file.workflow_id}`)
+          : `Workflow ${file.workflow_id}`;
         const workflowNode: TreeNode = {
-          name: `Workflow ${file.workflow_id}`,
+          name: workflowDisplayName,
           path: workflowKey,
           type: 'workflow',
           id: file.workflow_id,
@@ -574,18 +701,20 @@ export default function FilesLibraryTab() {
       return (
         <div
           key={node.path}
-          className={`flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer group ${
+          className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${
             selectedFile?.path === node.path ? 'bg-primary/10' : ''
           }`}
           style={{ paddingLeft: paddingLeft + 28 }}
           onClick={() => handlePreview(node.file!)}
           onContextMenu={(e) => handleContextMenu(e, node.file!)}
+          onMouseEnter={(e) => { if (selectedFile?.path !== node.path) e.currentTarget.style.backgroundColor = 'var(--color-panel-dark)'; }}
+          onMouseLeave={(e) => { if (selectedFile?.path !== node.path) e.currentTarget.style.backgroundColor = ''; }}
         >
           <span className="text-base">{getFileIcon(node.file.extension)}</span>
           <div className="flex-1 min-w-0">
-            <span className="text-sm text-gray-900 dark:text-white truncate block">{node.name}</span>
+            <span className="text-sm truncate block" style={{ color: 'var(--color-text-primary)' }}>{node.name}</span>
             {node.file.agent_label && (
-              <span className="text-xs text-gray-500 dark:text-text-muted/70">
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 by {node.file.agent_label}
               </span>
             )}
@@ -593,30 +722,30 @@ export default function FilesLibraryTab() {
           {node.file.tags && node.file.tags.length > 0 && (
             <div className="hidden group-hover:flex items-center gap-1 mr-1">
               {node.file.tags.slice(0, 2).map((tag) => (
-                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary">
+                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10" style={{ color: 'var(--color-primary)' }}>
                   {tag}
                 </span>
               ))}
               {node.file.tags.length > 2 && (
-                <span className="text-[10px] text-gray-400">+{node.file.tags.length - 2}</span>
+                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>+{node.file.tags.length - 2}</span>
               )}
             </div>
           )}
-          <span className="text-xs text-gray-500 dark:text-text-muted">{node.file.size_human}</span>
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{node.file.size_human}</span>
           <div className="hidden group-hover:flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); handleContextMenu(e, node.file!); }}
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+              className="p-1 rounded hover:opacity-70 transition-opacity"
               title="More actions"
             >
-              <MoreVertical className="w-3.5 h-3.5 text-gray-500" />
+              <MoreVertical className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleDownload(node.file!); }}
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+              className="p-1 rounded hover:opacity-70 transition-opacity"
               title="Download"
             >
-              <Download className="w-3.5 h-3.5 text-gray-500" />
+              <Download className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); setDeleteConfirm(node.file!); }}
@@ -636,24 +765,35 @@ export default function FilesLibraryTab() {
     return (
       <div key={node.path}>
         <div
-          className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"
+          className="flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors group"
           style={{ paddingLeft }}
           onClick={() => toggleNode(node.path)}
+          onContextMenu={(e) => handleFolderContextMenu(e, node)}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-panel-dark)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
         >
           {hasChildren ? (
             isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
             ) : (
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
             )
           ) : (
             <div className="w-4" />
           )}
           <span className="text-base">{icon}</span>
-          <span className="flex-1 text-sm font-medium text-gray-900 dark:text-white">{node.name}</span>
-          <span className="text-xs text-gray-500 dark:text-text-muted">
+          <span className="flex-1 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{node.name}</span>
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
             {fileCount} file{fileCount !== 1 ? 's' : ''}
           </span>
+          {/* Folder action button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleFolderContextMenu(e, node); }}
+            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-all"
+            title="Folder actions"
+          >
+            <MoreVertical className="w-3.5 h-3.5" style={{ color: 'var(--color-text-muted)' }} />
+          </button>
         </div>
         {isExpanded && node.children.map(child => renderTreeNode(child, depth + 1))}
       </div>
@@ -784,22 +924,22 @@ export default function FilesLibraryTab() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* File Browser */}
-        <div className={`${previewOpen ? 'w-1/2' : 'flex-1'} overflow-auto border-r border-gray-200 dark:border-border-dark`}>
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* File Browser - always full width */}
+        <div className="flex-1 overflow-auto border-r border-gray-200 dark:border-border-dark">
           {viewMode === 'tree' ? (
             <div className="py-2">
               {treeData.map(node => renderTreeNode(node))}
             </div>
           ) : (
             <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-white/5 sticky top-0">
+              <thead className="sticky top-0" style={{ backgroundColor: 'var(--color-panel-dark)' }}>
                 <tr>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Name</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Created By</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Location</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Size</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 dark:text-text-muted uppercase">Modified</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Name</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Created By</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Location</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Size</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Modified</th>
                   <th className="w-28"></th>
                 </tr>
               </thead>
@@ -807,26 +947,29 @@ export default function FilesLibraryTab() {
                 {filteredFiles.map((file, index) => (
                   <tr
                     key={index}
-                    className={`border-b border-gray-100 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer ${
+                    className={`cursor-pointer transition-colors ${
                       selectedFile?.path === file.path ? 'bg-primary/10' : ''
                     }`}
+                    style={{ borderBottom: '1px solid var(--color-border-dark)' }}
                     onClick={() => handlePreview(file)}
                     onContextMenu={(e) => handleContextMenu(e, file)}
+                    onMouseEnter={(e) => { if (selectedFile?.path !== file.path) e.currentTarget.style.backgroundColor = 'var(--color-panel-dark)'; }}
+                    onMouseLeave={(e) => { if (selectedFile?.path !== file.path) e.currentTarget.style.backgroundColor = ''; }}
                   >
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <span className="text-base">{getFileIcon(file.extension)}</span>
                         <div className="min-w-0">
-                          <span className="text-sm font-medium text-gray-900 dark:text-white block truncate">{file.filename}</span>
+                          <span className="text-sm font-medium block truncate" style={{ color: 'var(--color-text-primary)' }}>{file.filename}</span>
                           {file.tags && file.tags.length > 0 && (
                             <div className="flex items-center gap-1 mt-0.5">
                               {file.tags.slice(0, 3).map((tag) => (
-                                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary">
+                                <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-primary/10" style={{ color: 'var(--color-primary)' }}>
                                   {tag}
                                 </span>
                               ))}
                               {file.tags.length > 3 && (
-                                <span className="text-[10px] text-gray-400">+{file.tags.length - 3}</span>
+                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>+{file.tags.length - 3}</span>
                               )}
                             </div>
                           )}
@@ -835,39 +978,39 @@ export default function FilesLibraryTab() {
                     </td>
                     <td className="px-4 py-2.5">
                       {file.agent_label ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full" style={{ backgroundColor: 'var(--color-primary)', color: 'white', opacity: 0.9 }}>
                           🤖 {file.agent_label}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">—</span>
+                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>
                       )}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className="text-xs text-gray-500 dark:text-text-muted">
-                        {file.project_id !== null ? `Project ${file.project_id}` : 'Default'}{' '}
-                        {file.workflow_id !== null ? `› Workflow ${file.workflow_id}` : ''}{' '}
-                        {file.task_id !== null ? `› Task ${file.task_id}` : ''}
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        {file.project_id !== null ? (file.project_name || `Project ${file.project_id}`) : 'Default'}{' '}
+                        {file.workflow_id !== null ? `› ${file.workflow_name || `Workflow ${file.workflow_id}`}` : ''}{' '}
+                        {file.task_id !== null ? `› Task #${file.task_id}` : ''}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-text-muted">{file.size_human}</td>
-                    <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-text-muted">
+                    <td className="px-4 py-2.5 text-sm" style={{ color: 'var(--color-text-primary)' }}>{file.size_human}</td>
+                    <td className="px-4 py-2.5 text-sm" style={{ color: 'var(--color-text-primary)' }}>
                       {new Date(file.modified_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1 justify-end">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleContextMenu(e, file); }}
-                          className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+                          className="p-1.5 rounded hover:opacity-70 transition-opacity"
                           title="More actions"
                         >
-                          <MoreVertical className="w-4 h-4 text-gray-500" />
+                          <MoreVertical className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
-                          className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10"
+                          className="p-1.5 rounded hover:opacity-70 transition-opacity"
                           title="Download"
                         >
-                          <Download className="w-4 h-4 text-gray-500" />
+                          <Download className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeleteConfirm(file); }}
@@ -885,35 +1028,47 @@ export default function FilesLibraryTab() {
           )}
         </div>
 
-        {/* Preview Panel */}
+        {/* Preview Panel - overlays file list */}
         {previewOpen && selectedFile && (
-          <div className="w-1/2 flex flex-col overflow-hidden">
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1/2 flex flex-col overflow-hidden shadow-xl z-10"
+            style={{
+              backgroundColor: 'var(--color-background-light)',
+              borderLeft: '1px solid var(--color-border-dark)'
+            }}
+          >
             {/* Preview Header */}
-            <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200 dark:border-border-dark">
+            <div
+              className="flex-shrink-0 flex items-center justify-between p-4"
+              style={{
+                backgroundColor: 'var(--color-panel-dark)',
+                borderBottom: '1px solid var(--color-border-dark)'
+              }}
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xl">{getFileIcon(selectedFile.extension)}</span>
-                <h3 className="font-semibold text-gray-900 dark:text-white truncate">{selectedFile.filename}</h3>
+                <h3 className="font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>{selectedFile.filename}</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleDownload(selectedFile)}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-white/10"
+                  className="p-1.5 rounded hover:opacity-70 transition-opacity"
                   title="Download"
                 >
-                  <Download className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                  <Download className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                 </button>
                 <button
                   onClick={() => { setPreviewOpen(false); setSelectedFile(null); setFileContent(null); }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-white/10"
+                  className="p-1.5 rounded hover:opacity-70 transition-opacity"
                   title="Close preview"
                 >
-                  <span className="text-xl text-gray-400">×</span>
+                  <span className="text-xl" style={{ color: 'var(--color-text-muted)' }}>×</span>
                 </button>
               </div>
             </div>
 
             {/* Preview Content */}
-            <div className="flex-1 overflow-auto p-4 bg-gray-50 dark:bg-black/20">
+            <div className="flex-1 overflow-auto p-4" style={{ backgroundColor: 'var(--color-background-light)' }}>
               {contentLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>
@@ -921,8 +1076,8 @@ export default function FilesLibraryTab() {
               ) : fileContent?.is_binary ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <span className="text-4xl mb-3">{getFileIcon(selectedFile.extension)}</span>
-                  <p className="text-gray-600 dark:text-text-muted">Binary file - preview not available</p>
-                  <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-1">{selectedFile.size_human}</p>
+                  <p style={{ color: 'var(--color-text-muted)' }}>Binary file - preview not available</p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{selectedFile.size_human}</p>
                   <button
                     onClick={() => handleDownload(selectedFile)}
                     className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium flex items-center gap-2"
@@ -935,7 +1090,7 @@ export default function FilesLibraryTab() {
               ) : fileContent?.content ? (
                 <div>
                   {selectedFile.extension === '.md' ? (
-                    <div className="prose prose-sm max-w-none" style={{ color: '#1f2937' }}>
+                    <div className="prose prose-sm max-w-none" style={{ color: 'var(--color-text-primary)' }}>
                       <ReactMarkdown>{fileContent.content}</ReactMarkdown>
                     </div>
                   ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
@@ -948,7 +1103,7 @@ export default function FilesLibraryTab() {
                       {fileContent.content}
                     </SyntaxHighlighter>
                   ) : (
-                    <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: '#1f2937' }}>
+                    <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: 'var(--color-text-primary)' }}>
                       {fileContent.content}
                     </pre>
                   )}
@@ -959,7 +1114,7 @@ export default function FilesLibraryTab() {
                   )}
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-500 dark:text-text-muted">
+                <div className="flex items-center justify-center h-full" style={{ color: 'var(--color-text-muted)' }}>
                   Unable to load file content
                 </div>
               )}
@@ -1281,6 +1436,177 @@ export default function FilesLibraryTab() {
                   <>
                     <Database className="w-4 h-4" />
                     Index File
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Folder Context Menu */}
+      {folderContextMenu.visible && folderContextMenu.node && (
+        <div
+          className="fixed z-50 w-56 rounded-lg shadow-xl border py-1"
+          style={{
+            left: folderContextMenu.x,
+            top: folderContextMenu.y,
+            backgroundColor: 'var(--color-background-light, #ffffff)',
+            borderColor: 'var(--color-border-dark, #e5e7eb)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="px-4 py-2 border-b"
+            style={{ borderColor: 'var(--color-border-dark, #e5e7eb)' }}
+          >
+            <div
+              className="text-xs font-semibold uppercase truncate"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {folderContextMenu.node.name}
+            </div>
+            <div
+              className="text-xs mt-0.5"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {folderContextMenu.files.length} file{folderContextMenu.files.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          <button
+            onClick={handleFolderAddToKnowledgeBase}
+            disabled={folderContextMenu.files.length === 0}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5 disabled:opacity-50"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <Database className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Add All to Knowledge Base</span>
+          </button>
+
+          <button
+            onClick={() => {
+              // Expand the folder
+              setExpandedNodes(prev => {
+                const next = new Set(prev);
+                next.add(folderContextMenu.node!.path);
+                return next;
+              });
+              setFolderContextMenu(prev => ({ ...prev, visible: false }));
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 hover:bg-primary/10 hover:pl-5"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            <ChevronDown className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+            <span className="font-medium">Expand</span>
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Index to Knowledge Base Modal */}
+      {bulkKbModalOpen && bulkKbFiles.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl border"
+            style={{
+              backgroundColor: 'var(--color-background-light)',
+              borderColor: 'var(--color-border-dark)'
+            }}
+          >
+            <h3
+              className="text-lg font-semibold mb-2"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              Add Folder to Knowledge Base
+            </h3>
+            <p
+              className="text-sm mb-4"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Index all {bulkKbFiles.length} files from "{bulkKbFolderName}" into a project's knowledge base.
+            </p>
+
+            {/* File list preview */}
+            <div
+              className="mb-4 max-h-32 overflow-y-auto rounded-lg border p-2"
+              style={{
+                backgroundColor: 'var(--color-panel-dark)',
+                borderColor: 'var(--color-border-dark)'
+              }}
+            >
+              {bulkKbFiles.slice(0, 10).map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 py-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  <span>{getFileIcon(file.extension)}</span>
+                  <span className="truncate">{file.filename}</span>
+                </div>
+              ))}
+              {bulkKbFiles.length > 10 && (
+                <div className="py-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  ... and {bulkKbFiles.length - 10} more files
+                </div>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <label
+                className="block text-sm font-medium mb-2"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                Select Project
+              </label>
+              <select
+                value={bulkKbProjectId}
+                onChange={(e) => setBulkKbProjectId(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                style={{
+                  backgroundColor: 'var(--color-input-background)',
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+              >
+                <option value="">Choose a project...</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={String(project.id)}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <p
+                className="text-xs mt-2"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                All text files will be chunked and indexed. Binary files will be skipped.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setBulkKbModalOpen(false); setBulkKbFiles([]); setBulkKbFolderName(''); setBulkKbProjectId(''); }}
+                className="px-4 py-2 text-sm rounded-lg border transition-colors"
+                style={{
+                  borderColor: 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+                disabled={bulkKbIndexing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmBulkIndexToKnowledgeBase}
+                disabled={!bulkKbProjectId || bulkKbIndexing}
+                className="px-4 py-2 text-sm rounded-lg text-white flex items-center gap-2 disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                {bulkKbIndexing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Indexing {bulkKbFiles.length} files...
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-4 h-4" />
+                    Index {bulkKbFiles.length} Files
                   </>
                 )}
               </button>

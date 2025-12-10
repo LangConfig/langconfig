@@ -248,9 +248,17 @@ class AgentFactory:
 
         base_system_prompt = agent_config.get("system_prompt", "You are a helpful AI assistant.")
         native_tool_names = agent_config.get("native_tools", [])
-        # Backward compatibility for mcp_tools
-        if not native_tool_names:
-            native_tool_names = agent_config.get("mcp_tools", [])
+        # Merge mcp_tools into native_tools (they're the same thing, mcp_tools is legacy name)
+        # This ensures tools from both lists are loaded
+        mcp_tool_names = agent_config.get("mcp_tools", [])
+        if mcp_tool_names:
+            # Combine both lists, removing duplicates while preserving order
+            combined_tools = list(native_tool_names)
+            for tool in mcp_tool_names:
+                if tool not in combined_tools:
+                    combined_tools.append(tool)
+            native_tool_names = combined_tools
+            logger.debug(f"Merged native_tools and mcp_tools: {native_tool_names}")
         # Added fallback support
         fallback_models = agent_config.get("fallback_models", [])
         # Memory configuration

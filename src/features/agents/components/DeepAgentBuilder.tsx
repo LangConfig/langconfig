@@ -165,13 +165,15 @@ const REGULAR_AGENT_DEFAULTS = {
 // DeepAgents standard filesystem tools
 // See: https://docs.langchain.com/oss/python/deepagents/harness
 const FILESYSTEM_TOOLS = ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'];
+// Default tools for new agents: filesystem + web_search for research capabilities
+const DEFAULT_AGENT_TOOLS = [...FILESYSTEM_TOOLS, 'web_search'];
 
 const DEFAULT_CONFIG: DeepAgentConfig = {
   model: 'claude-sonnet-4-5-20250929',
   temperature: 0.7,
   system_prompt: 'You are a helpful AI assistant with planning and research capabilities.',
   tools: [],
-  native_tools: FILESYSTEM_TOOLS,  // DeepAgents standard: ls, read_file, write_file, edit_file, glob, grep
+  native_tools: DEFAULT_AGENT_TOOLS,  // Filesystem + web_search for research
   cli_tools: [],
   use_deepagents: true,
   middleware: [

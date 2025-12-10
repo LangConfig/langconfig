@@ -18,8 +18,36 @@ from pydantic import BaseModel
 from db.database import get_db
 from services.workspace_manager import get_workspace_manager
 from models.core import Task
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_path_in_workspace(file_path: str, workspace_mgr) -> Path:
+    """
+    Validate that a file path is within the workspace directory.
+
+    Uses Path.relative_to() for robust cross-platform path comparison
+    that handles Windows case differences and path separator issues.
+
+    Returns the resolved full path if valid.
+    Raises HTTPException(403) if path traversal is attempted.
+    Raises HTTPException(404) if file doesn't exist.
+    """
+    full_path = (workspace_mgr.base_dir / file_path).resolve()
+    workspace_resolved = workspace_mgr.base_dir.resolve()
+
+    # Security: Use relative_to() for robust path comparison
+    try:
+        full_path.relative_to(workspace_resolved)
+    except ValueError:
+        logger.warning(f"Path traversal attempt blocked: {file_path}")
+        raise HTTPException(status_code=403, detail="Invalid path")
+
+    if not full_path.exists() or not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return full_path
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
@@ -37,7 +65,9 @@ class FileInfo(BaseModel):
 class FileInfoWithContext(FileInfo):
     """File info with project/workflow/task context"""
     project_id: int | None = None
+    project_name: str | None = None
     workflow_id: int | None = None
+    workflow_name: str | None = None
     task_id: int | None = None
     full_path: str | None = None
 
@@ -72,6 +102,21 @@ class BulkDeleteResponse(BaseModel):
     """Response from bulk delete operation"""
     deleted: int
     failed: int
+    errors: List[str]
+
+
+class BulkIndexRequest(BaseModel):
+    """Request to index multiple files at once"""
+    file_paths: List[str]  # List of relative paths within outputs/
+    project_id: int
+
+
+class BulkIndexResponse(BaseModel):
+    """Response from bulk index operation"""
+    status: str
+    indexed: int
+    failed: int
+    total_chunks: int
     errors: List[str]
 
 
@@ -388,6 +433,9 @@ async def list_all_files(
     Use for Library Files browser. Supports filtering by project, workflow,
     search term, and file type.
     """
+    from models.core import Project
+    from models.workflow import WorkflowProfile
+
     workspace_mgr = get_workspace_manager()
 
     files = workspace_mgr.list_all_files(
@@ -396,6 +444,29 @@ async def list_all_files(
         search=search,
         file_type=file_type
     )
+
+    # Collect unique project and workflow IDs for batch lookup
+    project_ids = set(f.get('project_id') for f in files if f.get('project_id'))
+    workflow_ids = set(f.get('workflow_id') for f in files if f.get('workflow_id'))
+
+    # Batch fetch project names
+    project_names = {}
+    if project_ids:
+        projects = db.query(Project).filter(Project.id.in_(project_ids)).all()
+        project_names = {p.id: p.name for p in projects}
+
+    # Batch fetch workflow names
+    workflow_names = {}
+    if workflow_ids:
+        workflows = db.query(WorkflowProfile).filter(WorkflowProfile.id.in_(workflow_ids)).all()
+        workflow_names = {w.id: w.name for w in workflows}
+
+    # Enrich files with names
+    for file in files:
+        if file.get('project_id'):
+            file['project_name'] = project_names.get(file['project_id'])
+        if file.get('workflow_id'):
+            file['workflow_name'] = workflow_names.get(file['workflow_id'])
 
     return AllFilesResponse(
         files=files,
@@ -1064,3 +1135,429 @@ async def delete_default_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found or could not be deleted")
 
     return {"status": "success", "filename": filename}
+
+
+# =============================================================================
+# Path-Based File Access (for files anywhere in outputs/)
+# =============================================================================
+
+@router.get("/by-path/content")
+async def get_file_content_by_path(file_path: str):
+    """
+    Get file content by relative path within outputs/.
+
+    This is the most flexible way to access files - works for:
+    - Root level files: email_agent.py
+    - Default folder: default/report.md
+    - Project/workflow/task: project_1/workflow_2/task_3/output.md
+
+    The file_path should be the relative path as returned by list_all_files.
+    """
+    import mimetypes
+
+    workspace_mgr = get_workspace_manager()
+
+    # Security: Validate path is within outputs/
+    full_path = _validate_path_in_workspace(file_path, workspace_mgr)
+
+    # Determine if text or binary
+    mime_type, _ = mimetypes.guess_type(str(full_path))
+    if mime_type is None:
+        mime_type = "text/plain"
+
+    text_types = [
+        "text/", "application/json", "application/javascript",
+        "application/xml", "application/yaml", "application/x-yaml"
+    ]
+    is_text = any(mime_type.startswith(t) for t in text_types)
+
+    text_extensions = {
+        '.md', '.txt', '.py', '.js', '.ts', '.tsx', '.jsx', '.json',
+        '.yaml', '.yml', '.xml', '.html', '.css', '.scss', '.sql',
+        '.sh', '.bash', '.env', '.gitignore', '.csv', '.toml', '.ini',
+        '.cfg', '.conf', '.log', '.rst', '.tex'
+    }
+    if full_path.suffix.lower() in text_extensions:
+        is_text = True
+
+    file_size = full_path.stat().st_size
+    max_size = 1024 * 1024  # 1MB
+
+    if not is_text:
+        return FileContentResponse(
+            filename=full_path.name,
+            content=None,
+            mime_type=mime_type,
+            is_binary=True,
+            truncated=False,
+            size_bytes=file_size
+        )
+
+    try:
+        truncated = file_size > max_size
+        with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read(max_size)
+
+        return FileContentResponse(
+            filename=full_path.name,
+            content=content,
+            mime_type=mime_type,
+            is_binary=False,
+            truncated=truncated,
+            size_bytes=file_size
+        )
+    except Exception as e:
+        logger.error(f"Error reading file: {e}")
+        raise HTTPException(status_code=500, detail="Error reading file")
+
+
+@router.get("/by-path/download")
+async def download_file_by_path(file_path: str):
+    """
+    Download a file by relative path within outputs/.
+    """
+    workspace_mgr = get_workspace_manager()
+
+    # Security: Validate path is within outputs/
+    full_path = _validate_path_in_workspace(file_path, workspace_mgr)
+
+    return FileResponse(
+        path=full_path,
+        filename=full_path.name,
+        media_type="application/octet-stream"
+    )
+
+
+@router.delete("/by-path")
+async def delete_file_by_path(file_path: str):
+    """
+    Delete a file by relative path within outputs/.
+    """
+    workspace_mgr = get_workspace_manager()
+
+    # Security: Validate path is within outputs/
+    full_path = _validate_path_in_workspace(file_path, workspace_mgr)
+
+    try:
+        full_path.unlink()
+        logger.info(f"Deleted file: {file_path}")
+        return {"status": "success", "path": file_path}
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting file")
+
+
+@router.post("/by-path/index", response_model=IndexFileResponse)
+async def index_file_by_path(
+    file_path: str,
+    request: IndexFileRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Index a file by relative path into the project's knowledge base.
+
+    Works for files anywhere in outputs/ directory.
+    """
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from llama_index.core.schema import TextNode
+    from llama_index.core import Settings
+    from datetime import datetime, timezone
+    from models.core import ContextDocument, IndexingStatus, DocumentType
+    import os
+    import mimetypes as mt
+
+    workspace_mgr = get_workspace_manager()
+
+    # Security: Validate path is within outputs/
+    full_path = _validate_path_in_workspace(file_path, workspace_mgr)
+
+    try:
+        # Read file content
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        if not content.strip():
+            return IndexFileResponse(
+                status="error",
+                message="File is empty - nothing to index"
+            )
+
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1024,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+
+        chunks = text_splitter.split_text(content)
+
+        if not chunks:
+            return IndexFileResponse(
+                status="error",
+                message="Could not split file into chunks"
+            )
+
+        # Get vector store for the project
+        from services.llama_config import get_vector_store
+        vector_store = get_vector_store(request.project_id)
+
+        # Create embeddings and store
+        embed_model = Settings.embed_model
+        nodes = []
+        filename = full_path.name
+
+        for i, chunk_text in enumerate(chunks):
+            node_id = f"workspace_file_path_{file_path}_{i}"
+            metadata = {
+                "source": "workspace_file",
+                "file_path": file_path,
+                "filename": filename,
+                "project_id": request.project_id,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "indexed_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            text_node = TextNode(
+                id_=node_id,
+                text=chunk_text,
+                metadata=metadata
+            )
+
+            embedding = embed_model.get_text_embedding(chunk_text)
+            text_node.embedding = embedding
+
+            nodes.append(text_node)
+
+        vector_store.add(nodes)
+
+        # Determine document type from extension
+        ext = os.path.splitext(filename)[1].lower()
+        doc_type_map = {
+            '.md': DocumentType.MARKDOWN,
+            '.txt': DocumentType.TEXT,
+            '.pdf': DocumentType.PDF,
+            '.py': DocumentType.CODE,
+            '.js': DocumentType.CODE,
+            '.ts': DocumentType.CODE,
+            '.json': DocumentType.JSON,
+            '.html': DocumentType.HTML,
+            '.xml': DocumentType.XML,
+            '.csv': DocumentType.CSV,
+            '.yaml': DocumentType.YAML,
+            '.yml': DocumentType.YAML,
+        }
+        doc_type = doc_type_map.get(ext, DocumentType.TEXT)
+
+        # Get mime type
+        mime_type, _ = mt.guess_type(filename)
+
+        # Create a ContextDocument record
+        context_doc = ContextDocument(
+            filename=filename,
+            original_filename=filename,
+            file_path=str(full_path),
+            file_size=os.path.getsize(full_path),
+            mime_type=mime_type or 'text/plain',
+            document_type=doc_type,
+            indexing_status=IndexingStatus.READY,
+            indexed_at=datetime.now(timezone.utc),
+            indexed_chunks_count=len(nodes),
+            description=f"Workspace file: {file_path}",
+            content_preview=content[:500] if len(content) > 500 else content,
+            project_id=request.project_id,
+        )
+        db.add(context_doc)
+        db.commit()
+
+        logger.info(f"Indexed {len(nodes)} chunks from {file_path} to project {request.project_id}")
+
+        return IndexFileResponse(
+            status="success",
+            message=f"Successfully indexed {len(nodes)} chunks into the knowledge base",
+            chunks_created=len(nodes)
+        )
+
+    except Exception as e:
+        logger.error(f"Error indexing file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/by-path/bulk-index", response_model=BulkIndexResponse)
+async def bulk_index_files_by_path(
+    request: BulkIndexRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Index multiple files into a project's knowledge base.
+
+    Useful for indexing an entire folder of files at once.
+    Skips binary files and files that fail to read.
+    """
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from llama_index.core.schema import TextNode
+    from llama_index.core import Settings
+    from datetime import datetime, timezone
+    from models.core import ContextDocument, IndexingStatus, DocumentType
+    import os
+    import mimetypes as mt
+
+    workspace_mgr = get_workspace_manager()
+
+    # Text file extensions we can index
+    text_extensions = {
+        '.md', '.txt', '.py', '.js', '.ts', '.tsx', '.jsx', '.json',
+        '.yaml', '.yml', '.xml', '.html', '.css', '.scss', '.sql',
+        '.sh', '.bash', '.csv', '.toml', '.ini', '.cfg', '.conf',
+        '.log', '.rst', '.tex'
+    }
+
+    indexed_count = 0
+    failed_count = 0
+    total_chunks = 0
+    errors = []
+
+    # Get vector store for the project
+    from services.llama_config import get_vector_store
+    vector_store = get_vector_store(request.project_id)
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1024,
+        chunk_overlap=200,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+
+    embed_model = Settings.embed_model
+
+    for file_path in request.file_paths:
+        try:
+            # Validate path is within workspace
+            full_path = (workspace_mgr.base_dir / file_path).resolve()
+            workspace_resolved = workspace_mgr.base_dir.resolve()
+
+            try:
+                full_path.relative_to(workspace_resolved)
+            except ValueError:
+                errors.append(f"{file_path}: Invalid path")
+                failed_count += 1
+                continue
+
+            if not full_path.exists() or not full_path.is_file():
+                errors.append(f"{file_path}: File not found")
+                failed_count += 1
+                continue
+
+            # Check if it's a text file we can index
+            ext = full_path.suffix.lower()
+            if ext not in text_extensions:
+                errors.append(f"{file_path}: Skipped (binary or unsupported type)")
+                failed_count += 1
+                continue
+
+            # Read file content
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except Exception as read_err:
+                errors.append(f"{file_path}: Could not read ({str(read_err)})")
+                failed_count += 1
+                continue
+
+            if not content.strip():
+                errors.append(f"{file_path}: Empty file")
+                failed_count += 1
+                continue
+
+            # Split into chunks
+            chunks = text_splitter.split_text(content)
+            if not chunks:
+                errors.append(f"{file_path}: Could not split into chunks")
+                failed_count += 1
+                continue
+
+            # Create embeddings and store
+            filename = full_path.name
+            nodes = []
+
+            for i, chunk_text in enumerate(chunks):
+                node_id = f"workspace_file_path_{file_path}_{i}"
+                metadata = {
+                    "source": "workspace_file",
+                    "file_path": file_path,
+                    "filename": filename,
+                    "project_id": request.project_id,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                    "indexed_at": datetime.now(timezone.utc).isoformat()
+                }
+
+                text_node = TextNode(
+                    id_=node_id,
+                    text=chunk_text,
+                    metadata=metadata
+                )
+
+                embedding = embed_model.get_text_embedding(chunk_text)
+                text_node.embedding = embedding
+
+                nodes.append(text_node)
+
+            vector_store.add(nodes)
+            total_chunks += len(nodes)
+
+            # Determine document type from extension
+            doc_type_map = {
+                '.md': DocumentType.MARKDOWN,
+                '.txt': DocumentType.TEXT,
+                '.pdf': DocumentType.PDF,
+                '.py': DocumentType.CODE,
+                '.js': DocumentType.CODE,
+                '.ts': DocumentType.CODE,
+                '.json': DocumentType.JSON,
+                '.html': DocumentType.HTML,
+                '.xml': DocumentType.XML,
+                '.csv': DocumentType.CSV,
+                '.yaml': DocumentType.YAML,
+                '.yml': DocumentType.YAML,
+            }
+            doc_type = doc_type_map.get(ext, DocumentType.TEXT)
+
+            # Get mime type
+            mime_type, _ = mt.guess_type(filename)
+
+            # Create a ContextDocument record
+            context_doc = ContextDocument(
+                filename=filename,
+                original_filename=filename,
+                file_path=str(full_path),
+                file_size=os.path.getsize(full_path),
+                mime_type=mime_type or 'text/plain',
+                document_type=doc_type,
+                indexing_status=IndexingStatus.READY,
+                indexed_at=datetime.now(timezone.utc),
+                indexed_chunks_count=len(nodes),
+                description=f"Workspace file: {file_path}",
+                content_preview=content[:500] if len(content) > 500 else content,
+                project_id=request.project_id,
+            )
+            db.add(context_doc)
+
+            indexed_count += 1
+            logger.info(f"Indexed {len(nodes)} chunks from {file_path}")
+
+        except Exception as e:
+            errors.append(f"{file_path}: {str(e)}")
+            failed_count += 1
+            logger.error(f"Error indexing {file_path}: {e}")
+
+    # Commit all ContextDocument records
+    db.commit()
+
+    logger.info(f"Bulk index complete: {indexed_count} indexed, {failed_count} failed, {total_chunks} total chunks")
+
+    return BulkIndexResponse(
+        status="success" if indexed_count > 0 else "error",
+        indexed=indexed_count,
+        failed=failed_count,
+        total_chunks=total_chunks,
+        errors=errors[:10]  # Limit error messages to first 10
+    )

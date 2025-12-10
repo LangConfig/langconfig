@@ -26,15 +26,21 @@ logger = logging.getLogger(__name__)
 
 class WorkspaceManager:
     """Manages workspace directories for project/workflow/task outputs"""
-    
-    def __init__(self, base_dir: str = "outputs"):
+
+    def __init__(self, base_dir: str = None):
         """
         Initialize workspace manager.
-        
+
         Args:
-            base_dir: Base directory for all outputs (default: "outputs")
+            base_dir: Base directory for all outputs. If None, uses backend/outputs.
         """
-        self.base_dir = Path(base_dir).resolve()
+        if base_dir is None:
+            # Default to backend/outputs relative to this file's location
+            backend_dir = Path(__file__).parent.parent  # services/ -> backend/
+            self.base_dir = backend_dir / "outputs"
+        else:
+            self.base_dir = Path(base_dir).resolve()
+
         self.base_dir.mkdir(exist_ok=True)
         logger.info(f"Workspace manager initialized: {self.base_dir}")
     
@@ -478,13 +484,56 @@ class WorkspaceManager:
             List of file info dicts with project/workflow/task context
         """
         all_files = []
+        logger.info(f"Listing all files from base_dir: {self.base_dir}")
+
+        def add_file(file_path: Path, proj_id: Optional[int], wf_id: Optional[int], t_id: Optional[int]):
+            """Helper to add a file to the list with filters applied"""
+            if not file_path.is_file():
+                return
+
+            # Apply filters
+            if search and search.lower() not in file_path.name.lower():
+                return
+
+            if file_type and file_path.suffix.lower() != f".{file_type.lower()}":
+                return
+
+            try:
+                stat = file_path.stat()
+                all_files.append({
+                    "filename": file_path.name,
+                    "path": str(file_path.relative_to(self.base_dir)),
+                    "full_path": str(file_path),
+                    "project_id": proj_id,
+                    "workflow_id": wf_id,
+                    "task_id": t_id,
+                    "size_bytes": stat.st_size,
+                    "size_human": self._format_size(stat.st_size),
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "extension": file_path.suffix,
+                })
+            except Exception as e:
+                logger.warning(f"Could not stat file {file_path}: {e}")
+
+        # Check if base_dir exists
+        if not self.base_dir.exists():
+            logger.warning(f"Base directory does not exist: {self.base_dir}")
+            return all_files
+
+        # First, scan for files directly in outputs/ (root level)
+        if not project_id and not workflow_id:
+            for item in self.base_dir.iterdir():
+                if item.is_file():
+                    add_file(item, None, None, None)
 
         # Determine which directories to scan
         if project_id:
             scan_dirs = [self.base_dir / f"project_{project_id}"]
         else:
-            # Scan all project directories
+            # Scan all subdirectories
             scan_dirs = [d for d in self.base_dir.iterdir() if d.is_dir()]
+
+        logger.info(f"list_all_files: Scanning directories: {[str(d) for d in scan_dirs]}")
 
         for project_dir in scan_dirs:
             if not project_dir.exists():
@@ -492,32 +541,46 @@ class WorkspaceManager:
 
             # Extract project ID from folder name
             proj_name = project_dir.name
+            proj_id = None
+
             if proj_name.startswith("project_"):
                 try:
                     proj_id = int(proj_name.replace("project_", ""))
                 except ValueError:
-                    # Skip malformed project directories
+                    logger.warning(f"Skipping malformed project directory: {proj_name}")
                     continue
-            elif proj_name == "standalone":
-                proj_id = None
-            elif proj_name == "default":
+            elif proj_name in ("standalone", "default"):
                 proj_id = None
             else:
+                # Skip unknown directories at project level
                 continue
 
-            # Scan workflow directories
+            # For default folder, scan files directly (not in workflow/task structure)
+            if proj_name == "default":
+                for file_path in project_dir.iterdir():
+                    add_file(file_path, None, None, None)
+                continue
+
+            # For project folders, scan workflow directories
             for workflow_dir in project_dir.iterdir():
                 if not workflow_dir.is_dir():
+                    # Could be a file directly in project folder
+                    add_file(workflow_dir, proj_id, None, None)
                     continue
 
                 if not workflow_dir.name.startswith("workflow_"):
                     continue
 
-                try:
-                    wf_id = int(workflow_dir.name.replace("workflow_", ""))
-                except ValueError:
-                    # Skip malformed workflow directories
-                    continue
+                # Extract workflow ID - handle "workflow_None" case
+                wf_id_str = workflow_dir.name.replace("workflow_", "")
+                if wf_id_str == "None" or wf_id_str == "":
+                    wf_id = None
+                else:
+                    try:
+                        wf_id = int(wf_id_str)
+                    except ValueError:
+                        logger.warning(f"Skipping malformed workflow directory: {workflow_dir.name}")
+                        continue
 
                 # Filter by workflow_id if specified
                 if workflow_id and wf_id != workflow_id:
@@ -526,6 +589,8 @@ class WorkspaceManager:
                 # Scan task directories
                 for task_dir in workflow_dir.iterdir():
                     if not task_dir.is_dir():
+                        # Could be a file directly in workflow folder
+                        add_file(task_dir, proj_id, wf_id, None)
                         continue
 
                     if not task_dir.name.startswith("task_"):
@@ -534,61 +599,16 @@ class WorkspaceManager:
                     try:
                         t_id = int(task_dir.name.replace("task_", ""))
                     except ValueError:
-                        # Skip malformed task directories
+                        logger.warning(f"Skipping malformed task directory: {task_dir.name}")
                         continue
 
                     # List files in this task
                     for file_path in task_dir.iterdir():
-                        if not file_path.is_file():
-                            continue
+                        if file_path.is_file():
+                            logger.debug(f"Found file: {file_path} (project={proj_id}, workflow={wf_id}, task={t_id})")
+                            add_file(file_path, proj_id, wf_id, t_id)
 
-                        # Apply filters
-                        if search and search.lower() not in file_path.name.lower():
-                            continue
-
-                        if file_type and file_path.suffix.lower() != f".{file_type.lower()}":
-                            continue
-
-                        stat = file_path.stat()
-                        all_files.append({
-                            "filename": file_path.name,
-                            "path": str(file_path.relative_to(self.base_dir)),
-                            "full_path": str(file_path),
-                            "project_id": proj_id,
-                            "workflow_id": wf_id,
-                            "task_id": t_id,
-                            "size_bytes": stat.st_size,
-                            "size_human": self._format_size(stat.st_size),
-                            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                            "extension": file_path.suffix,
-                        })
-
-        # Also scan default directory for non-workflow files
-        default_dir = self.base_dir / "default"
-        if default_dir.exists() and not project_id and not workflow_id:
-            for file_path in default_dir.iterdir():
-                if not file_path.is_file():
-                    continue
-
-                if search and search.lower() not in file_path.name.lower():
-                    continue
-
-                if file_type and file_path.suffix.lower() != f".{file_type.lower()}":
-                    continue
-
-                stat = file_path.stat()
-                all_files.append({
-                    "filename": file_path.name,
-                    "path": str(file_path.relative_to(self.base_dir)),
-                    "full_path": str(file_path),
-                    "project_id": None,
-                    "workflow_id": None,
-                    "task_id": None,
-                    "size_bytes": stat.st_size,
-                    "size_human": self._format_size(stat.st_size),
-                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "extension": file_path.suffix,
-                })
+        logger.info(f"list_all_files: Found {len(all_files)} files total")
 
         # Sort by modification time (newest first)
         all_files.sort(key=lambda x: x['modified_at'], reverse=True)

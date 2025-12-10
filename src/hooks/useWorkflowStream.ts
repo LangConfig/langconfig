@@ -259,6 +259,8 @@ export function useWorkflowStream(
       'on_chain_end',
       'on_tool_start',
       'on_tool_end',
+      'tool_preparing',  // Early notification when tool call JSON is being streamed
+      'tool_start',      // File-specific tool start (write_file with filename)
       'on_chat_model_start',
       'on_chat_model_stream',
       'on_chat_model_end',
