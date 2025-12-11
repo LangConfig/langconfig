@@ -36,6 +36,9 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
 from langchain_core.agents import AgentAction, AgentFinish
 
+# Import artifact store from tool factory
+from core.tools.factory import get_pending_artifacts
+
 logger = logging.getLogger(__name__)
 
 
@@ -733,6 +736,7 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         Called when a tool completes execution.
 
         Captures tool results for agent observation tracking.
+        Supports multimodal content (images, audio, files) from MCP tools.
         """
         logger.debug(f"[TOOL END] run_id={run_id}")
 
@@ -742,12 +746,45 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         agent_label = tool_info.get("agent_label")
         node_id = tool_info.get("node_id")  # For grouping with parent agent
 
+        # Extract multimodal content if present (from MCP tools)
+        content_blocks = []
+        artifacts = []
+        has_multimodal = False
+
+        # Check for artifacts stored via context variable (from native tools like image_generation)
+        pending_artifacts = get_pending_artifacts()
+        if pending_artifacts:
+            artifacts.extend(pending_artifacts)
+            has_multimodal = True
+            logger.info(f"[TOOL END] {tool_name} has {len(pending_artifacts)} pending artifacts from context")
+
+        # Check if output is a dict with multimodal content (MCPToolResult format)
+        if isinstance(output, dict):
+            content_blocks = output.get("content_blocks", [])
+            artifacts.extend(output.get("artifacts", []))
+            has_multimodal = has_multimodal or output.get("has_multimodal", False)
+
+            if has_multimodal:
+                logger.info(f"[TOOL END] {tool_name} returned multimodal content: "
+                           f"{len(content_blocks)} blocks, {len(artifacts)} artifacts")
+
         # Handle case where output might not be a string
         try:
             if isinstance(output, str):
                 full_output = output
                 # Increase preview limit for better visibility
                 output_preview = output[:2000] if output else ""
+            elif isinstance(output, dict):
+                # For dict outputs, try to get text content from content_blocks
+                text_parts = []
+                for block in content_blocks:
+                    if block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                if text_parts:
+                    full_output = "\n".join(text_parts)
+                else:
+                    full_output = str(output) if output else ""
+                output_preview = full_output[:2000]
             else:
                 # Convert to string if it's not already
                 full_output = str(output) if output else ""
@@ -774,7 +811,11 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                     "parent_run_id": subagent_info["parent_run_id"],
                     "output_preview": output_preview,
                     "full_output": full_output,  # Full output for complete display
-                    "success": True
+                    "success": True,
+                    # Include multimodal content for subagent results
+                    "content_blocks": content_blocks,
+                    "artifacts": artifacts,
+                    "has_multimodal": has_multimodal,
                 }
             )
             logger.info(f"[SUBAGENT END] {subagent_info['subagent_name']} completed")
@@ -801,6 +842,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 # SUBAGENT FIELDS: Enable frontend to route to SubagentPanel
                 "subagent_run_id": subagent_context.get("subagent_run_id") if subagent_context else None,
                 "subagent_name": subagent_context.get("subagent_name") if subagent_context else None,
+                # MULTIMODAL FIELDS: For displaying images, audio, files from MCP tools
+                "content_blocks": content_blocks,
+                "artifacts": artifacts,
+                "has_multimodal": has_multimodal,
             }
         )
 

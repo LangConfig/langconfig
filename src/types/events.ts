@@ -65,6 +65,7 @@ export interface ToolStartEvent extends BaseEvent {
     input_preview?: string;
     agent_label?: string;
     node_id?: string;
+    run_id?: string;
   };
 }
 
@@ -75,6 +76,17 @@ export interface ToolEndEvent extends BaseEvent {
     output: string | Record<string, any>;
     agent_label?: string;
     node_id?: string;
+    run_id?: string;
+    // Multimodal content from MCP tools
+    content_blocks?: Array<{
+      type: 'text' | 'image' | 'audio' | 'file' | 'resource';
+      [key: string]: any;
+    }>;
+    artifacts?: Array<{
+      type: 'text' | 'image' | 'audio' | 'file' | 'resource';
+      [key: string]: any;
+    }>;
+    has_multimodal?: boolean;
   };
 }
 

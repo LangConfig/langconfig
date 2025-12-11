@@ -29,6 +29,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { calculateAndFormatCost } from '../../../../utils/modelPricing';
 import { SubAgentPanelStack } from './SubAgentPanel';
+import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
+import type { ContentBlock } from '@/types/content-blocks';
 
 // Helper component for code blocks with copy button
 const CodeBlock = ({ language, children }: { language: string, children: string }) => {
@@ -109,13 +111,22 @@ const ToolCallItem = ({
   toolName,
   renderedHeader,
   renderedInput,
-  renderedResult
+  renderedResult,
+  contentBlocks,
+  artifacts,
+  hasMultimodal
 }: {
   status: 'running' | 'completed' | 'error';
   toolName: string;
   renderedHeader: string;
   renderedInput: string;
   renderedResult: string;
+  /** Multimodal content blocks from MCP tools */
+  contentBlocks?: ContentBlock[];
+  /** Artifacts for UI display only */
+  artifacts?: ContentBlock[];
+  /** Whether the result contains multimodal content */
+  hasMultimodal?: boolean;
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -186,14 +197,35 @@ const ToolCallItem = ({
             </div>
           )}
 
-          {renderedResult && (
+          {(renderedResult || hasMultimodal) && (
             <div className="text-xs">
               <div className="flex items-center gap-1 mb-0.5">
                 <ArrowDown className="w-3 h-3 opacity-30" />
                 <span className="font-medium text-xs" style={{ color: '#000000' }}>Result</span>
+                {hasMultimodal && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 ml-1">
+                    Multimodal
+                  </span>
+                )}
               </div>
+
+              {/* Render multimodal content blocks first (images, audio, etc.) */}
+              {hasMultimodal && contentBlocks && contentBlocks.length > 0 && (
+                <div className="my-2">
+                  <ContentBlockRenderer blocks={contentBlocks} />
+                </div>
+              )}
+
+              {/* Render artifacts (UI-only content) */}
+              {artifacts && artifacts.length > 0 && (
+                <div className="my-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 font-medium">Generated Content:</p>
+                  <ContentBlockRenderer blocks={artifacts} />
+                </div>
+              )}
+
               {/* Show file card for write_file completions */}
-              {status === 'completed' && ['write_file', 'edit_file', 'file_write', 'create_file'].includes(toolName.toLowerCase()) ? (
+              {!hasMultimodal && status === 'completed' && ['write_file', 'edit_file', 'file_write', 'create_file'].includes(toolName.toLowerCase()) ? (
                 (() => {
                   // Extract filename from input
                   try {
@@ -206,7 +238,7 @@ const ToolCallItem = ({
                     return <FileCreatedCard filename="file" result={renderedResult} />;
                   }
                 })()
-              ) : (
+              ) : renderedResult && !hasMultimodal ? (
                 <div className="relative">
                   <pre
                     className="p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
@@ -222,7 +254,7 @@ const ToolCallItem = ({
                     {renderedResult}
                   </pre>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>
@@ -285,6 +317,10 @@ interface SectionItem {
     result?: string;
     status: 'running' | 'completed' | 'error';
     runId?: string; // LangChain run_id for unique tool call matching
+    // Multimodal content support from MCP tools
+    contentBlocks?: ContentBlock[];
+    artifacts?: ContentBlock[];
+    hasMultimodal?: boolean;
   };
   id: string;
 }
@@ -744,6 +780,11 @@ export default function RealtimeExecutionPanel({
           const endToolName = event.data?.tool_name;
           let foundTool = false;
 
+          // Extract multimodal content from MCP tool results
+          const eventContentBlocks = event.data?.content_blocks as ContentBlock[] | undefined;
+          const eventArtifacts = event.data?.artifacts as ContentBlock[] | undefined;
+          const eventHasMultimodal = event.data?.has_multimodal === true;
+
           for (let i = section.items.length - 1; i >= 0; i--) {
             const item = section.items[i];
             if (item.type === 'tool_call' && item.tool?.status === 'running') {
@@ -764,6 +805,14 @@ export default function RealtimeExecutionPanel({
                 item.tool.result = rawResult && rawResult.length > MAX_RESULT_LENGTH
                   ? rawResult.slice(0, MAX_RESULT_LENGTH) + `\n... (${rawResult.length - MAX_RESULT_LENGTH} more characters)`
                   : rawResult || '';
+
+                // Add multimodal content if present
+                if (eventHasMultimodal) {
+                  item.tool.contentBlocks = eventContentBlocks;
+                  item.tool.artifacts = eventArtifacts;
+                  item.tool.hasMultimodal = true;
+                }
+
                 foundTool = true;
                 break;
               }
@@ -1498,6 +1547,9 @@ export default function RealtimeExecutionPanel({
                             renderedHeader={renderedHeader}
                             renderedInput={renderedInput}
                             renderedResult={renderedResult}
+                            contentBlocks={item.tool.contentBlocks}
+                            artifacts={item.tool.artifacts}
+                            hasMultimodal={item.tool.hasMultimodal}
                           />
                         );
                       }

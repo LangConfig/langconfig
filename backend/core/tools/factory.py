@@ -31,6 +31,29 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Thread-safe artifact storage using a module-level dict
+# ContextVar doesn't work across async boundaries in LangChain callbacks
+import threading
+_artifact_lock = threading.Lock()
+_pending_artifacts: List[Dict[str, Any]] = []
+
+
+def get_pending_artifacts() -> List[Dict[str, Any]]:
+    """Get and clear any pending artifacts from the last tool execution."""
+    global _pending_artifacts
+    with _artifact_lock:
+        artifacts = _pending_artifacts.copy()
+        _pending_artifacts = []
+        return artifacts
+
+
+def store_artifact(artifact: Dict[str, Any]) -> None:
+    """Store an artifact from a tool execution for later retrieval."""
+    global _pending_artifacts
+    with _artifact_lock:
+        _pending_artifacts.append(artifact)
+        logger.info(f"Artifact stored, pending count: {len(_pending_artifacts)}")
+
 
 # =============================================================================
 # Tool Type Constants
@@ -1429,9 +1452,15 @@ class ToolFactory:
         impl_config: Dict[str, Any]
     ) -> BaseTool:
         """Create Google Gemini Imagen 3 / Nano Banana (Gemini 2.5 Flash Image) generation tool"""
-        # Fallback to GEMINI_API_KEY from environment if not in config
-        api_key = impl_config.get("api_key") or settings.GEMINI_API_KEY or ""
-        model = impl_config.get("model", "imagen-3")
+        # Fallback chain: tool config -> settings -> env vars
+        api_key = (
+            impl_config.get("api_key") or
+            settings.GOOGLE_API_KEY or
+            os.getenv("GEMINI_API_KEY") or
+            os.getenv("GOOGLE_API_KEY") or
+            ""
+        )
+        model = impl_config.get("model", "gemini-3-pro-image-preview")
         default_aspect_ratio = impl_config.get("aspect_ratio", "1:1")
         num_images = impl_config.get("num_images", 1)
         safety_filter = impl_config.get("safety_filter_level", "block_most")
@@ -1445,10 +1474,24 @@ class ToolFactory:
 
         async def generate_imagen_image(
             prompt: str,
-            aspect_ratio: Optional[str] = None
+            aspect_ratio: Optional[str] = None,
+            style: Optional[str] = None,
+            quality: Optional[str] = None
         ) -> str:
-            """Generate an image using Imagen 3 or Nano Banana (Gemini 2.5 Flash Image)"""
+            """Generate an image using Imagen 3 or Nano Banana (Gemini 2.5 Flash Image)
+
+            Args:
+                prompt: Description of the image to generate
+                aspect_ratio: Image aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4)
+                style: Optional style modifier (e.g., 'vivid', 'natural', 'photorealistic')
+                quality: Optional quality setting (e.g., 'standard', 'hd')
+            """
             try:
+                # Enhance prompt with style if provided
+                enhanced_prompt = prompt
+                if style:
+                    enhanced_prompt = f"{prompt}, {style} style"
+
                 # Use Google AI Studio API for Gemini models (Nano Banana)
                 if "gemini" in model.lower() or "flash" in model.lower() or model == "gemini-2.5-flash-image":
                     # Google AI Studio endpoint for Gemini image generation
@@ -1457,10 +1500,11 @@ class ToolFactory:
                     payload = {
                         "contents": [{
                             "parts": [{
-                                "text": prompt
+                                "text": enhanced_prompt
                             }]
                         }],
                         "generationConfig": {
+                            "responseModalities": ["TEXT", "IMAGE"],
                             "temperature": 0.4,
                             "candidateCount": num_images,
                             "maxOutputTokens": 8192,
@@ -1481,7 +1525,7 @@ class ToolFactory:
                     payload = {
                         "instances": [
                             {
-                                "prompt": prompt
+                                "prompt": enhanced_prompt
                             }
                         ],
                         "parameters": {
@@ -1509,6 +1553,9 @@ class ToolFactory:
                     response.raise_for_status()
                     data = response.json()
 
+                    # Log the raw response for debugging
+                    logger.info(f"Gemini API response keys: {data.keys() if isinstance(data, dict) else type(data)}")
+
                     # Extract image URL/data based on response format
                     if "gemini" in model.lower() or "flash" in model.lower():
                         # Google AI Studio response format
@@ -1517,15 +1564,40 @@ class ToolFactory:
                             if candidate.get("content", {}).get("parts"):
                                 # Extract image data from response
                                 parts = candidate["content"]["parts"]
+                                logger.info(f"Gemini response has {len(parts)} parts, types: {[list(p.keys()) for p in parts]}")
+
+                                # Collect both text and image from parts
+                                image_data_uri = None
+                                text_content = None
+                                img_size_kb = 0
+
                                 for part in parts:
                                     if "inlineData" in part:
-                                        # Return base64 encoded image
-                                        image_data = part["inlineData"]["data"]
+                                        # Found image data
+                                        img_data = part["inlineData"]["data"]
                                         mime_type = part["inlineData"]["mimeType"]
-                                        return f"data:{mime_type};base64,{image_data}"
+                                        image_data_uri = f"data:{mime_type};base64,{img_data}"
+                                        img_size_kb = len(img_data) * 3 // 4 // 1024  # Approximate decoded size
+                                        logger.info(f"Found image: {mime_type}, size: ~{img_size_kb}KB")
                                     elif "text" in part:
-                                        # If text response, it might contain the image URL
-                                        return part["text"]
+                                        text_content = part["text"]
+                                        logger.info(f"Found text: {text_content[:100] if text_content else 'empty'}...")
+
+                                # Return text to LLM, store image as artifact for UI
+                                if image_data_uri:
+                                    # Store image artifact for event emitter to pick up
+                                    store_artifact({
+                                        "type": "image",
+                                        "data": img_data,
+                                        "mimeType": mime_type
+                                    })
+                                    logger.info(f"Stored image artifact ({img_size_kb}KB) for UI display")
+                                    # Return only text to LLM (avoids token limit issues)
+                                    return f"Image generated successfully ({img_size_kb}KB). The image has been created and is displayed to the user."
+                                elif text_content:
+                                    # No image generated, just text response
+                                    logger.warning(f"Gemini returned text only (no image): {text_content[:200]}")
+                                    return text_content
 
                         logger.error(f"No valid image found in Gemini response: {data}")
                         return "Error: No image generated"
@@ -1571,8 +1643,14 @@ class ToolFactory:
         impl_config: Dict[str, Any]
     ) -> BaseTool:
         """Create Google Gemini Veo 3/3.1 video generation tool"""
-        # Fallback to GEMINI_API_KEY from environment if not in config
-        api_key = impl_config.get("api_key") or settings.GEMINI_API_KEY or ""
+        # Fallback chain: tool config -> settings -> env vars
+        api_key = (
+            impl_config.get("api_key") or
+            settings.GOOGLE_API_KEY or
+            os.getenv("GEMINI_API_KEY") or
+            os.getenv("GOOGLE_API_KEY") or
+            ""
+        )
         model = impl_config.get("model", "veo-3")
         default_duration = impl_config.get("duration", 5)
         default_resolution = impl_config.get("resolution", "1080p")

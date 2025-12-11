@@ -5,10 +5,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import type { ContentBlock } from '@/types/content-blocks';
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  /** Structured content blocks from tool results (multimodal support) */
+  content_blocks?: ContentBlock[];
+  /** Artifacts for UI display only (not sent to LLM) */
+  artifacts?: ContentBlock[];
+  /** Whether the message contains multimodal content */
+  has_multimodal?: boolean;
 }
 
 export interface ChatSession {
@@ -73,11 +81,19 @@ export interface DeepAgent {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'complete' | 'error' | 'tool_start' | 'tool_end';
+  type: 'chunk' | 'complete' | 'error' | 'tool_start' | 'tool_end' | 'tool_artifact';
   content?: string;
   message?: string;
   tool_name?: string;
   data?: any;
+  /** Multimodal content blocks from tool results */
+  content_blocks?: ContentBlock[];
+  /** Artifacts for UI display only */
+  artifacts?: ContentBlock[];
+  /** Single artifact from tool_artifact event */
+  artifact?: ContentBlock;
+  /** Whether the result contains multimodal content */
+  has_multimodal?: boolean;
 }
 
 export interface ChatContextState {

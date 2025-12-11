@@ -60,6 +60,10 @@ class ContentBlockType:
     CITATION = "citation"
     IMAGE = "image"
     THINKING = "thinking"  # Extended thinking for o1 models
+    # MCP multimodal content types
+    AUDIO = "audio"
+    FILE = "file"
+    RESOURCE = "resource"  # For embedded MCP resources
 
 
 # =============================================================================

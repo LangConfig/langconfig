@@ -1468,6 +1468,9 @@ class SimpleWorkflowExecutor:
             try:
                 # Get agent configuration from node data
                 agent_config = node_data.get("config", {})
+                logger.info(f"[{display_name}] RAW node_data keys: {list(node_data.keys())}")
+                logger.info(f"[{display_name}] RAW agent_config keys: {list(agent_config.keys())}")
+                logger.info(f"[{display_name}] RAW agent_config.custom_tools: {agent_config.get('custom_tools', 'NOT_FOUND')}")
                 model = agent_config.get("model", "gpt-4o-mini")
                 temperature = agent_config.get("temperature", 0.7)
                 system_prompt = agent_config.get("system_prompt", f"You are a {agent_type} agent.")
@@ -1617,6 +1620,12 @@ Do NOT loop or repeat actions unnecessarily.
 When your work is complete, deliver the final result and END."""
 
                     # Create DeepAgent
+                    logger.info(f"[{display_name}] Creating DeepAgent with:")
+                    logger.info(f"  - native_tools: {native_tools_list}")
+                    logger.info(f"  - mcp_tools: {mcp_tools_list}")
+                    logger.info(f"  - cli_tools: {cli_tools_list}")
+                    logger.info(f"  - custom_tools: {custom_tools_list}")
+                    logger.info(f"  - deep_agent_config.custom_tools will be: {custom_tools_list}")
                     agent_graph, tools, callbacks = await DeepAgentFactory.create_deep_agent(
                         config=deep_agent_config,
                         project_id=state.get("project_id", 0),
@@ -1626,7 +1635,7 @@ When your work is complete, deliver the final result and END."""
                         vector_store=vector_store
                     )
 
-                    logger.info(f"[{display_name}] ✓ DeepAgent created with middleware and harness")
+                    logger.info(f"[{display_name}] ✓ DeepAgent created with {len(tools)} tools: {[t.name for t in tools]}")
 
                 else:
                     logger.info(f"[{display_name}] Creating regular agent")
@@ -2416,7 +2425,24 @@ When your work is complete, deliver the final result and END."""
 
         # Get available tool names from native_tools
         from tools.native_tools import get_available_tool_names, TOOL_NAME_MAP
-        available_tools = get_available_tool_names()
+        available_native_tools = get_available_tool_names()
+
+        # Get available custom tools from database
+        from models.custom_tool import CustomTool
+        from db.database import SessionLocal
+        available_custom_tools = set()
+        try:
+            db = SessionLocal()
+            custom_tools_in_db = db.query(CustomTool.tool_id).all()
+            available_custom_tools = {t.tool_id for t in custom_tools_in_db}
+            db.close()
+            if available_custom_tools:
+                logger.info(f"Found {len(available_custom_tools)} custom tools in database: {available_custom_tools}")
+        except Exception as e:
+            logger.warning(f"Could not query custom tools from database: {e}")
+
+        # Combine native and custom tools for validation
+        available_tools = list(available_native_tools) + list(available_custom_tools)
 
         # Apply legacy tool name mapping for backward compatibility
         # This allows old workflows/agents with names like "sequential_thinking" to work
