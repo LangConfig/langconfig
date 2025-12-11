@@ -5,9 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useCallback, useState, useEffect, useRef, useMemo, memo, forwardRef, useImperativeHandle, createContext, useContext } from 'react';
+import { useCallback, useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { calculateAndFormatCost } from '../../../../utils/modelPricing';
-import { useAvailableModels } from '../../../../hooks/useAvailableModels';
 import ReactFlow, {
   Node,
   Edge,
@@ -18,30 +17,17 @@ import ReactFlow, {
   addEdge,
   Connection,
   BackgroundVariant,
-  NodeProps,
   Panel,
-  Handle,
-  Position,
   MiniMap,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Save, Play, Download, Trash2, History as HistoryIcon, Copy, Check, Eye, EyeOff, List, StopCircle, Brain, Database, ChevronRight, X, Settings, FileText as FileIcon, FolderOpen, MessageSquare } from 'lucide-react';
+import { Trash2, Copy, List, Brain, Database, Settings, FileText as FileIcon } from 'lucide-react';
 import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import ThinkingToast from '../../../../components/ui/ThinkingToast';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
-import InlineFilePreview, { FileContent } from '../Execution/InlineFilePreview';
-import { MemoryView } from '../../../memory/components/MemoryView';
-import { getFileIcon } from '../../utils/fileHelpers';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeKatex from 'rehype-katex';
-import 'highlight.js/styles/github-dark.css';
-import 'katex/dist/katex.min.css';
-import { getModelDisplayName } from '../../../../lib/model-utils';
+import { FileContent } from '../Execution/InlineFilePreview';
 import { validateWorkflow } from '../../../../lib/workflow-validator';
 import { validateNodePosition } from '../../../../utils/validation';
 import { useWorkflowStream } from '../../../../hooks/useWorkflowStream';
@@ -49,8 +35,18 @@ import { useNodeExecutionStatus, NodeExecutionStatus } from '../../../../hooks/u
 import { useProject } from '../../../../contexts/ProjectContext';
 import { useNotification } from '../../../../hooks/useNotification';
 import { analyzeWorkflowEvents } from '../../../../utils/workflowErrorDetector';
-import { exportToPDF } from '../../../../utils/exportHelpers';
 import { useChat } from '../../../chat/context/ChatContext';
+import CustomNode from './nodes/CustomNode';
+import { WorkflowCanvasContext } from './context';
+import ExecutionConfigDialog from './dialogs/ExecutionConfigDialog';
+import SaveWorkflowModal from './dialogs/SaveWorkflowModal';
+import SaveToLibraryModal from './dialogs/SaveToLibraryModal';
+import SaveVersionDialog from './dialogs/SaveVersionDialog';
+import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
+import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
+import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
+import WorkflowResults from './results/WorkflowResults';
+import WorkflowToolbar from './toolbar/WorkflowToolbar';
 
 interface Agent {
   id: string;
@@ -102,6 +98,9 @@ interface NodeData {
     context_mode?: 'recent' | 'smart' | 'full';
     context_window_size?: number;
     banked_message_ids?: string[];
+    // DeepAgent support
+    subagents?: any[];
+    middleware?: any[];
   };
   executionStatus?: NodeExecutionStatus;
 }
@@ -158,705 +157,8 @@ interface WorkflowCanvasProps {
 const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
 
-// Context for sharing updateNodeConfig with nested components
-interface WorkflowCanvasContextValue {
-  updateNodeConfig: (nodeId: string, config: any) => void;
-  openNodeContextMenu: (nodeId: string, nodeData: NodeData, x: number, y: number) => void;
-}
-
-const WorkflowCanvasContext = createContext<WorkflowCanvasContextValue | null>(null);
-
-// Hook to use the workflow canvas context
-const useWorkflowCanvasContext = () => {
-  const context = useContext(WorkflowCanvasContext);
-  if (!context) {
-    throw new Error('useWorkflowCanvasContext must be used within WorkflowCanvasContext.Provider');
-  }
-  return context;
-};
-
-// Custom Node Component with enhanced visuals and execution status - Memoized for performance
-const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
-  // Always prefer data.config.model over data.model for display
-  const modelName = data.config?.model || data.model;
-  const agentType = data.agentType || 'default';
-  const executionStatus = data.executionStatus;
-
-  // Refs
-  const nodeRef = useRef<HTMLDivElement>(null);
-  const prevStatusRef = useRef<NodeExecutionStatus | undefined>(executionStatus);
-
-  // Minimal state for model dropdown
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-
-  // Get functions from context
-  const { updateNodeConfig, openNodeContextMenu } = useWorkflowCanvasContext();
-
-  // Fetch available models for dropdown
-  const { cloudModels, localModels } = useAvailableModels({
-    includeLocal: true,
-    onlyValidated: true
-  });
-
-  // State for expandable panel
-  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
-
-  // Middleware state
-  const [pauseBefore, setPauseBefore] = useState(data.config?.pauseBefore || false);
-  const [pauseAfter, setPauseAfter] = useState(data.config?.pauseAfter || false);
-
-  // Advanced settings state
-  const [maxTokens, setMaxTokens] = useState(data.config?.max_tokens || 4000);
-  const [maxRetries, setMaxRetries] = useState(data.config?.max_retries || 3);
-  const [temperature, setTemperature] = useState(data.config?.temperature ?? 0.7);
-  const [reasoningEffort, setReasoningEffort] = useState(data.config?.reasoning_effort || 'low');
-
-  // Token cost info (from execution status or config)
-  const tokenCost = data.tokenCost || executionStatus?.tokenCost;
-
-  // Detect if this is a control node
-  const isControlNode = ['START_NODE', 'END_NODE', 'CHECKPOINT_NODE', 'OUTPUT_NODE', 'CONDITIONAL_NODE', 'APPROVAL_NODE', 'TOOL_NODE'].includes(agentType);
-
-  // Control node styling configuration - using theme colors
-  const controlNodeStyles: Record<string, { icon: string; opacity: number }> = {
-    START_NODE: { icon: 'play_circle', opacity: 0.7 },
-    END_NODE: { icon: 'stop_circle', opacity: 0.5 },
-    CHECKPOINT_NODE: { icon: 'bookmark', opacity: 0.6 },
-    OUTPUT_NODE: { icon: 'output', opacity: 0.8 },
-    CONDITIONAL_NODE: { icon: 'call_split', opacity: 0.65 },
-    APPROVAL_NODE: { icon: 'how_to_reg', opacity: 0.75 },
-    TOOL_NODE: { icon: 'construction', opacity: 0.8 },
-  };
-
-  const controlStyle = isControlNode ? controlNodeStyles[agentType] : null;
-
-  // Determine border color based on execution state - MEMOIZED
-  const borderColor = useMemo(() => {
-    if (selected) return '#10b981'; // green-500 for selected
-    if (!executionStatus || executionStatus.state === 'idle') return 'var(--color-primary)';
-
-    switch (executionStatus.state) {
-      case 'running':
-      case 'thinking':
-        return '#3b82f6'; // blue-500 for active
-      case 'completed':
-        return '#10b981'; // green-500 for success
-      case 'error':
-        return '#ef4444'; // red-500 for error
-      default:
-        return 'var(--color-primary)';
-    }
-  }, [selected, executionStatus]);
-
-  // Simple CSS-based animations only (no heavy anime.js effects)
-  // Just track previous status for conditional styling
-  useEffect(() => {
-    prevStatusRef.current = executionStatus;
-  }, [executionStatus]);
-
-  // Determine if we're in a dark theme (check if background is dark) - MEMOIZED
-  const isDarkTheme = useMemo(() => {
-    if (typeof document === 'undefined') return false;
-    const theme = document.documentElement.getAttribute('data-theme');
-    return theme ? ['dark', 'midnight', 'ocean', 'forest', 'botanical', 'godspeed'].includes(theme) : false;
-  }, []); // Empty deps - theme doesn't change during node drag
-
-  return (
-    <div
-      ref={nodeRef}
-      className={`group px-5 py-6 shadow-xl ${agentType === 'TOOL_NODE' ? 'rounded-lg' : 'rounded-xl'
-        } relative min-w-[220px] max-w-[220px] border-2 ${selected ? '' : 'hover:border-primary/50 hover:shadow-2xl'
-        }`}
-      style={{
-        background: isDarkTheme
-          ? `linear-gradient(135deg, var(--color-panel-dark) 0%, var(--color-background-dark) 100%)`
-          : 'var(--color-primary)',
-        backgroundColor: isDarkTheme ? 'var(--color-panel-dark)' : 'var(--color-primary)',
-        borderColor: borderColor,
-        opacity: (isControlNode && agentType !== 'TOOL_NODE') ? controlStyle?.opacity : 1,
-        boxShadow: selected
-          ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-          : '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        openNodeContextMenu(id, data, e.clientX, e.clientY);
-      }}
-    >
-      {/* Simple decorative overlay - no animation */}
-      {!isControlNode && (
-        <div
-          className="absolute inset-0 rounded-xl pointer-events-none"
-          style={{
-            background: isDarkTheme
-              ? 'linear-gradient(135deg, var(--color-primary) 0%, transparent 100%)'
-              : 'linear-gradient(135deg, rgba(0, 0, 0, 0.1) 0%, transparent 100%)',
-            opacity: isDarkTheme ? 0.05 : 0.03,
-          }}
-        />
-      )}
-
-      {/* Conversation Context Badge - Top Left */}
-      {!isControlNode && data.config?.enable_conversation_context && (
-        <div
-          className="absolute top-2 left-2 flex items-center justify-center w-6 h-6 rounded-full"
-          style={{
-            backgroundColor: 'rgba(59, 130, 246, 0.2)',
-            border: '1.5px solid #3b82f6',
-            filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))',
-          }}
-          title="Conversation context enabled"
-        >
-          <MessageSquare
-            className="w-3.5 h-3.5"
-            style={{
-              color: '#3b82f6',
-              strokeWidth: 2.5
-            }}
-          />
-        </div>
-      )}
-
-      {/* Tool Count Badge - Top Right */}
-      {!isControlNode && (() => {
-        const nativeToolCount = data.config?.native_tools?.length || 0;
-        const builtInToolCount = data.config?.tools?.length || 0;
-        const customToolCount = data.config?.custom_tools?.length || 0;  // ADDED: Count custom tools
-        const toolCount = nativeToolCount + builtInToolCount + customToolCount;
-
-        if (toolCount === 0) return null;
-
-        return (
-          <div
-            className="absolute top-2 right-2 flex items-center gap-1"
-            style={{
-              filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))',
-            }}
-            title={`Tools: ${nativeToolCount} Native${customToolCount > 0 ? `, ${customToolCount} Custom` : ''}`}  // ADDED: Show breakdown in tooltip
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{
-                fontSize: '16px',
-                color: customToolCount > 0 ? '#f59e0b' : (isDarkTheme ? 'var(--color-primary)' : 'var(--color-background-light)'),  // ADDED: Orange if has custom tools
-                fontWeight: 600
-              }}
-            >
-              construction
-            </span>
-            <span
-              className="text-sm font-bold"
-              style={{
-                color: customToolCount > 0 ? '#f59e0b' : (isDarkTheme ? 'var(--color-primary)' : 'var(--color-background-light)')  // ADDED: Orange if has custom tools
-              }}
-            >
-              {toolCount}
-            </span>
-          </div>
-        );
-      })()}
-
-      {/* Warning Badge - Top Left */}
-      {!isControlNode && executionStatus?.warnings && executionStatus.warnings.length > 0 && (
-        <div
-          className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full cursor-help"
-          style={{
-            backgroundColor: executionStatus.warnings.some((w: { severity: string }) => w.severity === 'error') ? '#ef4444' : '#f59e0b',
-            filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))',
-          }}
-          title={executionStatus.warnings.map((w: { message: string }) => w.message).join('\n')}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{
-              fontSize: '14px',
-              color: 'white',
-              fontWeight: 600
-            }}
-          >
-            {executionStatus.warnings.some((w: { severity: string }) => w.severity === 'error') ? 'error' : 'warning'}
-          </span>
-          <span className="text-xs font-bold text-white">
-            {executionStatus.warnings.length}
-          </span>
-        </div>
-      )}
-
-      {/* Input Handle (Left) - Hidden for START nodes */}
-      {agentType !== 'START_NODE' && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          style={{
-            width: '14px',
-            height: '14px',
-            backgroundColor: 'var(--color-primary)',
-            border: '3px solid var(--color-primary)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-          }}
-          className="transition-transform hover:scale-125"
-          id="input"
-        />
-      )}
-
-      {/* Node Header - Center aligned for better visual balance */}
-      <div className="flex flex-col items-center text-center gap-2 relative z-10 w-full">
-        {/* Optional icon from agent data */}
-        {!isControlNode && data.icon && (
-          <div className="flex-shrink-0">
-            <span className="material-symbols-outlined" style={{
-              fontSize: '28px',
-              color: isDarkTheme ? 'var(--color-primary)' : 'var(--color-background-light)'
-            }}>
-              {data.icon}
-            </span>
-          </div>
-        )}
-
-        {/* Agent Name - Larger and bold */}
-        <div className="font-bold text-lg leading-tight px-2" style={{
-          color: isDarkTheme ? 'var(--color-text-primary)' : 'var(--color-background-light)'
-        }}>
-          {agentType === 'TOOL_NODE' && data.config?.tool_id
-            ? data.config.tool_id
-            : data.label}
-        </div>
-
-        {/* Model Name - Clickable to change model */}
-        {modelName && modelName !== 'none' && (
-          <div className="relative" style={{ zIndex: 9999 }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowModelDropdown(!showModelDropdown);
-              }}
-              className="text-xs font-medium px-3 py-1 rounded-full nodrag"
-              style={{
-                color: isDarkTheme ? 'var(--color-text-muted)' : 'var(--color-background-light)',
-                backgroundColor: isDarkTheme
-                  ? 'rgba(var(--color-primary-rgb, 99, 102, 241), 0.15)'
-                  : 'rgba(255, 255, 255, 0.25)',
-              }}
-            >
-              {getModelDisplayName(modelName)}
-            </button>
-
-            {/* Model Dropdown */}
-            {showModelDropdown && (
-              <div
-                className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 rounded-lg shadow-xl nodrag nopan"
-                style={{
-                  backgroundColor: 'var(--color-background-dark)',
-                  border: '2px solid var(--color-border-dark)',
-                  minWidth: '220px',
-                  maxHeight: '280px',
-                  overflowY: 'auto',
-                  zIndex: 9999,
-                }}
-                onClick={(e) => e.stopPropagation()}
-                onWheel={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                {/* Cloud Models */}
-                {cloudModels.length > 0 && (
-                  <div>
-                    <div
-                      className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide sticky top-0"
-                      style={{
-                        backgroundColor: 'var(--color-background-dark)',
-                        color: 'var(--color-text-muted)',
-                        borderBottom: '1px solid var(--color-border-dark)',
-                      }}
-                    >
-                      Cloud Models
-                    </div>
-                    {cloudModels.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const newConfig = {
-                            ...data.config,
-                            model: model.id
-                          };
-                          updateNodeConfig(id, newConfig);
-                          setShowModelDropdown(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm transition-all"
-                        style={{
-                          color: data.config?.model === model.id ? '#ffffff' : 'var(--color-text-primary)',
-                          backgroundColor: data.config?.model === model.id ? 'var(--color-primary)' : 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (data.config?.model !== model.id) {
-                            e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                            e.currentTarget.style.color = '#ffffff';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (data.config?.model !== model.id) {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = 'var(--color-text-primary)';
-                          }
-                        }}
-                      >
-                        {model.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Local Models */}
-                {localModels.length > 0 && (
-                  <div>
-                    <div
-                      className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide sticky top-0"
-                      style={{
-                        backgroundColor: 'var(--color-background-dark)',
-                        color: 'var(--color-text-muted)',
-                        borderBottom: '1px solid var(--color-border-dark)',
-                      }}
-                    >
-                      Local Models
-                    </div>
-                    {localModels.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const newConfig = {
-                            ...data.config,
-                            model: model.id
-                          };
-                          updateNodeConfig(id, newConfig);
-                          setShowModelDropdown(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm transition-all"
-                        style={{
-                          color: data.config?.model === model.id ? '#ffffff' : 'var(--color-text-primary)',
-                          backgroundColor: data.config?.model === model.id ? 'var(--color-primary)' : 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (data.config?.model !== model.id) {
-                            e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                            e.currentTarget.style.color = '#ffffff';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (data.config?.model !== model.id) {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = 'var(--color-text-primary)';
-                          }
-                        }}
-                      >
-                        {model.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Control Node Label */}
-        {isControlNode && (
-          <div className="text-xs font-medium italic opacity-70" style={{ color: 'var(--color-text-muted)' }}>
-            Control Node
-          </div>
-        )}
-      </div>
-
-      {/* Output Handle (Right) - Hidden for END nodes */}
-      {agentType !== 'END_NODE' && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          style={{
-            width: '14px',
-            height: '14px',
-            backgroundColor: 'var(--color-primary)',
-            border: '3px solid var(--color-primary)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-          }}
-          className="transition-transform hover:scale-125"
-          id="output"
-        />
-      )}
-
-      {/* Selection indicator */}
-      {selected && !isControlNode && (
-        <div className="absolute -inset-1 bg-primary/10 rounded-xl -z-10 animate-pulse" />
-      )}
-
-      {/* Expand/Collapse Button - Only for regular agent nodes */}
-      {!isControlNode && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsPanelExpanded(!isPanelExpanded);
-          }}
-          className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 nodrag nopan z-20 transition-all hover:scale-110"
-          style={{
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: 'var(--color-primary)',
-            border: '2px solid var(--color-background-dark)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          }}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{
-              fontSize: '16px',
-              color: 'white',
-              transform: isPanelExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s'
-            }}
-          >
-            expand_more
-          </span>
-        </button>
-      )}
-
-      {/* Expandable Panel - Positioned below node */}
-      {!isControlNode && isPanelExpanded && (
-        <div
-          className="absolute top-full mt-4 left-1/2 transform -translate-x-1/2 nodrag nopan z-30 rounded-lg shadow-2xl border-2 overflow-hidden"
-          style={{
-            backgroundColor: 'var(--color-panel-dark)',
-            borderColor: 'var(--color-border-dark)',
-            minWidth: '240px',
-            maxWidth: '260px',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Panel Content */}
-          <div className="p-3 space-y-2.5">
-            {/* Quick Settings Row 1 - Pause Options */}
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1.5 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={pauseBefore}
-                  onChange={(e) => {
-                    const newValue = e.target.checked;
-                    setPauseBefore(newValue);
-                    const newConfig = {
-                      ...data.config,
-                      pauseBefore: newValue
-                    };
-                    updateNodeConfig(id, newConfig);
-                  }}
-                  className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer"
-                />
-                <div className="text-[11px] font-medium whitespace-nowrap" style={{ color: 'var(--color-text-primary)' }}>
-                  Pause Before
-                </div>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={pauseAfter}
-                  onChange={(e) => {
-                    const newValue = e.target.checked;
-                    setPauseAfter(newValue);
-                    const newConfig = {
-                      ...data.config,
-                      pauseAfter: newValue
-                    };
-                    updateNodeConfig(id, newConfig);
-                  }}
-                  className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer"
-                />
-                <div className="text-[11px] font-medium whitespace-nowrap" style={{ color: 'var(--color-text-primary)' }}>
-                  Pause After
-                </div>
-              </label>
-            </div>
-
-            {/* Quick Settings Row 2 - Temperature Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[10px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                  Temperature
-                </label>
-                <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded" style={{
-                  color: 'var(--color-text-primary)',
-                  backgroundColor: 'var(--color-background-dark)'
-                }}>
-                  {temperature.toFixed(1)}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => {
-                  const newValue = parseFloat(e.target.value);
-                  setTemperature(newValue);
-                  const newConfig = {
-                    ...data.config,
-                    temperature: newValue
-                  };
-                  updateNodeConfig(id, newConfig);
-                }}
-                className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--color-border-dark)',
-                  accentColor: 'var(--color-primary)'
-                }}
-              />
-            </div>
-
-            {/* Quick Settings Row 3 - Compact Number Inputs */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-medium block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                  Max Tokens
-                </label>
-                <input
-                  type="number"
-                  value={maxTokens}
-                  onChange={(e) => {
-                    const newValue = parseInt(e.target.value) || 4000;
-                    setMaxTokens(newValue);
-                    const newConfig = {
-                      ...data.config,
-                      max_tokens: newValue
-                    };
-                    updateNodeConfig(id, newConfig);
-                  }}
-                  min="100"
-                  max="16000"
-                  step="100"
-                  className="w-full px-1.5 py-0.5 text-[11px] border rounded focus:outline-none focus:ring-1 focus:ring-primary"
-                  style={{
-                    backgroundColor: 'var(--color-background-light)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-medium block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                  Retries
-                </label>
-                <input
-                  type="number"
-                  value={maxRetries}
-                  onChange={(e) => {
-                    const newValue = parseInt(e.target.value) || 3;
-                    setMaxRetries(newValue);
-                    const newConfig = {
-                      ...data.config,
-                      max_retries: newValue
-                    };
-                    updateNodeConfig(id, newConfig);
-                  }}
-                  min="0"
-                  max="10"
-                  className="w-full px-1.5 py-0.5 text-[11px] border rounded focus:outline-none focus:ring-1 focus:ring-primary"
-                  style={{
-                    backgroundColor: 'var(--color-background-light)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Reasoning Effort Dropdown - For Gemini models */}
-            {modelName && modelName.startsWith('gemini') && (
-              <div>
-                <label className="text-[10px] font-medium block mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                  Reasoning Effort
-                </label>
-                <select
-                  value={reasoningEffort}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    setReasoningEffort(newValue);
-                    const newConfig = {
-                      ...data.config,
-                      reasoning_effort: newValue
-                    };
-                    updateNodeConfig(id, newConfig);
-                  }}
-                  className="w-full px-1.5 py-1 text-[11px] border rounded focus:outline-none focus:ring-1 focus:ring-primary"
-                  style={{
-                    backgroundColor: 'var(--color-background-light)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                >
-                  <option value="none">None (96% cheaper)</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-                <div className="text-[9px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                  {reasoningEffort === 'none' && 'Maximum cost savings'}
-                  {reasoningEffort === 'low' && 'Balanced performance'}
-                  {reasoningEffort === 'medium' && 'Enhanced reasoning'}
-                  {reasoningEffort === 'high' && 'Maximum reasoning depth'}
-                </div>
-              </div>
-            )}
-
-            {/* Divider */}
-            <div className="border-t" style={{ borderColor: 'var(--color-border-dark)' }} />
-
-            {/* Token Statistics - Bottom */}
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--color-text-muted)' }}>Prompt Tokens</span>
-                <span className="font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {tokenCost?.promptTokens?.toLocaleString() || '0'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--color-text-muted)' }}>Completion</span>
-                <span className="font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {tokenCost?.completionTokens?.toLocaleString() || '0'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--color-text-muted)' }}>Total Tokens</span>
-                <span className="font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {tokenCost?.totalTokens?.toLocaleString() || '0'}
-                </span>
-              </div>
-              <div className="pt-1 border-t" style={{ borderColor: 'var(--color-border-dark)' }}>
-                <div className="flex justify-between">
-                  <span className="font-medium" style={{ color: 'var(--color-text-muted)' }}>Cost</span>
-                  <span className="font-mono font-bold" style={{ color: 'var(--color-primary)' }}>
-                    {tokenCost?.costString || '$0.00'}
-                  </span>
-                </div>
-                {tokenCost && tokenCost.totalTokens > 0 && (
-                  <div className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Priced for {getModelDisplayName(modelName)}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-});
-
-// nodeTypes will be memoized inside the component
+// Custom Node Component is imported from ./nodes/CustomNode.tsx
+// WorkflowCanvasContext is imported from ./context.ts
 
 interface TaskFile {
   filename: string;
@@ -866,6 +168,8 @@ interface TaskFile {
   modified_at: string;
   extension: string;
 }
+
+// nodeTypes will be memoized inside the component using imported CustomNode
 
 const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   selectedAgent,
@@ -1175,13 +479,15 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
       // Check for complete event with error status - stop execution spinner
       const completeEvent = workflowEvents.find(e => e.type === 'complete');
       if (completeEvent?.data?.status === 'error') {
-        console.log('[WorkflowCanvas] Workflow completed with error status');
+        console.log('[WorkflowCanvas] Workflow completed with error status:', completeEvent.data?.error);
         // Stop execution state if still running
         if (executionStatus.state === 'running') {
           setExecutionStatus({
-            state: 'idle' as const,
-            nodeStates: {},
-            errorMessage: completeEvent.data?.error || 'Workflow failed'
+            state: 'failed',
+            currentNode: undefined,
+            progress: 0,
+            startTime: executionStatus.startTime,
+            duration: executionStatus.duration,
           });
         }
       }
@@ -1677,7 +983,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   };
 
   // Handle duplicating a node
-  const handleDuplicateNode = (nodeId: string, nodeData: NodeData) => {
+  const handleDuplicateNode = (nodeId: string, _nodeData: NodeData) => {
     const sourceNode = nodes.find(n => n.id === nodeId);
     if (!sourceNode) return;
 
@@ -1701,7 +1007,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   };
 
   // Handle opening chat with agent
-  const handleChatWithAgent = (nodeId: string, nodeData: NodeData) => {
+  const handleChatWithAgent = (_nodeId: string, nodeData: NodeData) => {
     // Close context menu
     setNodeContextMenu(null);
 
@@ -1730,19 +1036,14 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   // Handle opening node configuration
   const handleConfigureNode = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
-    if (node) {
-      setSelectedNodeId(nodeId);
-      setSelectedNodeData({
-        id: nodeId,
-        data: node.data,
-        type: node.type || 'agentNode',
-      });
+    if (node && onNodeSelect) {
+      onNodeSelect(nodeId, node.data as NodeData);
     }
     setNodeContextMenu(null);
   };
 
   // Handle copying LangChain code for a node
-  const handleCopyLangChainCode = async (nodeId: string, nodeData: NodeData) => {
+  const handleCopyLangChainCode = async (_nodeId: string, nodeData: NodeData) => {
     try {
       // Generate Python code for this specific agent node
       const pythonCode = `from langchain_anthropic import ChatAnthropic
@@ -1891,7 +1192,7 @@ if __name__ == "__main__":
     fetchWorkflowDetails();
   }, [currentWorkflowId]);
 
-  // Memoize tool and action extraction for results tab (OUTSIDE of JSX render)
+  // Memoize tool and action extraction for results tab (passed to WorkflowResults)
   const toolsAndActions = useMemo(() => {
     const displayTask = selectedHistoryTask || taskHistory[0];
     const taskOutput = displayTask?.result;
@@ -2435,11 +1736,12 @@ if __name__ == "__main__":
         );
 
         if (validNodes.length > 0) {
-          const maxX = Math.max(...validNodes.map(n => n.position.x));
+          const _maxX = Math.max(...validNodes.map(n => n.position.x));
           const maxY = Math.max(...validNodes.map(n => n.position.y));
           // Place recipe below and slightly to the right of existing content
           offsetX = 0; // Start at same X but offset Y
           offsetY = maxY + 250; // 250px gap below existing nodes
+          void _maxX; // Future use for horizontal positioning
         }
       }
 
@@ -2839,27 +2141,27 @@ if __name__ == "__main__":
     } catch (error: any) {
       console.error('Workflow execution error:', error);
 
-      // Extract detailed error information
-      let errorMessage = 'Unknown error';
-      let errorDetails = '';
+      // Extract detailed error information (preserved for future error handling)
+      let _errorMessage = 'Unknown error';
+      let _errorDetails = '';
 
       if (error.response?.data) {
         // API error response
         const errData = error.response.data;
-        errorMessage = errData.detail || errData.message || 'Execution failed';
-        if (errData.error) errorDetails = errData.error;
-        if (errData.traceback) errorDetails += `\n\nTraceback:\n${errData.traceback}`;
+        _errorMessage = errData.detail || errData.message || 'Execution failed';
+        if (errData.error) _errorDetails = errData.error;
+        if (errData.traceback) _errorDetails += `\n\nTraceback:\n${errData.traceback}`;
       } else if (error.message) {
-        errorMessage = error.message;
+        _errorMessage = error.message;
       }
+
+      void _errorMessage; // Reserved for future error UI
+      void _errorDetails;
 
       setExecutionStatus(prev => ({
         ...prev,
         state: 'failed',
       }));
-
-      // DISABLED: Don't show error notification - let user see output
-      // logError('Workflow execution failed!', `${errorMessage}${errorDetails ? '\n\nCheck logs for details.' : ''}`);
     } finally {
       // Execution complete
     }
@@ -3481,20 +2783,23 @@ if __name__ == "__main__":
     wf.name.toLowerCase().includes(workflowSearchQuery.toLowerCase())
   );
 
-  const getWorkflowStatus = (): 'draft' | 'saved' | 'running' | 'completed' | 'failed' => {
+  // Status helpers (reserved for status indicator UI)
+  const _getWorkflowStatus = (): 'draft' | 'saved' | 'running' | 'completed' | 'failed' => {
     if (executionStatus.state === 'running') return 'running';
     if (executionStatus.state === 'completed') return 'completed';
     if (executionStatus.state === 'failed') return 'failed';
     return currentWorkflowId ? 'saved' : 'draft';
   };
 
-  const statusConfig = {
+  const _statusConfig = {
     draft: { color: 'yellow', label: 'Draft' },
     saved: { color: 'blue', label: 'Saved' },
     running: { color: 'green', label: 'Running' },
     completed: { color: 'green', label: 'Completed' },
     failed: { color: 'red', label: 'Failed' }
   };
+  void _getWorkflowStatus;
+  void _statusConfig;
 
   // Handler to create new workflow from Studio dropdown
   const handleCreateNewWorkflow = useCallback(async () => {
@@ -3552,319 +2857,41 @@ if __name__ == "__main__":
     <WorkflowCanvasContext.Provider value={{ updateNodeConfig, openNodeContextMenu }}>
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Workflow Toolbar - Always visible so users can select workflows even with empty canvas */}
-        <div className="bg-white dark:bg-panel-dark border-b border-gray-200 dark:border-border-dark px-4 py-2.5">
-            <div className="flex items-center gap-4">
-              {/* LEFT SECTION: Workflow Switcher with integrated name */}
-              <div className="relative flex items-center">
-                {isEditingName ? (
-                  <input
-                    type="text"
-                    value={editedName}
-                    onChange={(e) => setEditedName(e.target.value)}
-                    onBlur={handleWorkflowNameSave}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleWorkflowNameSave();
-                      if (e.key === 'Escape') {
-                        setEditedName(workflowName);
-                        setIsEditingName(false);
-                      }
-                    }}
-                    autoFocus
-                    className="px-3 py-2 text-sm font-semibold bg-white dark:bg-background-dark border border-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    style={{ color: 'var(--color-text-primary, #1a1a1a)', minWidth: '250px' }}
-                  />
-                ) : (
-                  <button
-                    onClick={handleToggleWorkflowDropdown}
-                    className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-white dark:bg-background-dark border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                    style={{ color: 'var(--color-text-primary)' }}
-                    title="Click to switch workflow or double-click name to rename"
-                  >
-                    <span
-                      onDoubleClick={handleStartEditingName}
-                      className="max-w-[200px] truncate"
-                    >
-                      {workflowName}
-                    </span>
-                    <span className="material-symbols-outlined text-lg" style={{ color: 'var(--color-text-muted)' }}>
-                      expand_more
-                    </span>
-                  </button>
-                )}
-
-                {/* Workflow Dropdown */}
-                {showWorkflowDropdown && (
-                  <>
-                    {/* Backdrop */}
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={handleCloseWorkflowDropdown}
-                    />
-                    <div
-                      className="absolute top-full left-0 mt-1 w-80 rounded-lg shadow-xl z-50 max-h-96 overflow-hidden flex flex-col border"
-                      style={{
-                        backgroundColor: 'var(--color-panel-dark)',
-                        borderColor: 'var(--color-border-dark)'
-                      }}
-                    >
-                      {/* Search Bar */}
-                      <div
-                        className="p-3 border-b"
-                        style={{ borderColor: 'var(--color-border-dark)' }}
-                      >
-                        <input
-                          type="text"
-                          placeholder="Search workflows..."
-                          value={workflowSearchQuery}
-                          onChange={handleWorkflowSearchChange}
-                          className="w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-all"
-                          style={{
-                            backgroundColor: 'var(--color-background-light)',
-                            borderColor: 'var(--color-border-dark)',
-                            color: 'var(--color-text-primary)'
-                          }}
-                        />
-                      </div>
-
-                      {/* Create New Workflow Button */}
-                      <div
-                        className="p-2 border-b"
-                        style={{ borderColor: 'var(--color-border-dark)' }}
-                      >
-                        <button
-                          onClick={() => {
-                            setShowWorkflowDropdown(false);
-                            setShowCreateWorkflowModal(true);
-                          }}
-                          className="w-full px-3 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-                        >
-                          <span className="material-symbols-outlined text-sm">add</span>
-                          Create New Workflow
-                        </button>
-                      </div>
-
-                      {/* Workflow List */}
-                      <div className="overflow-y-auto">
-                        {filteredWorkflows.length === 0 ? (
-                          <div
-                            className="p-4 text-center text-sm"
-                            style={{ color: 'var(--color-text-muted)' }}
-                          >
-                            No workflows found
-                          </div>
-                        ) : (
-                          filteredWorkflows.map((workflow) => {
-                            const isActive = currentWorkflowId === workflow.id;
-                            return (
-                              <button
-                                key={workflow.id}
-                                onClick={() => handleWorkflowSwitch(workflow.id)}
-                                className="w-full px-3 py-2.5 text-left transition-colors border-b last:border-0"
-                                style={{
-                                  borderColor: 'var(--color-border-dark)',
-                                  backgroundColor: isActive ? 'var(--color-primary-alpha, rgba(139, 92, 246, 0.1))' : 'transparent',
-                                  borderLeftWidth: isActive ? '3px' : '0px',
-                                  borderLeftColor: isActive ? 'var(--color-primary)' : 'transparent'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isActive) {
-                                    e.currentTarget.style.backgroundColor = 'var(--color-background-light, rgba(255, 255, 255, 0.03))';
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isActive) {
-                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                  }
-                                }}
-                              >
-                                {/* Workflow name - single line, larger text */}
-                                <div
-                                  className="font-semibold text-sm leading-tight"
-                                  style={{
-                                    color: isActive ? 'var(--color-primary)' : 'var(--color-text-primary)',
-                                    wordBreak: 'break-word',
-                                    overflowWrap: 'break-word',
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                    overflow: 'hidden'
-                                  }}
-                                >
-                                  {workflow.name}
-                                </div>
-                                {/* Description - removed for cleaner look */}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* DIVIDER */}
-              <div className="w-px h-6 bg-gray-300 dark:bg-border-dark" />
-
-              {/* CENTER-LEFT SECTION: Action Buttons */}
-              <div className="flex items-center gap-2.5">
-                <button
-                  onClick={() => handleSave(false)}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all hover:opacity-90 bg-primary text-white shadow-sm"
-                  title="Save workflow"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save</span>
-                </button>
-
-                {/* Version Management Buttons */}
-                {currentWorkflowId && (
-                  <>
-                    <button
-                      onClick={handleSaveVersion}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all hover:opacity-90 bg-white dark:bg-background-dark border border-gray-300 dark:border-border-dark text-primary"
-                      title="Save as new version"
-                    >
-                      <HistoryIcon className="w-4 h-4" />
-                      <span>Save Version</span>
-                    </button>
-
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowVersionDropdown(!showVersionDropdown)}
-                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white dark:bg-background-dark border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors text-text-primary dark:text-text-primary"
-                        title="Switch version"
-                      >
-                        <HistoryIcon className="w-4 h-4" />
-                        <span>{currentVersion ? `v${currentVersion.version_number}` : 'Versions'}</span>
-                        <span className="text-xs opacity-60">▼</span>
-                      </button>
-
-                      {/* Version Dropdown */}
-                      {showVersionDropdown && (
-                        <div className="absolute top-full mt-2 right-0 w-80 bg-white dark:bg-panel-dark border border-gray-200 dark:border-border-dark rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
-                          <div className="p-3 border-b border-gray-200 dark:border-border-dark">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                              Workflow Versions
-                            </h3>
-                          </div>
-
-                          {loadingVersions ? (
-                            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                              Loading versions...
-                            </div>
-                          ) : versions.length === 0 ? (
-                            <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
-                              No versions yet. Click "Save Version" to create one.
-                            </div>
-                          ) : (
-                            <div className="py-2">
-                              {versions.map((version) => (
-                                <button
-                                  key={version.id}
-                                  onClick={() => handleLoadVersion(version.version_number)}
-                                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-l-4 ${version.is_current
-                                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                                    : 'border-transparent'
-                                    }`}
-                                >
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                                      Version {version.version_number}
-                                      {version.is_current && (
-                                        <span className="ml-2 px-2 py-0.5 text-xs bg-green-500 text-white rounded">
-                                          Current
-                                        </span>
-                                      )}
-                                    </span>
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                      {new Date(version.created_at).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                  {version.notes && (
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-                                      {version.notes}
-                                    </p>
-                                  )}
-                                  {version.created_by && (
-                                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                                      by {version.created_by}
-                                    </p>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                <button
-                  onClick={handleToggleSettingsModal}
-                  className="p-2 rounded-lg transition-colors flex items-center gap-2"
-                  style={{
-                    backgroundColor: 'var(--color-background-light)',
-                    color: 'var(--color-text-primary)',
-                    border: `1px solid var(--color-border-dark)`
-                  }}
-                  title="Workflow Settings"
-                >
-                  <Settings size={18} />
-                  <span className="text-sm font-medium">Settings</span>
-                </button>
-
-                <button
-                  onClick={handleRun}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all hover:opacity-90 text-white shadow-sm ${executionStatus.state === 'running'
-                    ? 'bg-amber-500 dark:bg-amber-600'
-                    : 'bg-primary'
-                    }`}
-                  title={executionStatus.state === 'running' ? 'Workflow running - click to cancel and restart' : 'Execute workflow'}
-                >
-                  {executionStatus.state === 'running' ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Running...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" />
-                      <span>Run</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={handleStop}
-                  disabled={!currentTaskId || executionStatus?.state !== 'running'}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 dark:bg-red-500 text-white shadow-sm"
-                  title="Stop running workflow"
-                >
-                  <StopCircle className="w-4 h-4" />
-                  <span>Stop</span>
-                </button>
-
-              </div>
-
-              {/* DIVIDER */}
-              <div className="w-px h-6 bg-gray-300 dark:bg-border-dark" />
-
-              {/* CENTER SECTION: Secondary Actions */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleClear}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-white dark:bg-background-dark border border-red-300 dark:border-red-500/30 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                  title="Clear all nodes"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Clear</span>
-                </button>
-              </div>
-
-            </div>
-          </div>
+        <WorkflowToolbar
+          workflowName={workflowName}
+          editedName={editedName}
+          setEditedName={setEditedName}
+          isEditingName={isEditingName}
+          setIsEditingName={setIsEditingName}
+          handleWorkflowNameSave={handleWorkflowNameSave}
+          handleStartEditingName={handleStartEditingName}
+          showWorkflowDropdown={showWorkflowDropdown}
+          handleToggleWorkflowDropdown={handleToggleWorkflowDropdown}
+          handleCloseWorkflowDropdown={handleCloseWorkflowDropdown}
+          workflowSearchQuery={workflowSearchQuery}
+          handleWorkflowSearchChange={handleWorkflowSearchChange}
+          filteredWorkflows={filteredWorkflows}
+          currentWorkflowId={currentWorkflowId}
+          handleWorkflowSwitch={handleWorkflowSwitch}
+          onShowCreateWorkflowModal={() => {
+            setShowWorkflowDropdown(false);
+            setShowCreateWorkflowModal(true);
+          }}
+          handleSave={handleSave}
+          handleSaveVersion={handleSaveVersion}
+          showVersionDropdown={showVersionDropdown}
+          setShowVersionDropdown={setShowVersionDropdown}
+          currentVersion={currentVersion}
+          versions={versions}
+          loadingVersions={loadingVersions}
+          handleLoadVersion={handleLoadVersion}
+          handleToggleSettingsModal={handleToggleSettingsModal}
+          executionStatus={executionStatus}
+          currentTaskId={currentTaskId}
+          handleRun={handleRun}
+          handleStop={handleStop}
+          handleClear={handleClear}
+        />
 
         {/* Tab Navigation */}
         {nodes.length > 0 && (
@@ -4033,85 +3060,14 @@ if __name__ == "__main__":
                     </button>
 
                     {/* Workflow Settings Modal */}
-                    {showSettingsModal && (
-                      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                        <div
-                          className="w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
-                          style={{
-                            backgroundColor: 'var(--color-panel-dark)',
-                            border: '1px solid var(--color-border-dark)'
-                          }}
-                        >
-                          <div className="px-6 py-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--color-border-dark)' }}>
-                            <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                              Workflow Settings
-                            </h3>
-                            <button
-                              onClick={handleCloseSettingsModal}
-                              className="p-1 rounded hover:bg-white/10 transition-colors"
-                              style={{ color: 'var(--color-text-muted)' }}
-                            >
-                              <X size={20} />
-                            </button>
-                          </div>
-
-                          <div className="p-6 space-y-6">
-                            {/* Checkpointer Setting */}
-                            <div className="flex items-start gap-3">
-                              <div className="flex-1">
-                                <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                                  Enable Persistence (Checkpointer)
-                                </label>
-                                <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-                                  Saves conversation history between workflow runs. Required for Human-in-the-Loop (HITL) and resuming interrupted workflows.
-                                </p>
-                                {checkpointerEnabled && (
-                                  <p className="text-xs leading-relaxed mt-2 p-2 rounded-md" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
-                                    ⚠️ <strong>Warning:</strong> When enabled, agents will remember previous executions. The same prompt may produce different results as the agent may reference prior context. Use clear, specific instructions to avoid confusion.
-                                  </p>
-                                )}
-                              </div>
-                              <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${checkpointerEnabled ? 'bg-primary' : 'bg-gray-600'}`} onClick={handleToggleCheckpointer}>
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checkpointerEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                              </div>
-                            </div>
-
-                            {/* Recursion Limit Setting */}
-                            <div>
-                              <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                                Global Recursion Limit
-                              </label>
-                              <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-                                Maximum number of steps the workflow can execute before stopping. Prevents infinite loops.
-                              </p>
-                              <div className="flex items-center gap-3">
-                                <input
-                                  type="range"
-                                  min="5"
-                                  max="500"
-                                  step="5"
-                                  value={globalRecursionLimit}
-                                  onChange={(e) => setGlobalRecursionLimit(parseInt(e.target.value))}
-                                  className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-gray-700"
-                                />
-                                <span className="text-sm font-mono w-12 text-right" style={{ color: 'var(--color-text-primary)' }}>
-                                  {globalRecursionLimit}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-background-dark)' }}>
-                            <button
-                              onClick={() => setShowSettingsModal(false)}
-                              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-white hover:bg-primary/90"
-                            >
-                              Done
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <WorkflowSettingsDialog
+                      isOpen={showSettingsModal}
+                      onClose={handleCloseSettingsModal}
+                      checkpointerEnabled={checkpointerEnabled}
+                      onToggleCheckpointer={handleToggleCheckpointer}
+                      globalRecursionLimit={globalRecursionLimit}
+                      setGlobalRecursionLimit={setGlobalRecursionLimit}
+                    />
 
                     {/* Debug Modal */}
                     <button
@@ -4312,1688 +3268,103 @@ if __name__ == "__main__":
             })()}
           </div>
 
-          {/* Results Tab - Only mount when active for performance */}
+          {/* Results Tab - Extracted to WorkflowResults component */}
           {activeTab === 'results' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              {/* Results Tab Content */}
-              <div className="w-full h-full flex flex-col">
-                {/* Results Subtabs */}
-                <div className="flex items-center justify-between border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
-                  <div className="flex">
-                    <button
-                      onClick={() => setResultsSubTab('output')}
-                      className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'output'
-                        ? 'border-primary text-primary'
-                        : 'border-transparent hover:text-primary'
-                        }`}
-                      style={resultsSubTab !== 'output' ? { color: 'var(--color-text-muted)' } : {}}
-                    >
-                      Workflow Output
-                    </button>
-                    <button
-                      onClick={() => setResultsSubTab('memory')}
-                      className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'memory'
-                        ? 'border-primary text-primary'
-                        : 'border-transparent hover:text-primary'
-                        }`}
-                      style={resultsSubTab !== 'memory' ? { color: 'var(--color-text-muted)' } : {}}
-                    >
-                      <Database className="w-4 h-4 inline mr-2" />
-                      Memory
-                    </button>
-                    <button
-                      onClick={() => setResultsSubTab('files')}
-                      className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'files'
-                        ? 'border-primary text-primary'
-                        : 'border-transparent hover:text-primary'
-                        }`}
-                      style={resultsSubTab !== 'files' ? { color: 'var(--color-text-muted)' } : {}}
-                    >
-                      <FolderOpen className="w-4 h-4 inline mr-2" />
-                      Files {files.length > 0 && `(${files.length})`}
-                    </button>
-                  </div>
-
-                  {/* View Execution Log Button */}
-                  {taskHistory.length > 0 && (
-                    <button
-                      onClick={() => {
-                        const taskToView = selectedHistoryTask || taskHistory[0];
-                        setReplayTaskId(taskToView.id);
-                        setShowReplayPanel(true);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 mr-4 text-sm font-medium rounded-lg transition-all hover:opacity-90"
-                      style={{
-                        backgroundColor: 'var(--color-primary)',
-                        color: 'white'
-                      }}
-                      title="View detailed execution log"
-                    >
-                      <List className="w-4 h-4" />
-                      <span>View Execution Log</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Subtab Content */}
-                <div className="flex-1 overflow-hidden flex">
-                  {/* Output Subtab */}
-                  {resultsSubTab === 'output' && (
-                    <div className="flex-1 overflow-y-auto p-6">
-                      {loadingHistory ? (
-                        <div className="flex items-center justify-center py-16">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                        </div>
-                      ) : taskHistory.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <HistoryIcon className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
-                          <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                            No results yet
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                            Execute this workflow to see results here.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="w-full px-4">
-                          {/* Display Selected Task or Latest */}
-                          {(() => {
-                            const displayTask = selectedHistoryTask || taskHistory[0];
-                            const taskOutput = displayTask?.result;
-                            const isLatestTask = displayTask?.id === taskHistory[0]?.id;
-
-                            if (!taskOutput) {
-                              return (
-                                <div className="flex flex-col items-center justify-center py-16 text-center">
-                                  <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-text-muted/30 mb-4">
-                                    pending_actions
-                                  </span>
-                                  <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                                    No output data available
-                                  </p>
-                                  <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                                    Task #{displayTask?.id} has no result data.
-                                  </p>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div className="bg-white dark:bg-panel-dark border-2 border-primary dark:border-primary/50 rounded-lg p-6 shadow-lg">
-                                <div className="flex items-center justify-between mb-4">
-                                  {/* Task Header with ID and Status */}
-                                  <div className="flex-1 min-w-0 mr-4">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs font-mono text-gray-500 dark:text-text-muted">
-                                        Task #{displayTask.id}
-                                      </span>
-                                      {!isLatestTask && (
-                                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                                          Historical
-                                        </span>
-                                      )}
-                                      {isLatestTask && (
-                                        <span className="text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold">
-                                          Latest
-                                        </span>
-                                      )}
-                                    </div>
-                                    <h3 className="text-lg font-bold mt-1" style={{ color: 'var(--color-text-primary)' }}>
-                                      Workflow Results
-                                    </h3>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    {displayTask?.created_at && (
-                                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                        {new Date(displayTask.created_at).toLocaleString()}
-                                      </span>
-                                    )}
-
-                                    {/* Toggle Animation Button */}
-                                    <button
-                                      onClick={() => setShowAnimatedReveal(!showAnimatedReveal)}
-                                      className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                      title={showAnimatedReveal ? "Show static view" : "Show animated reveal"}
-                                    >
-                                      <span className="material-symbols-outlined text-lg">
-                                        {showAnimatedReveal ? 'auto_awesome' : 'text_fields'}
-                                      </span>
-                                    </button>
-
-                                    {/* Compare Versions Button */}
-                                    {currentWorkflowId && versions.length > 1 && (
-                                      <button
-                                        onClick={() => setCompareMode(!compareMode)}
-                                        className={`p-2 rounded-md ${compareMode
-                                          ? 'bg-primary text-white'
-                                          : 'hover:bg-gray-100 dark:hover:bg-white/10'
-                                          }`}
-                                        title="Compare workflow versions"
-                                      >
-                                        <span className="material-symbols-outlined text-lg">
-                                          compare_arrows
-                                        </span>
-                                      </button>
-                                    )}
-
-                                    {/* Copy Results Button */}
-                                    <button
-                                      onClick={() => {
-                                        const textToCopy = taskOutput?.formatted_content || '';
-                                        navigator.clipboard.writeText(textToCopy);
-                                        setCopiedToClipboard(true);
-                                        setTimeout(() => setCopiedToClipboard(false), 2000);
-                                      }}
-                                      className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                      title="Copy results to clipboard"
-                                    >
-                                      {copiedToClipboard ? (
-                                        <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                      ) : (
-                                        <Copy className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                      )}
-                                    </button>
-
-                                    {/* Export to PDF Button */}
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const content = taskOutput?.formatted_content || '';
-                                          const metadata = {
-                                            date: new Date().toLocaleString(),
-                                            duration: selectedHistoryTask?.duration_seconds || taskHistory[0]?.duration_seconds,
-                                            tokens: selectedHistoryTask?.result?.workflow_summary?.total_tokens || taskHistory[0]?.result?.workflow_summary?.total_tokens,
-                                            cost: selectedHistoryTask?.result?.workflow_summary?.total_cost_usd || taskHistory[0]?.result?.workflow_summary?.total_cost_usd,
-                                          };
-                                          await exportToPDF(content, workflowName || 'Workflow_Results', metadata);
-                                        } catch (error) {
-                                          console.error('Failed to export PDF:', error);
-                                          alert('Failed to export PDF. Please try again.');
-                                        }
-                                      }}
-                                      className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                      title="Export to PDF"
-                                    >
-                                      <Download className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                    </button>
-
-                                    {/* Export to Word Button */}
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const executionId = selectedHistoryTask?.id || taskHistory[0]?.id;
-                                          if (!executionId) {
-                                            alert('No execution found to export');
-                                            return;
-                                          }
-
-                                          // Call backend API to generate Word document
-                                          const response = await apiClient.exportWorkflowExecutionDocx(executionId);
-
-                                          // Create download link
-                                          const url = window.URL.createObjectURL(new Blob([response.data]));
-                                          const link = document.createElement('a');
-                                          link.href = url;
-                                          const filename = `${workflowName?.replace(/\s+/g, '_') || 'workflow_results'}_${executionId}.docx`;
-                                          link.setAttribute('download', filename);
-                                          document.body.appendChild(link);
-                                          link.click();
-                                          link.parentNode?.removeChild(link);
-                                          window.URL.revokeObjectURL(url);
-                                        } catch (error) {
-                                          console.error('Failed to export Word document:', error);
-                                          alert('Failed to export Word document. Please try again.');
-                                        }
-                                      }}
-                                      className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                      title="Export to Word (.docx)"
-                                    >
-                                      <span className="material-symbols-outlined text-base text-gray-600 dark:text-text-muted">
-                                        description
-                                      </span>
-                                    </button>
-
-                                    {/* View Raw Output Toggle */}
-                                    <button
-                                      onClick={() => setShowRawOutput(!showRawOutput)}
-                                      className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                      title={showRawOutput ? "Hide raw output" : "Show raw output"}
-                                    >
-                                      {showRawOutput ? (
-                                        <EyeOff className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                      ) : (
-                                        <Eye className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                      )}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Version Comparison Panel */}
-                                {compareMode && currentWorkflowId && (
-                                  <div className="mb-6 p-4 bg-gray-50 dark:bg-background-dark border-2 border-primary dark:border-primary/50 rounded-lg">
-                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                                      Compare Workflow Versions
-                                    </h3>
-
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
-                                      {/* Version 1 Selector */}
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                          Version 1
-                                        </label>
-                                        <select
-                                          value={compareVersion1?.version_number || ''}
-                                          onChange={(e) => {
-                                            const version = versions.find(v => v.version_number === parseInt(e.target.value));
-                                            setCompareVersion1(version);
-                                          }}
-                                          className="w-full px-3 py-2 bg-white dark:bg-panel-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white"
-                                        >
-                                          <option value="">Select version...</option>
-                                          {versions.map(v => (
-                                            <option key={v.id} value={v.version_number}>
-                                              v{v.version_number} - {new Date(v.created_at).toLocaleDateString()}
-                                              {v.notes ? ` - ${v.notes.substring(0, 30)}...` : ''}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-
-                                      {/* Version 2 Selector */}
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                          Version 2
-                                        </label>
-                                        <select
-                                          value={compareVersion2?.version_number || ''}
-                                          onChange={(e) => {
-                                            const version = versions.find(v => v.version_number === parseInt(e.target.value));
-                                            setCompareVersion2(version);
-                                          }}
-                                          className="w-full px-3 py-2 bg-white dark:bg-panel-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white"
-                                        >
-                                          <option value="">Select version...</option>
-                                          {versions.map(v => (
-                                            <option key={v.id} value={v.version_number}>
-                                              v{v.version_number} - {new Date(v.created_at).toLocaleDateString()}
-                                              {v.notes ? ` - ${v.notes.substring(0, 30)}...` : ''}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    </div>
-
-                                    <button
-                                      onClick={handleCompareVersions}
-                                      disabled={!compareVersion1 || !compareVersion2 || loadingComparison}
-                                      className="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      {loadingComparison ? 'Comparing...' : 'Compare Versions'}
-                                    </button>
-
-                                    {/* Comparison Results */}
-                                    {versionComparison && (
-                                      <div className="mt-6 space-y-4">
-                                        <h4 className="text-md font-semibold text-gray-900 dark:text-white">
-                                          Comparison Results
-                                        </h4>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                          {/* Version 1 Details */}
-                                          <div className="p-4 bg-white dark:bg-panel-dark border border-gray-200 dark:border-border-dark rounded-lg">
-                                            <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                                              Version {versionComparison.version1.version_number}
-                                            </h5>
-                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                                              {new Date(versionComparison.version1.created_at).toLocaleString()}
-                                            </p>
-                                            {versionComparison.version1.notes && (
-                                              <p className="text-xs text-gray-700 dark:text-gray-300 italic">
-                                                "{versionComparison.version1.notes}"
-                                              </p>
-                                            )}
-                                            <div className="mt-3 text-xs">
-                                              <div className="text-gray-600 dark:text-gray-400">
-                                                Nodes: {versionComparison.version1.config_snapshot.nodes?.length || 0}
-                                              </div>
-                                              <div className="text-gray-600 dark:text-gray-400">
-                                                Edges: {versionComparison.version1.config_snapshot.edges?.length || 0}
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          {/* Version 2 Details */}
-                                          <div className="p-4 bg-white dark:bg-panel-dark border border-gray-200 dark:border-border-dark rounded-lg">
-                                            <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                                              Version {versionComparison.version2.version_number}
-                                            </h5>
-                                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                                              {new Date(versionComparison.version2.created_at).toLocaleString()}
-                                            </p>
-                                            {versionComparison.version2.notes && (
-                                              <p className="text-xs text-gray-700 dark:text-gray-300 italic">
-                                                "{versionComparison.version2.notes}"
-                                              </p>
-                                            )}
-                                            <div className="mt-3 text-xs">
-                                              <div className="text-gray-600 dark:text-gray-400">
-                                                Nodes: {versionComparison.version2.config_snapshot.nodes?.length || 0}
-                                              </div>
-                                              <div className="text-gray-600 dark:text-gray-400">
-                                                Edges: {versionComparison.version2.config_snapshot.edges?.length || 0}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        {/* Diff Summary */}
-                                        <div className="p-4 bg-white dark:bg-panel-dark border border-gray-200 dark:border-border-dark rounded-lg">
-                                          <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                                            Changes Summary
-                                          </h5>
-                                          <div className="space-y-2 text-sm">
-                                            {versionComparison.diff.modified && Object.keys(versionComparison.diff.modified).length > 0 && (
-                                              <div>
-                                                <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                                                  Modified:
-                                                </span>
-                                                <ul className="ml-4 mt-1 space-y-1">
-                                                  {Object.keys(versionComparison.diff.modified).map(key => (
-                                                    <li key={key} className="text-gray-700 dark:text-gray-300">
-                                                      {key}
-                                                    </li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            {versionComparison.diff.added && Object.keys(versionComparison.diff.added).length > 0 && (
-                                              <div>
-                                                <span className="text-green-600 dark:text-green-400 font-medium">
-                                                  Added:
-                                                </span>
-                                                <ul className="ml-4 mt-1 space-y-1">
-                                                  {Object.keys(versionComparison.diff.added).map(key => (
-                                                    <li key={key} className="text-gray-700 dark:text-gray-300">
-                                                      {key}
-                                                    </li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            {versionComparison.diff.removed && Object.keys(versionComparison.diff.removed).length > 0 && (
-                                              <div>
-                                                <span className="text-red-600 dark:text-red-400 font-medium">
-                                                  Removed:
-                                                </span>
-                                                <ul className="ml-4 mt-1 space-y-1">
-                                                  {Object.keys(versionComparison.diff.removed).map(key => (
-                                                    <li key={key} className="text-gray-700 dark:text-gray-300">
-                                                      {key}
-                                                    </li>
-                                                  ))}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            {(!versionComparison.diff.modified || Object.keys(versionComparison.diff.modified).length === 0) &&
-                                              (!versionComparison.diff.added || Object.keys(versionComparison.diff.added).length === 0) &&
-                                              (!versionComparison.diff.removed || Object.keys(versionComparison.diff.removed).length === 0) && (
-                                                <p className="text-gray-600 dark:text-gray-400">
-                                                  No changes detected between versions.
-                                                </p>
-                                              )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Workflow Final Output Display - 3 column layout */}
-                                <div className="flex gap-6 w-full">
-                                  {/* LEFT SIDEBAR - Agent Activity Timeline */}
-                                  <div className="w-80 flex-shrink-0">
-                                    {(() => {
-                                      // Use pre-computed memoized values (computed at component level)
-                                      const { tools, actions, toolCount, actionCount } = toolsAndActions;
-
-                                      return (
-                                        <div className="space-y-3">
-                                          {/* Compact Stats */}
-                                          <div className="grid grid-cols-2 gap-2">
-                                            <div className="px-3 py-2 rounded border text-center"
-                                              style={{
-                                                backgroundColor: 'var(--color-panel-dark)',
-                                                borderColor: 'var(--color-border-dark)'
-                                              }}>
-                                              <div className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>
-                                                {toolCount}
-                                              </div>
-                                              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                Tools
-                                              </div>
-                                            </div>
-                                            <div className="px-3 py-2 rounded border text-center"
-                                              style={{
-                                                backgroundColor: 'var(--color-panel-dark)',
-                                                borderColor: 'var(--color-border-dark)'
-                                              }}>
-                                              <div className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>
-                                                {actionCount}
-                                              </div>
-                                              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                Actions
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          {/* Tool Calls List */}
-                                          {tools.length > 0 && (
-                                            <div>
-                                              <h4 className="text-xs font-semibold uppercase tracking-wider mb-2"
-                                                style={{ color: 'var(--color-text-muted)' }}>
-                                                Tool Calls
-                                              </h4>
-                                              <div className="rounded border"
-                                                style={{
-                                                  backgroundColor: 'var(--color-panel-dark)',
-                                                  borderColor: 'var(--color-border-dark)'
-                                                }}>
-                                                <div className="max-h-96 overflow-y-auto">
-                                                  {tools.map((tool: any, idx: number) => {
-                                                    const isExpanded = expandedToolCalls.has(idx);
-
-                                                    return (
-                                                      <div key={idx} className="border-b last:border-b-0" style={{ borderColor: 'var(--color-border-dark)' }}>
-                                                        {/* Tool header - clickable */}
-                                                        <button
-                                                          onClick={() => {
-                                                            const newExpanded = new Set(expandedToolCalls);
-                                                            if (isExpanded) {
-                                                              newExpanded.delete(idx);
-                                                            } else {
-                                                              newExpanded.add(idx);
-                                                            }
-                                                            setExpandedToolCalls(newExpanded);
-                                                          }}
-                                                          className="w-full px-2 py-1.5 flex items-center gap-2 hover:bg-white/5 transition-colors text-left"
-                                                        >
-                                                          <span className="material-symbols-outlined text-xs"
-                                                            style={{ color: 'var(--color-primary)' }}>
-                                                            {isExpanded ? 'expand_more' : 'chevron_right'}
-                                                          </span>
-                                                          <span className="material-symbols-outlined text-xs"
-                                                            style={{ color: 'var(--color-primary)' }}>
-                                                            build
-                                                          </span>
-                                                          <span className="text-xs font-medium flex-1"
-                                                            style={{ color: 'var(--color-text-primary)' }}>
-                                                            {tool.name}
-                                                          </span>
-                                                        </button>
-
-                                                        {/* Expanded details */}
-                                                        {isExpanded && (
-                                                          <div className="px-8 py-2 space-y-2 text-xs" style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}>
-                                                            {/* Tool arguments */}
-                                                            {tool.args && (
-                                                              <div>
-                                                                <div className="font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                                                                  Arguments:
-                                                                </div>
-                                                                <pre className="font-mono text-xs p-2 rounded overflow-x-auto"
-                                                                  style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: 'var(--color-text-primary)' }}>
-                                                                  {typeof tool.args === 'string' ? tool.args : JSON.stringify(tool.args, null, 2)}
-                                                                </pre>
-                                                              </div>
-                                                            )}
-
-                                                            {/* Tool result */}
-                                                            {tool.result && (
-                                                              <div>
-                                                                <div className="font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                                                                  Result:
-                                                                </div>
-                                                                <pre className="font-mono text-xs p-2 rounded overflow-x-auto max-h-40"
-                                                                  style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: 'var(--color-text-primary)' }}>
-                                                                  {typeof tool.result === 'string' ? tool.result.substring(0, 500) : JSON.stringify(tool.result, null, 2).substring(0, 500)}
-                                                                  {(typeof tool.result === 'string' && tool.result.length > 500) || (typeof tool.result !== 'string' && JSON.stringify(tool.result).length > 500) ? '...' : ''}
-                                                                </pre>
-                                                              </div>
-                                                            )}
-                                                          </div>
-                                                        )}
-                                                      </div>
-                                                    );
-                                                  }, [taskOutput?.agent_messages, expandedToolCalls])}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {/* Actions List */}
-                                          {actions.length > 0 && (
-                                            <div>
-                                              <h4 className="text-xs font-semibold uppercase tracking-wider mb-2"
-                                                style={{ color: 'var(--color-text-muted)' }}>
-                                                Key Actions
-                                              </h4>
-                                              <div className="rounded border"
-                                                style={{
-                                                  backgroundColor: 'var(--color-panel-dark)',
-                                                  borderColor: 'var(--color-border-dark)'
-                                                }}>
-                                                <div className="max-h-60 overflow-y-auto">
-                                                  {actions.map((action: string, idx: number) => (
-                                                    <div key={idx}
-                                                      className="px-2 py-1.5 border-b last:border-b-0"
-                                                      style={{ borderColor: 'var(--color-border-dark)' }}>
-                                                      <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>
-                                                        {action}
-                                                      </span>
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {tools.length === 0 && actions.length === 0 && (
-                                            <div className="text-center py-8 text-sm"
-                                              style={{ color: 'var(--color-text-muted)' }}>
-                                              No activity recorded
-                                            </div>
-                                          )}
-
-                                          {/* Task Summary */}
-                                          <div className="p-3 rounded-lg border"
-                                            style={{
-                                              backgroundColor: 'var(--color-panel-dark)',
-                                              borderColor: 'var(--color-border-dark)'
-                                            }}>
-                                            <div className="text-xs font-semibold uppercase tracking-wider mb-2"
-                                              style={{ color: 'var(--color-text-muted)' }}>
-                                              Task Summary
-                                            </div>
-                                            <div className="space-y-1.5 text-xs">
-                                              {displayTask?.id && (
-                                                <div className="flex justify-between">
-                                                  <span style={{ color: 'var(--color-text-muted)' }}>Task ID</span>
-                                                  <span className="font-mono font-medium"
-                                                    style={{ color: 'var(--color-text-primary)' }}>#{displayTask.id}</span>
-                                                </div>
-                                              )}
-                                              {displayTask?.duration_seconds && (
-                                                <div className="flex justify-between">
-                                                  <span style={{ color: 'var(--color-text-muted)' }}>Duration</span>
-                                                  <span className="font-medium"
-                                                    style={{ color: 'var(--color-text-primary)' }}>{Math.round(displayTask.duration_seconds)}s</span>
-                                                </div>
-                                              )}
-                                              {displayTask?.status && (
-                                                <div className="flex justify-between">
-                                                  <span style={{ color: 'var(--color-text-muted)' }}>Status</span>
-                                                  <span className="font-medium capitalize"
-                                                    style={{ color: 'var(--color-text-primary)' }}>{displayTask.status}</span>
-                                                </div>
-                                              )}
-                                              {/* Token Usage - Using pre-computed memoized values */}
-                                              {(() => {
-                                                // Use pre-computed memoized values (computed at component level)
-                                                const { totalTokens, costString } = tokenCostInfo;
-
-                                                if (totalTokens > 0) {
-                                                  return (
-                                                    <>
-                                                      <div className="flex justify-between">
-                                                        <span style={{ color: 'var(--color-text-muted)' }}>Tokens</span>
-                                                        <span className="font-mono font-medium"
-                                                          style={{ color: 'var(--color-text-primary)' }}>
-                                                          {totalTokens.toLocaleString()}
-                                                        </span>
-                                                      </div>
-                                                      <div className="flex justify-between">
-                                                        <span style={{ color: 'var(--color-text-muted)' }}>Cost</span>
-                                                        <span className="font-mono font-medium"
-                                                          style={{ color: 'var(--color-text-primary)' }}>
-                                                          {costString}
-                                                        </span>
-                                                      </div>
-                                                      <div className="flex justify-between text-xxs" style={{ opacity: 0.7 }}>
-                                                        <span style={{ color: 'var(--color-text-muted)' }}>Model</span>
-                                                        <span style={{ color: 'var(--color-text-muted)' }}>
-                                                          {Object.keys(nodeTokenCosts).length > 1 ? 'Multi-agent' : (currentModelName.length > 20 ? currentModelName.substring(0, 20) + '...' : currentModelName)}
-                                                        </span>
-                                                      </div>
-                                                    </>
-                                                  );
-                                                }
-                                                return null;
-                                              })()}
-                                              {/* User's Prompt */}
-                                              {displayTask?.user_input && (
-                                                <div className="mt-3 pt-2 border-t" style={{ borderColor: 'var(--color-border-dark)' }}>
-                                                  <div className="text-xs font-semibold uppercase tracking-wider mb-1"
-                                                    style={{ color: 'var(--color-text-muted)' }}>
-                                                    User Prompt
-                                                  </div>
-                                                  <div className="text-xs italic leading-relaxed"
-                                                    style={{ color: 'var(--color-text-primary)', opacity: 0.85 }}>
-                                                    "{displayTask.user_input.length > 150 ? displayTask.user_input.substring(0, 150) + '...' : displayTask.user_input}"
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
-                                  </div>
-
-                                  {/* CENTER - Main Output Content */}
-                                  <div className="flex-1">
-                                    {/* Output Header */}
-                                    <div className="mb-6 text-center">
-                                      <h2 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-primary)' }}>
-                                        Workflow Results
-                                      </h2>
-                                      <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                                        Final Output
-                                      </div>
-                                    </div>
-
-                                    {/* Main Output Content - Properly Formatted */}
-                                    <div className="bg-white dark:bg-gray-900/30 rounded-lg shadow-xl p-8 border"
-                                      style={{ borderColor: 'var(--color-border-light)' }}>
-                                      <div className="prose prose-lg max-w-none">
-                                        {(() => {
-                                          const finalReport = (() => {
-                                            // Try formatted_content first (cleanest output)
-                                            if (taskOutput?.formatted_content) {
-                                              return taskOutput.formatted_content;
-                                            }
-
-                                            // Try to get from agent_messages (last AI message with tool call)
-                                            if (taskOutput?.agent_messages && taskOutput.agent_messages.length > 0) {
-                                              const aiMessages = taskOutput.agent_messages.filter((m: any) => m.role === 'ai');
-                                              if (aiMessages.length > 0) {
-                                                const lastAgent = aiMessages[aiMessages.length - 1];
-
-                                                // Check for tool_calls with write_file content (supports both new and legacy names)
-                                                if (lastAgent.tool_calls && lastAgent.tool_calls.length > 0) {
-                                                  const fileWriteCall = lastAgent.tool_calls.find((tc: any) =>
-                                                    tc.name === 'write_file' || tc.name === 'file_write'
-                                                  );
-                                                  if (fileWriteCall?.args?.content) {
-                                                    return fileWriteCall.args.content;
-                                                  }
-                                                }
-
-                                                // Extract text from content array
-                                                if (Array.isArray(lastAgent.content)) {
-                                                  const textParts = lastAgent.content
-                                                    .filter((item: any) => item.type === 'text')
-                                                    .map((item: any) => item.text);
-                                                  if (textParts.length > 0) {
-                                                    return textParts.join('\n');
-                                                  }
-                                                } else if (typeof lastAgent.content === 'string') {
-                                                  return lastAgent.content;
-                                                }
-                                              }
-                                            }
-
-                                            return '';
-                                          })();
-
-                                          // Ensure finalReport is a string
-                                          const reportString = typeof finalReport === 'string' ? finalReport : String(finalReport || '');
-
-                                          // Clean and extract the actual report content
-                                          const cleanReport = reportString
-                                            .replace(/<thinking>.*?<\/thinking>/gs, '') // Remove thinking tags
-                                            .replace(/<context>.*?<\/context>/gs, '') // Remove context tags
-                                            .replace(/<\/?[a-z][a-z0-9]*[^>]*>/gi, '') // Remove ALL HTML/XML tags
-                                            .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-                                            .replace(/\[\s*{[\s\S]*?}\s*\]/g, '') // Remove JSON arrays
-                                            .replace(/###\s*/g, '### ') // Clean up markdown headers
-                                            .replace(/\n{3,}/g, '\n\n') // Remove excessive newlines
-                                            .replace(/\\n/g, '\n') // Fix escaped newlines
-                                            .trim();
-
-                                          if (!cleanReport) {
-                                            return 'No report generated yet.';
-                                          }
-
-                                          return (
-                                            <ReactMarkdown
-                                              remarkPlugins={[remarkGfm, remarkMath]}
-                                              rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                                              components={{
-                                                // Headers with proper hierarchy and styling
-                                                h1: ({ node, ...props }) => (
-                                                  <h1 className="text-3xl font-bold mt-8 mb-6 pb-3 border-b-2"
-                                                    style={{ color: '#135bec', borderColor: '#e5e7eb' }}
-                                                    {...props} />
-                                                ),
-                                                h2: ({ node, ...props }) => (
-                                                  <h2 className="text-2xl font-bold mt-8 mb-4"
-                                                    style={{ color: '#135bec' }}
-                                                    {...props} />
-                                                ),
-                                                h3: ({ node, ...props }) => (
-                                                  <h3 className="text-xl font-semibold mt-6 mb-3"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-                                                h4: ({ node, ...props }) => (
-                                                  <h4 className="text-lg font-semibold mt-4 mb-2"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-
-                                                // Paragraphs and text
-                                                p: ({ node, ...props }) => (
-                                                  <p className="leading-relaxed mb-4"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-                                                strong: ({ node, ...props }) => (
-                                                  <strong className="font-bold"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-                                                em: ({ node, ...props }) => (
-                                                  <em className="italic"
-                                                    style={{ color: '#374151' }}
-                                                    {...props} />
-                                                ),
-
-                                                // Lists
-                                                ul: ({ node, ...props }) => (
-                                                  <ul className="list-disc mb-6 space-y-2 ml-8 pl-2"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-                                                ol: ({ node, ...props }) => (
-                                                  <ol className="list-decimal mb-6 space-y-2 ml-8 pl-2"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-                                                li: ({ node, ...props }) => (
-                                                  <li className="leading-relaxed pl-2"
-                                                    style={{ color: '#111827' }}
-                                                    {...props} />
-                                                ),
-
-                                                // Blockquotes for emphasis
-                                                blockquote: ({ node, ...props }) => (
-                                                  <blockquote className="border-l-4 pl-6 my-6 italic"
-                                                    style={{ borderColor: 'var(--color-primary)', color: 'var(--color-text-muted)' }}
-                                                    {...props} />
-                                                ),
-
-                                                // Tables for data
-                                                table: ({ node, ...props }) => (
-                                                  <div className="overflow-x-auto my-6">
-                                                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700" {...props} />
-                                                  </div>
-                                                ),
-                                                thead: ({ node, ...props }) => (
-                                                  <thead className="bg-gray-50 dark:bg-gray-800" {...props} />
-                                                ),
-                                                th: ({ node, ...props }) => (
-                                                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" {...props} />
-                                                ),
-                                                td: ({ node, ...props }) => (
-                                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300" {...props} />
-                                                ),
-
-                                                // Code blocks - minimal display
-                                                code: ({ node, inline, ...props }: any) =>
-                                                  inline ? (
-                                                    <code className="px-1.5 py-0.5 rounded text-sm font-mono bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200" {...props} />
-                                                  ) : (
-                                                    <code className="block my-4 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg overflow-x-auto text-sm font-mono text-gray-800 dark:text-gray-200" {...props} />
-                                                  ),
-                                                pre: ({ node, ...props }) => (
-                                                  <pre className="my-4 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg overflow-x-auto" {...props} />
-                                                ),
-
-                                                // Horizontal rules
-                                                hr: ({ node, ...props }) => (
-                                                  <hr className="my-8 border-t-2" style={{ borderColor: 'var(--color-border-light)' }} {...props} />
-                                                ),
-
-                                                // Links
-                                                a: ({ node, ...props }) => (
-                                                  <a className="text-blue-600 dark:text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer" {...props} />
-                                                ),
-                                              }}
-                                            >
-                                              {cleanReport}
-                                            </ReactMarkdown>
-                                          );
-                                        })()}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-
-                                {/* Raw Output View - Structured Code Display */}
-                                {showRawOutput && (
-                                  <div className="mt-6 border-t pt-6" style={{ borderColor: 'var(--color-border-light)' }}>
-                                    <h4 className="text-md font-bold mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-                                      Raw Output Data
-                                    </h4>
-                                    <div className="bg-gray-900 dark:bg-gray-950 rounded-lg overflow-hidden">
-                                      {/* Header bar like a code editor */}
-                                      <div className="bg-gray-800 dark:bg-gray-900 px-4 py-2 flex items-center justify-between border-b border-gray-700">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs text-gray-400 font-mono">output.json</span>
-                                          <span className="text-xs text-gray-500">•</span>
-                                          <span className="text-xs text-gray-500">
-                                            {JSON.stringify(taskOutput).length.toLocaleString()} bytes
-                                          </span>
-                                        </div>
-                                        <button
-                                          onClick={() => {
-                                            const formattedJson = JSON.stringify(taskOutput, null, 2);
-                                            navigator.clipboard.writeText(formattedJson);
-                                          }}
-                                          className="text-xs text-gray-400 hover:text-white transition-colors flex items-center gap-1"
-                                        >
-                                          <span className="material-symbols-outlined text-sm">content_copy</span>
-                                          Copy
-                                        </button>
-                                      </div>
-                                      {/* Code content with syntax highlighting */}
-                                      <div className="p-4 overflow-x-auto max-h-96 overflow-y-auto">
-                                        <pre className="text-xs font-mono leading-relaxed">
-                                          <code className="language-json">
-                                            {JSON.stringify(taskOutput, null, 2)
-                                              .split('\n')
-                                              .map((line, idx) => {
-                                                // Basic JSON syntax highlighting
-                                                const highlightedLine = line
-                                                  .replace(/("[^"]+")(\s*:)/g, '<span style="color: #86efac;">$1</span>$2') // Keys in green
-                                                  .replace(/:([\s]*)"([^"]*)"/g, ':$1<span style="color: #fbbf24;">"$2"</span>') // String values in yellow
-                                                  .replace(/:\s*(true|false)/g, ': <span style="color: #c084fc;">$1</span>') // Booleans in purple
-                                                  .replace(/:\s*(null)/g, ': <span style="color: #f87171;">$1</span>') // Null in red
-                                                  .replace(/:\s*([0-9.]+)/g, ': <span style="color: #67e8f9;">$1</span>'); // Numbers in cyan
-
-                                                return (
-                                                  <div key={idx} className="flex">
-                                                    <span className="select-none pr-4 text-gray-600" style={{ minWidth: '3ch' }}>
-                                                      {idx + 1}
-                                                    </span>
-                                                    <span dangerouslySetInnerHTML={{ __html: highlightedLine }} />
-                                                  </div>
-                                                );
-                                              })}
-                                          </code>
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-
-                              </div>
-                            );
-                          })()
-                          }
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Sidebar for Task History - Only show on output subtab */}
-                  {taskHistory.length > 0 && resultsSubTab === 'output' && (
-                    <div
-                      className="border-l overflow-y-auto flex-shrink-0 transition-all duration-300"
-                      style={{
-                        borderColor: 'var(--color-border-dark)',
-                        width: isHistoryCollapsed ? '60px' : '384px'
-                      }}
-                    >
-                      <div className={isHistoryCollapsed ? "p-2" : "p-4"}>
-                        {/* Header with toggle button */}
-                        <div className="flex items-center justify-between mb-4">
-                          {!isHistoryCollapsed && (
-                            <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                              Task History ({taskHistory.length})
-                            </h3>
-                          )}
-                          <button
-                            onClick={() => setIsHistoryCollapsed(!isHistoryCollapsed)}
-                            className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                            title={isHistoryCollapsed ? "Expand history" : "Collapse history"}
-                          >
-                            <ChevronRight
-                              className={`w-4 h-4 transition-transform duration-200 ${isHistoryCollapsed ? 'rotate-0' : 'rotate-180'}`}
-                              style={{ color: 'var(--color-text-muted)' }}
-                            />
-                          </button>
-                        </div>
-                        <div className="space-y-3">
-                          {taskHistory.map((task, _index) => {
-                            const isSelected = selectedHistoryTask?.id === task.id;
-
-                            // Extract the prompt from the task - could be in input, directive, query, or first human message
-                            const prompt = (() => {
-                              // First check task.user_input (from backend API - should be the user's actual prompt)
-                              if (task.user_input && typeof task.user_input === 'string' && task.user_input.trim()) {
-                                return task.user_input;
-                              }
-
-                              // Check top-level fields
-                              const topLevelFields = ['directive', 'query', 'task_input', 'prompt', 'question', 'message'];
-                              for (const field of topLevelFields) {
-                                if ((task as any)[field] && typeof (task as any)[field] === 'string' && (task as any)[field].trim()) {
-                                  return (task as any)[field];
-                                }
-                              }
-
-                              // Try input field if it exists
-                              if (task.input !== undefined && task.input !== null) {
-                                // Try direct input if it's a string
-                                if (typeof task.input === 'string' && task.input.trim()) {
-                                  return task.input;
-                                }
-
-                                // Try to get from input object fields (most common)
-                                if (typeof task.input === 'object') {
-                                  // Check all common field names
-                                  const possibleFields = ['directive', 'query', 'task', 'prompt', 'question', 'message', 'input', 'text'];
-                                  for (const field of possibleFields) {
-                                    if (task.input[field] && typeof task.input[field] === 'string' && task.input[field].trim()) {
-                                      return task.input[field];
-                                    }
-                                  }
-
-                                  // Try to find any string value in input
-                                  const values = Object.values(task.input);
-                                  const firstString = values.find(v => typeof v === 'string' && v.trim() && v.length > 10);
-                                  if (firstString) {
-                                    return firstString as string;
-                                  }
-                                }
-                              }
-
-                              // Try to get from the first human message in agent_messages
-                              if (task.result?.agent_messages?.length > 0) {
-                                const humanMessages = task.result.agent_messages.filter((m: any) => m.role === 'human');
-                                if (humanMessages.length > 0) {
-                                  const firstHuman = humanMessages[0];
-                                  if (firstHuman?.content) {
-                                    const content = typeof firstHuman.content === 'string'
-                                      ? firstHuman.content
-                                      : JSON.stringify(firstHuman.content);
-                                    // Clean up the content
-                                    const cleanContent = content
-                                      .replace(/^Human:\s*/i, '')
-                                      .replace(/^User:\s*/i, '')
-                                      .trim();
-                                    if (cleanContent && cleanContent !== '{}' && cleanContent !== '[]') {
-                                      return cleanContent;
-                                    }
-                                  }
-                                }
-                              }
-
-                              // Last resort - check if there's a formatted_input field
-                              if (task.formatted_input && typeof task.formatted_input === 'string') {
-                                return task.formatted_input;
-                              }
-
-                              return 'No prompt available';
-                            })();
-
-                            return (
-                              <button
-                                key={task.id}
-                                onClick={() => {
-                                  setSelectedHistoryTask(task);
-                                  // If replay panel is already open, update the task being viewed
-                                  if (showReplayPanel) {
-                                    setReplayTaskId(task.id);
-                                  }
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setTaskContextMenu({
-                                    taskId: task.id,
-                                    x: e.clientX,
-                                    y: e.clientY
-                                  });
-                                }}
-                                className={`w-full text-left ${isHistoryCollapsed ? 'p-2' : 'p-3'} rounded-lg border transition-all ${isSelected
-                                  ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
-                                  : 'bg-white dark:bg-panel-dark border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                                  } hover:shadow-md`}
-                                title={isHistoryCollapsed ? `Task #${task.id}: ${prompt.substring(0, 50)}...` : ''}
-                              >
-                                {isHistoryCollapsed ? (
-                                  /* Collapsed View - Icon only */
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${task.status === 'COMPLETED' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                                      task.status === 'FAILED' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                                        'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                                      }`}>
-                                      {task.status === 'COMPLETED' ? '✓' : task.status === 'FAILED' ? '✗' : '•'}
-                                    </span>
-                                    <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
-                                      #{task.id}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  /* Expanded View - Full details */
-                                  <>
-                                    {/* Task Header */}
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                                        Task #{task.id}
-                                      </span>
-                                      <span className={`text-xs px-2 py-0.5 rounded-full ${task.status === 'COMPLETED' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                                        task.status === 'FAILED' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                                          'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                                        }`}>
-                                        {task.status === 'COMPLETED' ? '✓' : task.status === 'FAILED' ? '✗' : '•'}
-                                      </span>
-                                    </div>
-
-                                    {/* Prompt Preview */}
-                                    <div className="mb-2">
-                                      <div className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                                        Prompt:
-                                      </div>
-                                      <div className="text-xs line-clamp-2 italic" style={{ color: 'var(--color-text-primary)', opacity: 0.9 }}>
-                                        "{prompt.substring(0, 100)}{prompt.length > 100 ? '...' : ''}"
-                                      </div>
-                                    </div>
-
-                                    {/* Metadata Row */}
-                                    <div className="flex items-center justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                      {/* Date and Time */}
-                                      {task.created_at && (
-                                        <div>
-                                          {new Date(task.created_at).toLocaleDateString()} {new Date(task.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                      )}
-
-                                      {/* Duration */}
-                                      {task.duration_seconds && (
-                                        <div className="font-medium">
-                                          {task.duration_seconds < 60
-                                            ? `${Math.round(task.duration_seconds)}s`
-                                            : `${Math.floor(task.duration_seconds / 60)}m ${Math.round(task.duration_seconds % 60)}s`
-                                          }
-                                        </div>
-                                      )}
-                                    </div>
-                                  </>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Memory Subtab */}
-                  {resultsSubTab === 'memory' && currentWorkflowId && (
-                    <div className="flex-1 overflow-hidden">
-                      <MemoryView workflowId={currentWorkflowId} nodes={nodes} />
-                    </div>
-                  )}
-
-                  {/* Files Subtab */}
-                  {resultsSubTab === 'files' && (
-                    <div className="flex-1 overflow-hidden flex">
-                      {/* File List - shrinks when preview open */}
-                      <div className={`${selectedPreviewFile ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 transition-all duration-200`}>
-                        {filesLoading ? (
-                          <div className="flex items-center justify-center py-16">
-                            <div className="text-center">
-                              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
-                              <p className="text-sm text-gray-600 dark:text-text-muted">Loading files...</p>
-                            </div>
-                          </div>
-                        ) : filesError ? (
-                          <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <FileIcon className="w-16 h-16 text-red-300 dark:text-red-900/30 mb-4" />
-                            <p className="text-lg font-medium text-red-600 dark:text-red-400">
-                              Failed to load files
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                              {filesError}
-                            </p>
-                            <button
-                              onClick={fetchFiles}
-                              className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
-                              style={{ color: 'var(--color-primary)' }}
-                            >
-                              Retry
-                            </button>
-                          </div>
-                        ) : files.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <FolderOpen className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
-                            <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                              No files generated
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                              This workflow didn't create any output files.
-                            </p>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="mb-4">
-                              <p className="text-sm text-gray-600 dark:text-text-muted">
-                                Click a file to preview. {files.length} file{files.length !== 1 ? 's' : ''} generated.
-                              </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              {files.map((file, index) => (
-                                <div
-                                  key={index}
-                                  onClick={() => handleFileSelect(file)}
-                                  className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${
-                                    selectedPreviewFile?.path === file.path
-                                      ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
-                                      : 'border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <span className="text-2xl flex-shrink-0">{getFileIcon(file.extension)}</span>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-medium text-gray-900 dark:text-white truncate">
-                                        {file.filename}
-                                      </p>
-                                      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-text-muted mt-1">
-                                        <span>{file.size_human}</span>
-                                        <span>•</span>
-                                        <span>{new Date(file.modified_at).toLocaleDateString()}</span>
-                                        {file.extension && (
-                                          <>
-                                            <span>•</span>
-                                            <span className="uppercase">{file.extension.replace('.', '')}</span>
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDownloadFile(file.filename);
-                                    }}
-                                    className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-text-muted"
-                                    title="Download file"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    {!selectedPreviewFile && 'Download'}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Preview Panel */}
-                      {selectedPreviewFile && (
-                        <InlineFilePreview
-                          file={selectedPreviewFile}
-                          content={filePreviewContent}
-                          loading={filePreviewLoading}
-                          onClose={closeFilePreview}
-                          onDownload={handleDownloadFile}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Execution Log Replay Panel */}
-                <RealtimeExecutionPanel
-                  isVisible={showReplayPanel}
-                  events={replayEvents}
-                  latestEvent={replayEvents.length > 0 ? replayEvents[replayEvents.length - 1] : null}
-                  onClose={() => {
-                    setShowReplayPanel(false);
-                    setReplayTaskId(null); // Clear replay task when closing
-                  }}
-                  isReplay={true}
-                  executionStatus={executionStatus}
-                  workflowMetrics={undefined}
-                  userPrompt={undefined}
-                  workflowName={workflowName}
-                />
-              </div>
-            </div>
+            <WorkflowResults
+              currentWorkflowId={currentWorkflowId}
+              workflowName={workflowName}
+              nodes={nodes}
+              resultsSubTab={resultsSubTab}
+              setResultsSubTab={setResultsSubTab}
+              taskHistory={taskHistory}
+              loadingHistory={loadingHistory}
+              selectedHistoryTask={selectedHistoryTask}
+              setSelectedHistoryTask={setSelectedHistoryTask}
+              isHistoryCollapsed={isHistoryCollapsed}
+              setIsHistoryCollapsed={setIsHistoryCollapsed}
+              taskContextMenu={taskContextMenu}
+              setTaskContextMenu={setTaskContextMenu}
+              handleDeleteTask={handleDeleteTask}
+              showReplayPanel={showReplayPanel}
+              setShowReplayPanel={setShowReplayPanel}
+              replayTaskId={replayTaskId}
+              setReplayTaskId={setReplayTaskId}
+              replayEvents={replayEvents}
+              executionStatus={executionStatus}
+              copiedToClipboard={copiedToClipboard}
+              setCopiedToClipboard={setCopiedToClipboard}
+              showRawOutput={showRawOutput}
+              setShowRawOutput={setShowRawOutput}
+              showAnimatedReveal={showAnimatedReveal}
+              setShowAnimatedReveal={setShowAnimatedReveal}
+              versions={versions}
+              compareMode={compareMode}
+              setCompareMode={setCompareMode}
+              compareVersion1={compareVersion1}
+              setCompareVersion1={setCompareVersion1}
+              compareVersion2={compareVersion2}
+              setCompareVersion2={setCompareVersion2}
+              loadingComparison={loadingComparison}
+              versionComparison={versionComparison}
+              handleCompareVersions={handleCompareVersions}
+              files={files}
+              filesLoading={filesLoading}
+              filesError={filesError}
+              fetchFiles={fetchFiles}
+              selectedPreviewFile={selectedPreviewFile}
+              filePreviewContent={filePreviewContent}
+              filePreviewLoading={filePreviewLoading}
+              handleFileSelect={handleFileSelect}
+              handleDownloadFile={handleDownloadFile}
+              closeFilePreview={closeFilePreview}
+              toolsAndActions={toolsAndActions}
+              tokenCostInfo={tokenCostInfo}
+              nodeTokenCosts={nodeTokenCosts}
+              expandedToolCalls={expandedToolCalls}
+              setExpandedToolCalls={setExpandedToolCalls}
+            />
           )}
 
           {/* Execution Configuration Dialog */}
-          {showExecutionDialog && activeTab === 'studio' && (
-            <div className="fixed inset-0 flex items-center justify-center z-50 cursor-pointer" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }} onClick={() => setShowExecutionDialog(false)}>
-              <div className="rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: 'var(--color-panel-dark)' }} onClick={(e) => e.stopPropagation()}>
-                <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>
-                  Run Workflow
-                </h3>
-
-                <div className="space-y-4">
-                  {/* Prompt Input */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                      What should this workflow do?
-                    </label>
-                    <textarea
-                      className="w-full px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                      style={{
-                        backgroundColor: 'white',
-                        color: '#1f2937',
-                        borderColor: 'var(--color-border-dark)'
-                      }}
-                      rows={5}
-                      placeholder="Enter your task or prompt here..."
-                      value={executionConfig.directive}
-                      onChange={(e) => setExecutionConfig({
-                        ...executionConfig,
-                        directive: e.target.value,
-                        query: e.target.value,
-                        task: e.target.value,
-                      })}
-                      autoFocus
-                    />
-                  </div>
-
-                  {/* Advanced Options Toggle */}
-                  <button
-                    onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                    className="text-sm hover:underline flex items-center gap-1"
-                    style={{ color: 'var(--color-primary)' }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
-                      {showAdvancedOptions ? 'expand_less' : 'expand_more'}
-                    </span>
-                    {showAdvancedOptions ? 'Hide' : 'Show'} Advanced Options
-                  </button>
-
-                  {/* Advanced Options */}
-                  {showAdvancedOptions && (
-                    <div className="space-y-4 pt-2 border-t" style={{ borderColor: 'var(--color-border-dark)' }}>
-                      {/* Additional Context */}
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                          Additional Context (Optional)
-                        </label>
-                        <textarea
-                          className="w-full px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                          style={{
-                            backgroundColor: 'white',
-                            color: '#1f2937',
-                            borderColor: 'var(--color-border-dark)'
-                          }}
-                          rows={3}
-                          placeholder="Add any background information, constraints, or context..."
-                          value={additionalContext}
-                          onChange={(e) => setAdditionalContext(e.target.value)}
-                        />
-                      </div>
-
-                      {/* Context Documents (RAG) */}
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                          Context Documents (RAG)
-                        </label>
-                        {availableDocuments.length > 0 ? (
-                          <div className="max-h-40 overflow-y-auto border rounded-md p-2" style={{
-                            borderColor: 'var(--color-border-dark)',
-                            backgroundColor: 'var(--color-background-dark)'
-                          }}>
-                            {availableDocuments.map((doc) => (
-                              <label
-                                key={doc.id}
-                                className="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-white/5"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={contextDocuments.includes(doc.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setContextDocuments([...contextDocuments, doc.id]);
-                                    } else {
-                                      setContextDocuments(contextDocuments.filter(id => id !== doc.id));
-                                    }
-                                  }}
-                                  className="rounded"
-                                  style={{ accentColor: 'var(--color-primary)' }}
-                                />
-                                <span className="text-sm flex-1 truncate" style={{ color: 'var(--color-text-primary)' }}>
-                                  {doc.name}
-                                </span>
-                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                  {doc.document_type}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm italic py-2" style={{ color: 'var(--color-text-muted)' }}>
-                            No documents available. Upload documents in the Knowledge Base first.
-                          </div>
-                        )}
-                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          Select documents from the Knowledge Base to use as context
-                        </p>
-                      </div>
-
-                      {/* Max Retries */}
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                          Max Retries
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="10"
-                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent"
-                          style={{
-                            backgroundColor: 'var(--color-background-dark)',
-                            color: 'var(--color-text-primary)',
-                            borderColor: 'var(--color-border-dark)'
-                          }}
-                          value={executionConfig.max_retries}
-                          onChange={(e) => setExecutionConfig({
-                            ...executionConfig,
-                            max_retries: parseInt(e.target.value) || 0,
-                          })}
-                        />
-                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          Number of times to retry failed steps
-                        </p>
-                      </div>
-
-                      {/* Max Events */}
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                          Max Events
-                        </label>
-                        <input
-                          type="number"
-                          min="1000"
-                          max="100000"
-                          step="1000"
-                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent"
-                          style={{
-                            backgroundColor: 'var(--color-background-dark)',
-                            color: 'var(--color-text-primary)',
-                            borderColor: 'var(--color-border-dark)'
-                          }}
-                          value={executionConfig.max_events || 10000}
-                          onChange={(e) => setExecutionConfig({
-                            ...executionConfig,
-                            max_events: parseInt(e.target.value) || 10000,
-                          })}
-                        />
-                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          Maximum events before stopping (1k-100k). Increase for longer workflows.
-                        </p>
-                      </div>
-
-                      {/* Timeout */}
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                          Timeout (minutes)
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="60"
-                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:border-transparent"
-                          style={{
-                            backgroundColor: 'var(--color-background-dark)',
-                            color: 'var(--color-text-primary)',
-                            borderColor: 'var(--color-border-dark)'
-                          }}
-                          value={Math.round((executionConfig.timeout_seconds || 600) / 60)}
-                          onChange={(e) => setExecutionConfig({
-                            ...executionConfig,
-                            timeout_seconds: (parseInt(e.target.value) || 10) * 60,
-                          })}
-                        />
-                        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          Maximum runtime in minutes (1-60). Default is 10 minutes.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={() => setShowExecutionDialog(false)}
-                    className="flex-1 px-4 py-2 border rounded-md transition-colors"
-                    style={{
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-primary)'
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={executeWorkflow}
-                    disabled={!executionConfig.directive.trim()}
-                    className="flex-1 px-4 py-2 rounded-md transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: '#ffffff'
-                    }}
-                  >
-                    Run Workflow
-                  </button>
-                </div>
-              </div>
-            </div>
+          {activeTab === 'studio' && (
+            <ExecutionConfigDialog
+              isOpen={showExecutionDialog}
+              onClose={() => setShowExecutionDialog(false)}
+              onExecute={executeWorkflow}
+              executionConfig={executionConfig}
+              setExecutionConfig={setExecutionConfig}
+              showAdvancedOptions={showAdvancedOptions}
+              setShowAdvancedOptions={setShowAdvancedOptions}
+              additionalContext={additionalContext}
+              setAdditionalContext={setAdditionalContext}
+              contextDocuments={contextDocuments}
+              setContextDocuments={setContextDocuments}
+              availableDocuments={availableDocuments}
+            />
           )}
 
           {/* Save Workflow Modal */}
-          {showSaveModal && (
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-              onClick={() => {
-                setShowSaveModal(false);
-                setSaveWorkflowName('');
-              }}
-            >
-              <div
-                className="rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
-                style={{
-                  backgroundColor: 'var(--color-panel-dark)',
-                  border: '1px solid var(--color-border-dark)',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h2
-                  className="text-xl font-semibold mb-4"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  Save Workflow
-                </h2>
-                <p
-                  className="mb-4 text-sm"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  Enter a name for your workflow:
-                </p>
-                <input
-                  type="text"
-                  value={saveWorkflowName}
-                  onChange={(e) => setSaveWorkflowName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && saveWorkflowName.trim()) {
-                      handleSaveWorkflowConfirm();
-                    } else if (e.key === 'Escape') {
-                      setShowSaveModal(false);
-                      setSaveWorkflowName('');
-                    }
-                  }}
-                  placeholder="Enter workflow name..."
-                  autoFocus
-                  className="w-full px-3 py-2 rounded-lg mb-4 border focus:outline-none focus:ring-2"
-                  style={{
-                    backgroundColor: 'var(--color-input-background)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)',
-                  }}
-                />
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => {
-                      setShowSaveModal(false);
-                      setSaveWorkflowName('');
-                    }}
-                    className="px-4 py-2 rounded-lg border transition-colors"
-                    style={{
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveWorkflowConfirm}
-                    disabled={!saveWorkflowName.trim()}
-                    className="px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: 'white',
-                    }}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <SaveWorkflowModal
+            isOpen={showSaveModal}
+            onClose={() => setShowSaveModal(false)}
+            onSave={handleSaveWorkflowConfirm}
+            workflowName={saveWorkflowName}
+            setWorkflowName={setSaveWorkflowName}
+          />
 
           {/* Save to Agent Library Modal */}
-          {showSaveToLibraryModal && (
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-              onClick={() => {
-                setShowSaveToLibraryModal(false);
-                setSaveToLibraryData(null);
-                setAgentLibraryName('');
-                setAgentLibraryDescription('');
-              }}
-            >
-              <div
-                className="rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
-                style={{
-                  backgroundColor: 'var(--color-panel-dark)',
-                  border: '1px solid var(--color-border-dark)',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h2
-                  className="text-xl font-semibold mb-4"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  Save to Agent Library
-                </h2>
-
-                <div className="space-y-4">
-                  <div>
-                    <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: 'var(--color-text-primary)' }}
-                    >
-                      Agent Name
-                    </label>
-                    <input
-                      type="text"
-                      value={agentLibraryName}
-                      onChange={(e) => setAgentLibraryName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && agentLibraryName.trim()) {
-                          handleConfirmSaveToLibrary();
-                        } else if (e.key === 'Escape') {
-                          setShowSaveToLibraryModal(false);
-                          setSaveToLibraryData(null);
-                          setAgentLibraryName('');
-                          setAgentLibraryDescription('');
-                        }
-                      }}
-                      placeholder="Enter agent name..."
-                      autoFocus
-                      className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2"
-                      style={{
-                        backgroundColor: 'var(--color-input-background)',
-                        borderColor: 'var(--color-border-dark)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: 'var(--color-text-primary)' }}
-                    >
-                      Description (optional)
-                    </label>
-                    <textarea
-                      value={agentLibraryDescription}
-                      onChange={(e) => setAgentLibraryDescription(e.target.value)}
-                      placeholder="Describe what this agent does..."
-                      rows={3}
-                      className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 resize-none"
-                      style={{
-                        backgroundColor: 'var(--color-input-background)',
-                        borderColor: 'var(--color-border-dark)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2 justify-end mt-6">
-                  <button
-                    onClick={() => {
-                      setShowSaveToLibraryModal(false);
-                      setSaveToLibraryData(null);
-                      setAgentLibraryName('');
-                      setAgentLibraryDescription('');
-                    }}
-                    className="px-4 py-2 rounded-lg border transition-colors"
-                    style={{
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmSaveToLibrary}
-                    disabled={!agentLibraryName.trim()}
-                    className="px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: 'white',
-                    }}
-                  >
-                    Save to Library
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <SaveToLibraryModal
+            isOpen={showSaveToLibraryModal}
+            onClose={() => {
+              setShowSaveToLibraryModal(false);
+              setSaveToLibraryData(null);
+            }}
+            onSave={handleConfirmSaveToLibrary}
+            agentName={agentLibraryName}
+            setAgentName={setAgentLibraryName}
+            agentDescription={agentLibraryDescription}
+            setAgentDescription={setAgentLibraryDescription}
+          />
 
           {/* Chat with Unsaved Agent Warning Modal */}
           {showChatWarningModal && (
@@ -6050,213 +3421,28 @@ if __name__ == "__main__":
           )}
 
           {/* Save Version Modal */}
-          {showVersionModal && (
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-              onClick={() => {
-                setShowVersionModal(false);
-                setVersionNotes('');
-              }}
-            >
-              <div
-                className="rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
-                style={{
-                  backgroundColor: 'var(--color-panel-dark)',
-                  border: '1px solid var(--color-border-dark)',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h2
-                  className="text-xl font-semibold mb-4"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  Save New Version
-                </h2>
-                <p
-                  className="mb-4 text-sm"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  Create a snapshot of your current workflow configuration. Add notes to describe what changed:
-                </p>
-                <textarea
-                  value={versionNotes}
-                  onChange={(e) => setVersionNotes(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setShowVersionModal(false);
-                      setVersionNotes('');
-                    }
-                  }}
-                  placeholder="What changed in this version? (optional)"
-                  rows={4}
-                  autoFocus
-                  className="w-full px-3 py-2 rounded-lg mb-4 border focus:outline-none focus:ring-2"
-                  style={{
-                    backgroundColor: 'var(--color-input-background)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)',
-                  }}
-                />
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => {
-                      setShowVersionModal(false);
-                      setVersionNotes('');
-                    }}
-                    className="px-4 py-2 rounded-lg border transition-colors"
-                    style={{
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-muted)',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveVersionConfirm}
-                    className="px-4 py-2 rounded-lg transition-colors"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: 'white',
-                    }}
-                  >
-                    Create Version
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <SaveVersionDialog
+            isOpen={showVersionModal}
+            onClose={() => setShowVersionModal(false)}
+            onSave={handleSaveVersionConfirm}
+            versionNotes={versionNotes}
+            setVersionNotes={setVersionNotes}
+          />
 
         </div>
 
         {/* Debug Workflow Modal */}
-        {showDebugModal && debugData && (
-          <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-            onClick={() => setShowDebugModal(false)}
-          >
-            <div
-              className="rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto"
-              style={{
-                backgroundColor: 'var(--color-panel-dark)',
-                border: '1px solid var(--color-border-dark)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                  Workflow Debug Info: {debugData.workflow_name}
-                </h2>
-                <button
-                  onClick={() => setShowDebugModal(false)}
-                  className="p-1 rounded hover:bg-gray-700"
-                >
-                  <X size={20} style={{ color: 'var(--color-text-muted)' }} />
-                </button>
-              </div>
-
-              {/* Node Analysis */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--color-primary)' }}>
-                  Node Tool Assignments
-                </h3>
-                {debugData.nodes.map((node: any) => (
-                  <div
-                    key={node.node_id}
-                    className="mb-3 p-3 rounded border"
-                    style={{
-                      backgroundColor: 'var(--color-background-dark)',
-                      borderColor: node.has_image_generation ? '#f59e0b' : 'var(--color-border-dark)',
-                      borderWidth: node.has_image_generation ? '2px' : '1px'
-                    }}
-                  >
-                    <div className="font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                      {node.node_id} ({node.type})
-                    </div>
-                    <div className="text-sm mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                      Model: {node.model || 'Not set'}
-                    </div>
-                    <div className="text-sm mb-1">
-                      <span style={{ color: 'var(--color-text-muted)' }}>Native Tools: </span>
-                      <span style={{ color: 'var(--color-text-primary)' }}>
-                        {node.native_tools && node.native_tools.length > 0 ? node.native_tools.join(', ') : 'None'}
-                      </span>
-                    </div>
-                    <div className="text-sm">
-                      <span style={{ color: 'var(--color-text-muted)' }}>Custom Tools: </span>
-                      <span style={{ color: node.custom_tools.length > 0 ? '#f59e0b' : 'var(--color-text-primary)', fontWeight: node.custom_tools.length > 0 ? 'bold' : 'normal' }}>
-                        {node.custom_tools.length > 0 ? node.custom_tools.join(', ') : 'None'}
-                      </span>
-                      {node.has_image_generation && (
-                        <span className="ml-2 text-xs px-2 py-1 rounded" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
-                          ✓ image_generation
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Available Custom Tools */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--color-primary)' }}>
-                  Available Custom Tools
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {debugData.available_custom_tools.map((tool: any) => (
-                    <div
-                      key={tool.tool_id}
-                      className="p-2 rounded border"
-                      style={{
-                        backgroundColor: 'var(--color-background-dark)',
-                        borderColor: 'var(--color-border-dark)'
-                      }}
-                    >
-                      <div className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                        {tool.name}
-                      </div>
-                      <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        ID: {tool.tool_id}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Raw JSON */}
-              <div>
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--color-primary)' }}>
-                  Raw Configuration JSON
-                </h3>
-                <pre
-                  className="text-xs p-3 rounded overflow-x-auto"
-                  style={{
-                    backgroundColor: 'var(--color-background-dark)',
-                    color: 'var(--color-text-primary)',
-                    maxHeight: '300px'
-                  }}
-                >
-                  {JSON.stringify(debugData.raw_configuration, null, 2)}
-                </pre>
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(debugData.raw_configuration, null, 2));
-                    showSuccess('Configuration copied to clipboard!');
-                  }}
-                  className="px-4 py-2 rounded-lg transition-colors"
-                  style={{
-                    backgroundColor: 'var(--color-primary)',
-                    color: 'white'
-                  }}
-                >
-                  Copy JSON
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DebugWorkflowDialog
+          isOpen={showDebugModal}
+          onClose={() => setShowDebugModal(false)}
+          debugData={debugData}
+          onCopyJson={() => {
+            if (debugData) {
+              navigator.clipboard.writeText(JSON.stringify(debugData.raw_configuration, null, 2));
+              showSuccess('Configuration copied to clipboard!');
+            }
+          }}
+        />
 
         {/* Notification Modal */}
         <NotificationModal />
@@ -6308,13 +3494,13 @@ if __name__ == "__main__":
                   e.currentTarget.style.backgroundColor = 'var(--color-primary)';
                   e.currentTarget.style.color = '#ffffff';
                   const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as HTMLElement).style.color = '#ffffff';
+                  if (icon) (icon as unknown as HTMLElement).style.color = '#ffffff';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = '#ffffff';
                   e.currentTarget.style.color = 'var(--color-text-primary)';
                   const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as HTMLElement).style.color = 'var(--color-primary)';
+                  if (icon) (icon as unknown as HTMLElement).style.color = 'var(--color-primary)';
                 }}
               >
                 <Brain className="w-4 h-4 transition-colors" style={{ color: 'var(--color-primary)' }} />
@@ -6336,13 +3522,13 @@ if __name__ == "__main__":
                   e.currentTarget.style.backgroundColor = 'var(--color-primary)';
                   e.currentTarget.style.color = '#ffffff';
                   const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as HTMLElement).style.color = '#ffffff';
+                  if (icon) (icon as unknown as HTMLElement).style.color = '#ffffff';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = '#ffffff';
                   e.currentTarget.style.color = 'var(--color-text-primary)';
                   const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as HTMLElement).style.color = 'var(--color-primary)';
+                  if (icon) (icon as unknown as HTMLElement).style.color = 'var(--color-primary)';
                 }}
               >
                 <Database className="w-4 h-4 transition-colors" style={{ color: 'var(--color-primary)' }} />
@@ -6462,59 +3648,13 @@ if __name__ == "__main__":
         )}
 
         {/* Create New Workflow Modal */}
-        {showCreateWorkflowModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-panel-dark rounded-lg max-w-md w-full p-6 shadow-2xl">
-              <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>
-                Create New Workflow
-              </h3>
-
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                handleCreateNewWorkflow();
-              }}>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                    Workflow Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newWorkflowName}
-                    onChange={(e) => setNewWorkflowName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    style={{
-                      backgroundColor: 'var(--color-input-background)',
-                      color: 'var(--color-text-primary)'
-                    }}
-                    placeholder="Enter workflow name..."
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreateWorkflowModal(false);
-                      setNewWorkflowName('');
-                    }}
-                    className="px-4 py-2 text-sm font-medium border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 hover:border-gray-400 dark:hover:border-border-light transition-all"
-                    style={{ color: 'var(--color-text-primary)' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!newWorkflowName.trim()}
-                    className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:brightness-110 hover:shadow-lg transition-all disabled:opacity-50"
-                  >
-                    Create Workflow
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <CreateWorkflowDialog
+          isOpen={showCreateWorkflowModal}
+          onClose={() => setShowCreateWorkflowModal(false)}
+          onCreate={handleCreateNewWorkflow}
+          workflowName={newWorkflowName}
+          setWorkflowName={setNewWorkflowName}
+        />
 
         {showConflictDialog && conflictData && (
           <ConflictDialog
