@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,163 @@ from schemas.mcp_tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# MCP Multimodal Content Parsing
+# =============================================================================
+
+def _parse_mcp_content_blocks(result: Any) -> Tuple[List[Dict], List[Dict], bool]:
+    """
+    Parse MCP tool result into content blocks and artifacts.
+
+    MCP tools can return multimodal content (text, images, audio, files) in their responses.
+    This function parses the standard MCP response format into structured content blocks.
+
+    Args:
+        result: Raw result from MCP tool invocation
+
+    Returns:
+        Tuple of (content_blocks, artifacts, has_multimodal)
+        - content_blocks: List of parsed content blocks for LLM context
+        - artifacts: List of content blocks for UI display only
+        - has_multimodal: True if result contains non-text content
+    """
+    content_blocks: List[Dict] = []
+    artifacts: List[Dict] = []
+    has_multimodal = False
+
+    if result is None:
+        return content_blocks, artifacts, has_multimodal
+
+    # Handle dict with standard MCP content format
+    if isinstance(result, dict):
+        # Standard MCP content array format: { "content": [...] }
+        if "content" in result and isinstance(result["content"], list):
+            for block in result["content"]:
+                parsed = _parse_single_content_block(block)
+                if parsed:
+                    content_blocks.append(parsed)
+                    if parsed.get("type") in ("image", "audio", "resource", "file"):
+                        has_multimodal = True
+
+        # Check for artifacts (content meant for UI display, not LLM)
+        if "artifacts" in result and isinstance(result["artifacts"], list):
+            for block in result["artifacts"]:
+                parsed = _parse_single_content_block(block)
+                if parsed:
+                    artifacts.append(parsed)
+                    if parsed.get("type") in ("image", "audio", "resource", "file"):
+                        has_multimodal = True
+
+        # If no content array but has other data, treat the whole dict as result
+        if not content_blocks and "content" not in result:
+            # Check for direct image/screenshot data (common in browser tools)
+            if "screenshot" in result or "image" in result:
+                image_data = result.get("screenshot") or result.get("image")
+                if isinstance(image_data, str):
+                    content_blocks.append({
+                        "type": "image",
+                        "data": image_data,
+                        "mimeType": result.get("mimeType", "image/png"),
+                        "alt_text": result.get("alt_text")
+                    })
+                    has_multimodal = True
+            else:
+                # Wrap as text if it's a plain result dict
+                content_blocks.append({
+                    "type": "text",
+                    "text": json.dumps(result, indent=2)
+                })
+
+    # Handle list of content blocks directly
+    elif isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                parsed = _parse_single_content_block(item)
+                if parsed:
+                    content_blocks.append(parsed)
+                    if parsed.get("type") in ("image", "audio", "resource", "file"):
+                        has_multimodal = True
+            elif isinstance(item, str):
+                content_blocks.append({"type": "text", "text": item})
+
+    # Handle raw string result
+    elif isinstance(result, str):
+        content_blocks.append({"type": "text", "text": result})
+
+    # Handle other primitives
+    else:
+        content_blocks.append({"type": "text", "text": str(result)})
+
+    return content_blocks, artifacts, has_multimodal
+
+
+def _parse_single_content_block(block: Dict) -> Optional[Dict]:
+    """
+    Parse a single MCP content block.
+
+    Args:
+        block: Raw content block dict from MCP response
+
+    Returns:
+        Parsed content block dict or None if invalid
+    """
+    if not isinstance(block, dict):
+        return None
+
+    block_type = block.get("type")
+
+    if block_type == "text":
+        text = block.get("text", "")
+        if text:
+            return {"type": "text", "text": text}
+
+    elif block_type == "image":
+        data = block.get("data", "")
+        if data:
+            return {
+                "type": "image",
+                "data": data,
+                "mimeType": block.get("mimeType", "image/png"),
+                "alt_text": block.get("alt_text")
+            }
+
+    elif block_type == "audio":
+        data = block.get("data", "")
+        if data:
+            return {
+                "type": "audio",
+                "data": data,
+                "mimeType": block.get("mimeType", "audio/wav"),
+                "duration_seconds": block.get("duration_seconds")
+            }
+
+    elif block_type == "resource":
+        uri = block.get("uri", "")
+        if uri:
+            return {
+                "type": "resource",
+                "uri": uri,
+                "mimeType": block.get("mimeType"),
+                "blob": block.get("blob"),
+                "text": block.get("text")
+            }
+
+    elif block_type == "file":
+        return {
+            "type": "file",
+            "name": block.get("name", "unnamed"),
+            "mimeType": block.get("mimeType"),
+            "data": block.get("data"),
+            "text": block.get("text")
+        }
+
+    # If no recognized type, but has text content, treat as text
+    elif "text" in block:
+        return {"type": "text", "text": block["text"]}
+
+    return None
 
 # Capability cache to avoid slow/unreliable capability discovery
 # This significantly speeds up startup and avoids timeout issues
@@ -299,7 +456,7 @@ class MCPServer:
     async def invoke_tool(self, invocation: MCPToolInvocation) -> MCPToolResult:
         """Invoke a tool on this MCP server"""
         start_time = time.time()
-        
+
         try:
             # Send tool invocation request
             request = {
@@ -311,10 +468,10 @@ class MCPServer:
                     "arguments": invocation.arguments
                 }
             }
-            
+
             response = await self._send_request(request, timeout=invocation.timeout)
             execution_time = time.time() - start_time
-            
+
             if "error" in response:
                 return MCPToolResult(
                     success=False,
@@ -322,18 +479,30 @@ class MCPServer:
                     error=response["error"].get("message", "Unknown error"),
                     execution_time=execution_time
                 )
-            
+
+            raw_result = response.get("result")
+
+            # Parse multimodal content from MCP result
+            content_blocks, artifacts, has_multimodal = _parse_mcp_content_blocks(raw_result)
+
+            if has_multimodal:
+                logger.info(f"Tool {invocation.tool_name} returned multimodal content: "
+                           f"{len(content_blocks)} blocks, {len(artifacts)} artifacts")
+
             return MCPToolResult(
                 success=True,
                 tool_name=invocation.tool_name,
-                result=response.get("result"),
+                result=raw_result,  # Keep raw for backwards compatibility
                 execution_time=execution_time,
                 metadata={
                     "server_id": self.config.server_id,
                     "server_type": self.config.server_type
-                }
+                },
+                content_blocks=content_blocks,
+                artifacts=artifacts,
+                has_multimodal=has_multimodal
             )
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             logger.error(f"Tool invocation failed for {invocation.tool_name}: {e}")

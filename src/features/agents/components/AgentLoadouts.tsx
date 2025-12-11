@@ -1639,7 +1639,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                           value={implementationConfig.provider || 'google'}
                           onChange={(e) => {
                             const newProvider = e.target.value;
-                            const defaultModel = newProvider === 'google' ? 'gemini-2.5-flash-image' : 'dall-e-3';
+                            const defaultModel = newProvider === 'google' ? 'gemini-3-pro-image-preview' : 'dall-e-3';
                             setImplementationConfig({
                               ...implementationConfig,
                               provider: newProvider,
@@ -1663,7 +1663,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                           Model
                         </label>
                         <select
-                          value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-2.5-flash-image' : 'dall-e-3')}
+                          value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-3-pro-image-preview' : 'dall-e-3')}
                           onChange={(e) => setImplementationConfig({ ...implementationConfig, model: e.target.value })}
                           className="w-full px-4 py-2 rounded-lg border text-sm"
                           style={{
@@ -1679,7 +1679,8 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                             </>
                           ) : (
                             <>
-                              <option value="gemini-2.5-flash-image">🍌 Nano Banana (Gemini 2.5 Flash) - RECOMMENDED</option>
+                              <option value="gemini-3-pro-image-preview">🍌 Nano Banana Pro (Gemini 3 Pro) - RECOMMENDED</option>
+                              <option value="gemini-2.5-flash-image">🍌 Nano Banana (Gemini 2.5 Flash)</option>
                               <option value="imagen-3">Imagen 3 (Image)</option>
                               <option value="veo-3">Veo 3 (Video)</option>
                               <option value="veo-3.1">Veo 3.1 (Video)</option>

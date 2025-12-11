@@ -163,13 +163,26 @@ class MCPToolInvocation(BaseModel):
 
 class MCPToolResult(BaseModel):
     """Result from an MCP tool invocation"""
-    
+
     success: bool
     tool_name: str
     result: Optional[Any] = None
     error: Optional[str] = None
     execution_time: float = Field(description="Execution time in seconds")
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # Multimodal content fields
+    content_blocks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Parsed content blocks from MCP response (text, images, audio, etc.)"
+    )
+    artifacts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Content blocks for UI display only (not sent to LLM)"
+    )
+    has_multimodal: bool = Field(
+        default=False,
+        description="Whether the result contains non-text content"
+    )
 
 
 # Pre-configured MCP servers

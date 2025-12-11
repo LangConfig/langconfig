@@ -817,8 +817,8 @@ Note: Imagen 3 offers high-quality photorealistic and artistic image generation.
 
 IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
     template_id="image_gemini_nano_banana",
-    name="Nano Banana (Gemini Flash Image)",
-    description="Ultra-fast AI image generation using Gemini 2.5 Flash Image - Google's latest model with character consistency and editing capabilities",
+    name="Nano Banana Pro (Gemini 3 Pro Image)",
+    description="High-quality AI image generation using Gemini 3 Pro Image - Google's best model with 2K/4K output, text rendering, and character consistency",
     category="image_video",
     tool_type=ToolType.IMAGE_VIDEO,
     icon="🍌",
@@ -829,7 +829,7 @@ IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
         "template_type": "image_gemini_nano_banana",
         "implementation_config": {
             "provider": "google",
-            "model": "gemini-2.5-flash-image",
+            "model": "gemini-3-pro-image-preview",
             "aspect_ratio": "1:1",
             "number_of_images": 1,
             "safety_filter_level": "block_some",

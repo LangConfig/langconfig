@@ -13,6 +13,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { ChatMessage, SessionDocument } from '../types/chat';
 import MessageInput from './MessageInput';
 import SessionDocumentsPanel from './SessionDocumentsPanel';
+import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 
 interface MessagesPanelProps {
   messages: ChatMessage[];
@@ -230,6 +231,21 @@ export default function MessagesPanel({
                             {message.content}
                           </ReactMarkdown>
                         </div>
+
+                        {/* Multimodal Content Blocks (images, audio, files from MCP tools) */}
+                        {message.has_multimodal && message.content_blocks && message.content_blocks.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <ContentBlockRenderer blocks={message.content_blocks} />
+                          </div>
+                        )}
+
+                        {/* Artifacts (UI-only content, not sent to LLM) */}
+                        {message.artifacts && message.artifacts.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 font-medium">Generated Content:</p>
+                            <ContentBlockRenderer blocks={message.artifacts} />
+                          </div>
+                        )}
                       </div>
 
                       {/* Message Footer */}

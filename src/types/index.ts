@@ -15,3 +15,4 @@
 export * from './workflow';
 export * from './api';
 export * from './customTools';
+export * from './content-blocks';

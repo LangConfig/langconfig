@@ -265,6 +265,12 @@ class DeepAgentFactory:
         """Load base tools from configuration (native, CLI, and custom tools)."""
         tools = []
 
+        # DEBUG: Log incoming config
+        logger.info(f"[_load_base_tools] Config received:")
+        logger.info(f"  - config.native_tools: {config.native_tools}")
+        logger.info(f"  - config.cli_tools: {config.cli_tools}")
+        logger.info(f"  - config.custom_tools: {config.custom_tools}")
+
         # Load native tools (file operations, web search, etc.)
         if config.native_tools:
             try:
@@ -284,10 +290,16 @@ class DeepAgentFactory:
             except Exception as e:
                 logger.error(f"Failed to load CLI tools: {e}")
 
-        # Load custom tools (user-defined tools)
+        # Load custom tools (user-defined tools from database)
         if config.custom_tools:
-            logger.info(f"Custom tools requested: {config.custom_tools}")
-            # Custom tool loading would be implemented here
+            try:
+                logger.info(f"Custom tools requested: {config.custom_tools}")
+                custom_tools = await AgentFactory._load_custom_tools(config.custom_tools, project_id)
+                tools.extend(custom_tools)
+                logger.info(f"Loaded {len(custom_tools)} custom tools: {[t.name for t in custom_tools]}")
+            except Exception as e:
+                logger.error(f"Failed to load custom tools: {e}")
+                logger.exception("Custom tool loading stack trace:")
 
         return tools
 
