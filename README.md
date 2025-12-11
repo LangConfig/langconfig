@@ -7,7 +7,12 @@
 [![LangChain](https://img.shields.io/badge/LangChain-v1.0-orange.svg)](https://langchain.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-latest-orange.svg)](https://langchain-ai.github.io/langgraph/)
 
-**Open-source visual platform for building, testing, and deploying LangChain agents and LangGraph workflows.**
+
+<img width="2615" height="816" alt="Langconfig Banner" src="https://github.com/user-attachments/assets/059f5595-2a48-4fae-bab8-5760661bcbb5" />
+
+
+
+# Open-source visual platform for building, testing, and deploying LangChain agents and LangGraph workflows.
 
 LangConfig makes agentic AI accessible. Build LangChain Agents and Deep Agents with full control over their toolsets, prompts, and memory configurations—no coding required.
 
@@ -34,6 +39,8 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
 - **Local-First** - All data stays on your machine
+
+<img width="1872" height="930" alt="image" src="https://github.com/user-attachments/assets/a4c3ad34-39ee-4792-9f1d-77e563c6e3f3" />
 
 ---
 
