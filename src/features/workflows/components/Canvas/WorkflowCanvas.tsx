@@ -21,7 +21,7 @@ import ReactFlow, {
   MiniMap,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Trash2, Copy, List, Brain, Database, Settings, FileText as FileIcon } from 'lucide-react';
+import { Trash2, List, Brain } from 'lucide-react';
 import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
@@ -47,6 +47,8 @@ import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
 import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
 import WorkflowResults from './results/WorkflowResults';
 import WorkflowToolbar from './toolbar/WorkflowToolbar';
+import TabNavigation from './toolbar/TabNavigation';
+import NodeContextMenu from './menus/NodeContextMenu';
 
 interface Agent {
   id: string;
@@ -2895,56 +2897,20 @@ if __name__ == "__main__":
 
         {/* Tab Navigation */}
         {nodes.length > 0 && (
-          <div className="bg-white dark:bg-panel-dark border-b border-gray-200 dark:border-border-dark">
-            <div className="flex items-center px-4">
-              <button
-                onClick={() => handleTabChange('studio')}
-                className={`px-4 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'studio'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
-                  }`}
-              >
-                Studio
-              </button>
-              <button
-                onClick={() => {
-                  handleTabChange('results');
-                  setShowExecutionDialog(false); // Close any open dialog when switching tabs
-                  // Don't connect to workflow stream when just viewing results
-                  if (executionStatus.state !== 'running') {
-                    setCurrentTaskId(null);
-                    localStorage.removeItem('langconfig-current-task-id');
-                  }
-                }}
-                className={`px-4 py-3 text-sm font-semibold border-b-2 transition-all ${activeTab === 'results'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
-                  }`}
-              >
-                Results {taskHistory.length > 0 && `(${taskHistory.length})`}
-              </button>
-
-              {/* Spacer to push workflow ID to the right */}
-              <div className="flex-1" />
-
-              {/* Unsaved Changes Indicator */}
-              {hasUnsavedChanges && (
-                <div className="flex items-center gap-2 text-xs font-medium text-yellow-600 dark:text-yellow-500 py-3 animate-pulse mr-4">
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
-                    warning
-                  </span>
-                  Unsaved Changes
-                </div>
-              )}
-
-              {/* Workflow ID - Plain text on the right */}
-              {currentWorkflowId && (
-                <div className="text-xs font-mono text-text-muted dark:text-text-muted py-3">
-                  ID: {currentWorkflowId}
-                </div>
-              )}
-            </div>
-          </div>
+          <TabNavigation
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            taskHistoryCount={taskHistory.length}
+            hasUnsavedChanges={hasUnsavedChanges}
+            currentWorkflowId={currentWorkflowId}
+            onResultsTabClick={() => {
+              setShowExecutionDialog(false);
+              if (executionStatus.state !== 'running') {
+                setCurrentTaskId(null);
+                localStorage.removeItem('langconfig-current-task-id');
+              }
+            }}
+          />
         )}
 
         {/* Canvas Area */}
@@ -3469,182 +3435,19 @@ if __name__ == "__main__":
 
         {/* Node Context Menu */}
         {nodeContextMenu && (
-          <>
-            {/* Backdrop to catch clicks and prevent transparency */}
-            <div
-              className="fixed inset-0 z-[9998]"
-              onClick={() => setNodeContextMenu(null)}
-            />
-            <div
-              className="fixed z-[9999] border rounded-lg shadow-2xl py-1 min-w-[200px]"
-              style={{
-                left: `${nodeContextMenu.x}px`,
-                top: `${nodeContextMenu.y}px`,
-                backgroundColor: '#ffffff',
-                borderColor: 'var(--color-border-dark)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Chat with Agent */}
-              <button
-                onClick={() => handleChatWithAgent(nodeContextMenu.nodeId, nodeContextMenu.nodeData)}
-                className="w-full text-left px-4 py-2.5 text-sm transition-all flex items-center gap-3 rounded-t-lg"
-                style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                  e.currentTarget.style.color = '#ffffff';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as unknown as HTMLElement).style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as unknown as HTMLElement).style.color = 'var(--color-primary)';
-                }}
-              >
-                <Brain className="w-4 h-4 transition-colors" style={{ color: 'var(--color-primary)' }} />
-                <div>
-                  <div className="font-medium">Chat with Agent</div>
-                  <div className="text-xs opacity-60">Open chat interface for this agent</div>
-                </div>
-              </button>
-
-              {/* Divider */}
-              <div className="h-px my-1" style={{ backgroundColor: 'var(--color-border-dark)' }} />
-
-              {/* Save to Agent Library */}
-              <button
-                onClick={() => handleSaveToAgentLibrary(nodeContextMenu.nodeId, nodeContextMenu.nodeData)}
-                className="w-full text-left px-4 py-2.5 text-sm transition-all flex items-center gap-3"
-                style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                  e.currentTarget.style.color = '#ffffff';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as unknown as HTMLElement).style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) (icon as unknown as HTMLElement).style.color = 'var(--color-primary)';
-                }}
-              >
-                <Database className="w-4 h-4 transition-colors" style={{ color: 'var(--color-primary)' }} />
-                <div>
-                  <div className="font-medium">Save to Library</div>
-                  <div className="text-xs opacity-60">Reuse this agent in other workflows</div>
-                </div>
-              </button>
-
-              {/* Divider */}
-              <div className="h-px my-1" style={{ backgroundColor: 'var(--color-border-dark)' }} />
-
-              {/* Copy LangChain Code */}
-              <button
-                onClick={() => handleCopyLangChainCode(nodeContextMenu.nodeId, nodeContextMenu.nodeData)}
-                className="w-full text-left px-4 py-2 text-sm transition-all flex items-center gap-2"
-                style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }}
-              >
-                <FileIcon className="w-4 h-4" />
-                Copy LangChain Code
-              </button>
-
-              {/* Duplicate Node */}
-              <button
-                onClick={() => handleDuplicateNode(nodeContextMenu.nodeId, nodeContextMenu.nodeData)}
-                className="w-full text-left px-4 py-2 text-sm transition-all flex items-center gap-2"
-                style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }}
-              >
-                <Copy className="w-4 h-4" />
-                Duplicate Node
-              </button>
-
-              {/* Configure Node */}
-              <button
-                onClick={() => handleConfigureNode(nodeContextMenu.nodeId)}
-                className="w-full text-left px-4 py-2 text-sm transition-all flex items-center gap-2"
-                style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }}
-              >
-                <Settings className="w-4 h-4" />
-                Configure
-              </button>
-
-              {/* View Metrics */}
-              {nodeContextMenu.nodeData.executionStatus?.tokenCost && (
-                <button
-                  onClick={() => {
-                    handleConfigureNode(nodeContextMenu.nodeId);
-                    setNodeContextMenu(null);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm transition-all flex items-center gap-2"
-                  style={{ color: 'var(--color-text-primary)', backgroundColor: '#ffffff' }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--color-primary)';
-                    e.currentTarget.style.color = '#ffffff';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#ffffff';
-                    e.currentTarget.style.color = 'var(--color-text-primary)';
-                  }}
-                >
-                  <Brain className="w-4 h-4" />
-                  <div className="flex-1 flex items-center justify-between">
-                    <span>View Metrics</span>
-                    <span className="text-xs font-mono">
-                      {nodeContextMenu.nodeData.executionStatus.tokenCost.costString}
-                    </span>
-                  </div>
-                </button>
-              )}
-
-              {/* Divider */}
-              <div className="h-px my-1" style={{ backgroundColor: 'var(--color-border-dark)' }} />
-
-              {/* Delete Node */}
-              <button
-                onClick={() => handleDeleteNode(nodeContextMenu.nodeId)}
-                className="w-full text-left px-4 py-2 text-sm transition-all flex items-center gap-2"
-                style={{ color: '#dc2626', backgroundColor: '#ffffff' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#dc2626';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.color = '#dc2626';
-                }}
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete Node
-              </button>
-            </div>
-          </>
+          <NodeContextMenu
+            x={nodeContextMenu.x}
+            y={nodeContextMenu.y}
+            nodeId={nodeContextMenu.nodeId}
+            nodeData={nodeContextMenu.nodeData}
+            onClose={() => setNodeContextMenu(null)}
+            onChatWithAgent={handleChatWithAgent}
+            onSaveToLibrary={handleSaveToAgentLibrary}
+            onCopyLangChainCode={handleCopyLangChainCode}
+            onDuplicateNode={handleDuplicateNode}
+            onConfigureNode={handleConfigureNode}
+            onDeleteNode={handleDeleteNode}
+          />
         )}
 
         {/* Create New Workflow Modal */}

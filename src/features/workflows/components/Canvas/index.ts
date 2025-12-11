@@ -13,6 +13,8 @@ export type { WorkflowCanvasRef } from './WorkflowCanvas';
 export { default as CustomNode } from './nodes/CustomNode';
 export { default as WorkflowResults } from './results/WorkflowResults';
 export { default as WorkflowToolbar } from './toolbar/WorkflowToolbar';
+export { default as TabNavigation } from './toolbar/TabNavigation';
+export { default as NodeContextMenu } from './menus/NodeContextMenu';
 
 // Dialogs
 export { default as ExecutionConfigDialog } from './dialogs/ExecutionConfigDialog';
@@ -28,6 +30,7 @@ export { useWorkflowExecution } from './hooks/useWorkflowExecution';
 export { useFileHandling } from './hooks/useFileHandling';
 export { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 export { useVersionManagement } from './hooks/useVersionManagement';
+export { useTaskHistory } from './hooks/useTaskHistory';
 export type { TaskFile } from './hooks/useFileHandling';
 
 // Context

@@ -8,26 +8,16 @@
 import { memo } from 'react';
 import { Trash2, Copy, Brain, Database, Settings, FileText as FileIcon } from 'lucide-react';
 
-interface NodeData {
-  label: string;
-  executionStatus?: {
-    tokenCost?: {
-      costString: string;
-    };
-  };
-  [key: string]: any;
-}
-
 interface NodeContextMenuProps {
   x: number;
   y: number;
   nodeId: string;
-  nodeData: NodeData;
+  nodeData: any;
   onClose: () => void;
-  onChatWithAgent: (nodeId: string, nodeData: NodeData) => void;
-  onSaveToLibrary: (nodeId: string, nodeData: NodeData) => void;
-  onCopyLangChainCode: (nodeId: string, nodeData: NodeData) => void;
-  onDuplicateNode: (nodeId: string, nodeData: NodeData) => void;
+  onChatWithAgent: (nodeId: string, nodeData: any) => void;
+  onSaveToLibrary: (nodeId: string, nodeData: any) => void;
+  onCopyLangChainCode: (nodeId: string, nodeData: any) => void;
+  onDuplicateNode: (nodeId: string, nodeData: any) => void;
   onConfigureNode: (nodeId: string) => void;
   onDeleteNode: (nodeId: string) => void;
 }
