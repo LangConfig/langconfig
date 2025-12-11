@@ -15,6 +15,9 @@ export { default as WorkflowResults } from './results/WorkflowResults';
 export { default as WorkflowToolbar } from './toolbar/WorkflowToolbar';
 export { default as TabNavigation } from './toolbar/TabNavigation';
 export { default as NodeContextMenu } from './menus/NodeContextMenu';
+export { default as TaskContextMenu } from './menus/TaskContextMenu';
+export { default as EmptyCanvasState } from './EmptyCanvasState';
+export { default as ChatWarningModal } from './dialogs/ChatWarningModal';
 
 // Dialogs
 export { default as ExecutionConfigDialog } from './dialogs/ExecutionConfigDialog';

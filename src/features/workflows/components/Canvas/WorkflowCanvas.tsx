@@ -21,7 +21,7 @@ import ReactFlow, {
   MiniMap,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Trash2, List, Brain } from 'lucide-react';
+import { List, Brain } from 'lucide-react';
 import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
@@ -45,10 +45,13 @@ import SaveVersionDialog from './dialogs/SaveVersionDialog';
 import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
 import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
 import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
+import ChatWarningModal from './dialogs/ChatWarningModal';
 import WorkflowResults from './results/WorkflowResults';
 import WorkflowToolbar from './toolbar/WorkflowToolbar';
 import TabNavigation from './toolbar/TabNavigation';
 import NodeContextMenu from './menus/NodeContextMenu';
+import TaskContextMenu from './menus/TaskContextMenu';
+import EmptyCanvasState from './EmptyCanvasState';
 
 interface Agent {
   id: string;
@@ -2918,21 +2921,7 @@ if __name__ == "__main__":
           {/* Studio Tab - Keep ReactFlow mounted to preserve node selection */}
           <div style={{ display: activeTab === 'studio' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
             {nodes.length === 0 ? (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-6 text-center p-12">
-                <div className="w-24 h-24 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary" style={{ fontSize: '48px' }}>
-                    account_tree
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
-                    Start Building Your Workflow
-                  </h4>
-                  <p className="text-gray-600 dark:text-gray-400 max-w-md text-base">
-                    Click on an agent from the left panel to add your first node, then connect them to create your workflow.
-                  </p>
-                </div>
-              </div>
+              <EmptyCanvasState />
             ) : (
               <>
                 <ReactFlow
@@ -3333,58 +3322,10 @@ if __name__ == "__main__":
           />
 
           {/* Chat with Unsaved Agent Warning Modal */}
-          {showChatWarningModal && (
-            <div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-              onClick={() => setShowChatWarningModal(false)}
-            >
-              <div
-                className="rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
-                style={{
-                  backgroundColor: 'var(--color-panel-dark)',
-                  border: '1px solid var(--color-border-dark)',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-start gap-3 mb-4">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{
-                    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                  }}>
-                    <span className="material-symbols-outlined" style={{ color: '#f59e0b', fontSize: '24px' }}>
-                      warning
-                    </span>
-                  </div>
-                  <div>
-                    <h2
-                      className="text-lg font-semibold mb-2"
-                      style={{ color: 'var(--color-text-primary)' }}
-                    >
-                      Agent Not Saved to Library
-                    </h2>
-                    <p
-                      className="text-sm"
-                      style={{ color: 'var(--color-text-primary)' }}
-                    >
-                      To chat with this agent, you need to save it to the Agent Library first. This allows you to have persistent conversations with the agent.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => setShowChatWarningModal(false)}
-                    className="px-4 py-2 rounded-lg transition-colors"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: 'white',
-                    }}
-                  >
-                    Got it
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <ChatWarningModal
+            isOpen={showChatWarningModal}
+            onClose={() => setShowChatWarningModal(false)}
+          />
 
           {/* Save Version Modal */}
           <SaveVersionDialog
@@ -3415,22 +3356,12 @@ if __name__ == "__main__":
 
         {/* Task Context Menu */}
         {taskContextMenu && (
-          <div
-            className="fixed z-[9999] bg-white dark:bg-panel-dark border border-gray-200 dark:border-border-dark rounded-lg shadow-lg py-1 min-w-[160px]"
-            style={{
-              left: `${taskContextMenu.x}px`,
-              top: `${taskContextMenu.y}px`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => handleDeleteTask(taskContextMenu.taskId)}
-              className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-red-600 dark:text-red-400"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete Task
-            </button>
-          </div>
+          <TaskContextMenu
+            x={taskContextMenu.x}
+            y={taskContextMenu.y}
+            taskId={taskContextMenu.taskId}
+            onDeleteTask={handleDeleteTask}
+          />
         )}
 
         {/* Node Context Menu */}
