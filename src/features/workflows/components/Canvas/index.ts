@@ -18,6 +18,9 @@ export { default as NodeContextMenu } from './menus/NodeContextMenu';
 export { default as TaskContextMenu } from './menus/TaskContextMenu';
 export { default as EmptyCanvasState } from './EmptyCanvasState';
 export { default as ChatWarningModal } from './dialogs/ChatWarningModal';
+export { default as CanvasControlPanel } from './panels/CanvasControlPanel';
+export { default as TotalCostPanel } from './panels/TotalCostPanel';
+export { default as ThinkingToastRenderer } from './panels/ThinkingToastRenderer';
 
 // Dialogs
 export { default as ExecutionConfigDialog } from './dialogs/ExecutionConfigDialog';

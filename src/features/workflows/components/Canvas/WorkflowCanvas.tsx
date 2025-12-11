@@ -17,15 +17,12 @@ import ReactFlow, {
   addEdge,
   Connection,
   BackgroundVariant,
-  Panel,
   MiniMap,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { List, Brain } from 'lucide-react';
 import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
-import ThinkingToast from '../../../../components/ui/ThinkingToast';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
 import { FileContent } from '../Execution/InlineFilePreview';
 import { validateWorkflow } from '../../../../lib/workflow-validator';
@@ -52,6 +49,9 @@ import TabNavigation from './toolbar/TabNavigation';
 import NodeContextMenu from './menus/NodeContextMenu';
 import TaskContextMenu from './menus/TaskContextMenu';
 import EmptyCanvasState from './EmptyCanvasState';
+import CanvasControlPanel from './panels/CanvasControlPanel';
+import TotalCostPanel from './panels/TotalCostPanel';
+import ThinkingToastRenderer from './panels/ThinkingToastRenderer';
 
 interface Agent {
   id: string;
@@ -2977,70 +2977,23 @@ if __name__ == "__main__":
                   />
 
                   {/* Control Buttons - Top Right */}
-                  <Panel position="top-right" className="flex gap-2">
-                    {/* Live Execution Panel Toggle */}
-                    <button
-                      onClick={handleToggleLiveExecutionPanel}
-                      className={`px-2 py-1.5 rounded-md border flex items-center gap-1.5 text-xs font-semibold transition-all ${!showLiveExecutionPanel ? 'hover:scale-105 hover:opacity-90' : ''
-                        }`}
-                      style={{
-                        backgroundColor: showLiveExecutionPanel ? '#0d6832' : 'var(--color-primary)',
-                        borderColor: showLiveExecutionPanel ? '#0d6832' : 'var(--color-primary)',
-                        color: 'white',
-                        boxShadow: showLiveExecutionPanel ? 'inset 0 2px 4px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-                        transform: showLiveExecutionPanel ? 'translateY(1px)' : 'translateY(-1px)'
-                      }}
-                      title="Toggle live execution panel - Shows detailed agent thinking, tool calls, and execution flow"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                      <span>Panel</span>
-                    </button>
+                  <CanvasControlPanel
+                    showLiveExecutionPanel={showLiveExecutionPanel}
+                    showThinkingStream={showThinkingStream}
+                    onToggleLiveExecutionPanel={handleToggleLiveExecutionPanel}
+                    onToggleThinkingStream={handleToggleThinkingStream}
+                    onDebugWorkflow={handleDebugWorkflow}
+                  />
 
-                    {/* Thinking Toasts Toggle */}
-                    <button
-                      onClick={handleToggleThinkingStream}
-                      className={`px-2 py-1.5 rounded-md border flex items-center gap-1.5 text-xs font-semibold transition-all ${!showThinkingStream ? 'hover:scale-105 hover:opacity-90' : ''
-                        }`}
-                      style={{
-                        backgroundColor: showThinkingStream ? '#0d6832' : 'var(--color-primary)',
-                        borderColor: showThinkingStream ? '#0d6832' : 'var(--color-primary)',
-                        color: 'white',
-                        boxShadow: showThinkingStream ? 'inset 0 2px 4px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-                        transform: showThinkingStream ? 'translateY(1px)' : 'translateY(-1px)'
-                      }}
-                      title={showThinkingStream ? 'Hide thinking toast notifications on canvas' : 'Show thinking toast notifications on canvas'}
-                    >
-                      <Brain className="w-3.5 h-3.5" />
-                      <span>Thinking</span>
-                    </button>
-
-                    {/* Workflow Settings Modal */}
-                    <WorkflowSettingsDialog
-                      isOpen={showSettingsModal}
-                      onClose={handleCloseSettingsModal}
-                      checkpointerEnabled={checkpointerEnabled}
-                      onToggleCheckpointer={handleToggleCheckpointer}
-                      globalRecursionLimit={globalRecursionLimit}
-                      setGlobalRecursionLimit={setGlobalRecursionLimit}
-                    />
-
-                    {/* Debug Modal */}
-                    <button
-                      onClick={handleDebugWorkflow}
-                      className="px-2 py-1.5 rounded-md border flex items-center gap-1.5 text-xs font-semibold transition-all hover:scale-105 hover:opacity-90"
-                      style={{
-                        backgroundColor: 'var(--color-primary)',
-                        borderColor: 'var(--color-primary)',
-                        color: 'white',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                        transform: 'translateY(-1px)'
-                      }}
-                      title="Debug Workflow - View backend configuration and tool assignments"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>bug_report</span>
-                      <span>Debug</span>
-                    </button>
-                  </Panel>
+                  {/* Workflow Settings Modal */}
+                  <WorkflowSettingsDialog
+                    isOpen={showSettingsModal}
+                    onClose={handleCloseSettingsModal}
+                    checkpointerEnabled={checkpointerEnabled}
+                    onToggleCheckpointer={handleToggleCheckpointer}
+                    globalRecursionLimit={globalRecursionLimit}
+                    setGlobalRecursionLimit={setGlobalRecursionLimit}
+                  />
 
                   {/* MiniMap with enhanced styling - only show when nodes have valid positions */}
                   {validatedNodes.length > 0 && (
@@ -3071,156 +3024,23 @@ if __name__ == "__main__":
                 />
 
                 {/* Thinking Toasts - Rendered outside ReactFlow with screen coordinates */}
-                {reactFlowInstance && nodes.map((node) => {
-                  // Skip ping nodes entirely
-                  if (node.data.label === 'ping' || node.data.label?.toLowerCase().includes('ping')) {
-                    return null;
-                  }
-
-                  const status = nodeExecutionStatuses[node.data.label];
-
-                  // Skip if no status
-                  if (!status) {
-                    return null;
-                  }
-
-                  // Show for running/thinking nodes with content, or recently completed
-                  const hasThinkingContent = status.thinking && status.thinking.trim().length > 0;
-                  const hasToolActivity = status.activeTool ||
-                    (status.toolCompleted && status.toolCompletedTime &&
-                      (Date.now() - status.toolCompletedTime < 2000));
-
-                  const isActive = (status.state === 'running' || status.state === 'thinking') &&
-                    (hasThinkingContent || hasToolActivity);
-
-                  const isRecentlyCompleted = status.state === 'completed' && status.endTime &&
-                    (Date.now() - new Date(status.endTime).getTime() < 3000) &&
-                    (hasThinkingContent || hasToolActivity);
-
-                  if (!isActive && !isRecentlyCompleted) {
-                    return null;
-                  }
-
-                  // Validate node position (must be valid numbers, not NaN/undefined)
-                  if (
-                    typeof node.position.x !== 'number' ||
-                    typeof node.position.y !== 'number' ||
-                    isNaN(node.position.x) ||
-                    isNaN(node.position.y)
-                  ) {
-                    return null;
-                  }
-
-                  // Calculate position in flow coordinates
-                  const flowX = node.position.x + (node.width || 200) / 2;
-                  const flowY = node.position.y + (node.height || 100) + 20; // 20px below node
-
-                  // Convert flow coordinates to screen coordinates
-                  let screenPosition;
-                  try {
-                    screenPosition = reactFlowInstance.flowToScreenPosition({
-                      x: flowX,
-                      y: flowY
-                    });
-                  } catch (error) {
-                    console.warn('[WorkflowCanvas] flowToScreenPosition failed:', error);
-                    return null;
-                  }
-
-                  // Skip if screen position is invalid (can happen during initial render)
-                  if (!screenPosition ||
-                    typeof screenPosition.x !== 'number' ||
-                    typeof screenPosition.y !== 'number' ||
-                    isNaN(screenPosition.x) ||
-                    isNaN(screenPosition.y)) {
-                    console.warn('[WorkflowCanvas] Invalid screen position:', screenPosition, 'for node:', node.data.label);
-                    return null;
-                  }
-
-                  // Determine what to display
-                  let displayText = status.thinking;
-                  let showToolStatus = false;
-
-                  // Check for recently completed tool (show for 2 seconds)
-                  if (status.toolCompleted && status.toolCompletedTime &&
-                    (Date.now() - status.toolCompletedTime < 2000)) {
-                    showToolStatus = true;
-                  }
-
-                  // Check for active tool
-                  if (status.activeTool) {
-                    showToolStatus = true;
-                  }
-
-                  // Only show toast if thinking stream is enabled AND there's something to display
-                  if (!showThinkingStream || (!displayText && !showToolStatus)) {
-                    return null;
-                  }
-
-                  return (
-                    <ThinkingToast
-                      key={`thinking-${node.id}`}
-                      text={displayText}
-                      nodePosition={screenPosition}
-                      isVisible={true}
-                      agentName={node.data.label}
-                      executionState={status.state === 'idle' ? undefined : status.state}
-                      activeTool={status.activeTool}
-                      toolCompleted={status.toolCompleted && status.toolCompletedTime &&
-                        (Date.now() - status.toolCompletedTime < 2000) ? status.toolCompleted : undefined}
-                      zoom={currentZoom}
-                      nodeWidth={node.width || 200}
-                    />
-                  );
-                })}
+                <ThinkingToastRenderer
+                  nodes={nodes}
+                  nodeExecutionStatuses={nodeExecutionStatuses}
+                  reactFlowInstance={reactFlowInstance}
+                  showThinkingStream={showThinkingStream}
+                  currentZoom={currentZoom}
+                />
               </>
             )}
 
             {/* Floating Total Cost Panel - Top Right */}
-            {activeTab === 'studio' && (() => {
-              // Calculate total cost from all nodes
-              const totalCost = Object.values(nodeTokenCosts).reduce((sum, cost) => {
-                // Parse cost string (e.g., "$0.0234" -> 0.0234)
-                const costValue = parseFloat(cost.costString.replace('$', '')) || 0;
-                return sum + costValue;
-              }, 0);
-
-              const totalTokens = Object.values(nodeTokenCosts).reduce((sum, cost) => sum + (cost.totalTokens || 0), 0);
-
-              // Only show if there's any cost data
-              if (totalTokens === 0) return null;
-
-              return (
-                <div
-                  className="absolute top-4 z-40 transition-all duration-300 pointer-events-none"
-                  style={{
-                    right: onNodeSelect ? '420px' : '20px', // Shift left when node config panel is open
-                  }}
-                >
-                  <div
-                    className="rounded-lg shadow-xl border-2 pointer-events-auto"
-                    style={{
-                      backgroundColor: 'var(--color-panel-dark)',
-                      borderColor: 'var(--color-primary)',
-                    }}
-                  >
-                    <div className="px-4 py-2">
-                      <div className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                        Total Workflow Cost
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold font-mono" style={{ color: 'var(--color-primary)' }}>
-                          ${totalCost.toFixed(4)}
-                        </span>
-                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          {totalTokens.toLocaleString()} tokens
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            {activeTab === 'studio' && (
+              <TotalCostPanel
+                nodeTokenCosts={nodeTokenCosts}
+                isNodeConfigPanelOpen={!!onNodeSelect}
+              />
+            )}
           </div>
 
           {/* Results Tab - Extracted to WorkflowResults component */}
