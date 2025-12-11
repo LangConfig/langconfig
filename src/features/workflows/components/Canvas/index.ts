@@ -37,6 +37,8 @@ export { useFileHandling } from './hooks/useFileHandling';
 export { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 export { useVersionManagement } from './hooks/useVersionManagement';
 export { useTaskHistory } from './hooks/useTaskHistory';
+export { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
+export { useNodeManagement } from './hooks/useNodeManagement';
 export type { TaskFile } from './hooks/useFileHandling';
 
 // Context
