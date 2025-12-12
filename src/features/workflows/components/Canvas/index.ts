@@ -45,9 +45,10 @@ export { useWorkflowCompletion } from './hooks/useWorkflowCompletion';
 export { useToolsAndActions } from './hooks/useToolsAndActions';
 export { useTokenCostInfo } from './hooks/useTokenCostInfo';
 export { useUIToggles } from './hooks/useUIToggles';
+export { useExecutionHandlers } from './hooks/useExecutionHandlers';
+export { useSaveToLibrary } from './hooks/useSaveToLibrary';
 export type { TaskFile } from './hooks/useFileHandling';
 export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';
-export type { TokenCostInfo } from './hooks/useTokenCostInfo';
 
 // Context
 export { WorkflowCanvasContext, useWorkflowCanvasContext } from './context';

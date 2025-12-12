@@ -56,6 +56,8 @@ import { useContextMenus } from './hooks/useContextMenus';
 import { useWorkflowCompletion } from './hooks/useWorkflowCompletion';
 import { useToolsAndActions } from './hooks/useToolsAndActions';
 import { useTokenCostInfo } from './hooks/useTokenCostInfo';
+import { useExecutionHandlers } from './hooks/useExecutionHandlers';
+import { useSaveToLibrary } from './hooks/useSaveToLibrary';
 
 interface Agent {
   id: string;
@@ -330,14 +332,23 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     openNodeContextMenu,
   } = useContextMenus();
 
-  // Save to library modal state
-  const [showSaveToLibraryModal, setShowSaveToLibraryModal] = useState(false);
-  const [saveToLibraryData, setSaveToLibraryData] = useState<{
-    nodeId: string;
-    nodeData: NodeData;
-  } | null>(null);
-  const [agentLibraryName, setAgentLibraryName] = useState('');
-  const [agentLibraryDescription, setAgentLibraryDescription] = useState('');
+  // Use extracted hook for save to library functionality
+  const {
+    showSaveToLibraryModal,
+    agentLibraryName,
+    agentLibraryDescription,
+    setAgentLibraryName,
+    setAgentLibraryDescription,
+    handleSaveToAgentLibrary,
+    handleConfirmSaveToLibrary,
+    handleCloseSaveToLibraryModal,
+  } = useSaveToLibrary({
+    setNodes,
+    setNodeContextMenu,
+    showWarning,
+    showSuccess,
+    logError,
+  });
 
   // Chat with unsaved agent warning modal
   const [showChatWarningModal, setShowChatWarningModal] = useState(false);
@@ -782,114 +793,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     } catch (error: any) {
       console.error('Failed to delete task:', error);
       alert(`Failed to delete task: ${error.response?.data?.detail || error.message}`);
-    }
-  };
-
-  // Handle saving node as agent template to library
-  const handleSaveToAgentLibrary = (nodeId: string, nodeData: NodeData) => {
-    const suggestedName = `${nodeData.label} (Copy)`;
-    setAgentLibraryName(suggestedName);
-    setAgentLibraryDescription('');
-    setSaveToLibraryData({ nodeId, nodeData });
-    setShowSaveToLibraryModal(true);
-    setNodeContextMenu(null);
-  };
-
-  const handleConfirmSaveToLibrary = async (saveAsCopy: boolean = false) => {
-    if (!saveToLibraryData || !agentLibraryName.trim()) return;
-
-    const { nodeId, nodeData } = saveToLibraryData;
-
-    // Check if this agent came from the library (has deep_agent_template_id)
-    const existingAgentId = nodeData.config?.deep_agent_template_id;
-    const shouldUpdate = existingAgentId && !saveAsCopy;
-
-    try {
-      const configPayload = {
-        model: nodeData.config.model,
-        temperature: nodeData.config.temperature ?? 0.7,
-        max_tokens: nodeData.config.max_tokens || 4000,
-        system_prompt: nodeData.config.system_prompt || '',
-        tools: nodeData.config.tools || [],
-        native_tools: nodeData.config.native_tools || [],
-        cli_tools: nodeData.config.cli_tools || [],
-        custom_tools: nodeData.config.custom_tools || [],
-        middleware: nodeData.config.middleware || [],
-        subagents: nodeData.config.subagents || [],
-        backend: {
-          type: 'state',
-          config: {},
-          mappings: null
-        },
-        guardrails: {
-          interrupts: {},
-          token_limits: {
-            max_total_tokens: 100000,
-            eviction_threshold: 80000,
-            summarization_threshold: 60000
-          },
-          enable_auto_eviction: true,
-          enable_summarization: true,
-          long_term_memory: false
-        }
-      };
-
-      let savedAgentId: number;
-
-      if (shouldUpdate) {
-        // UPDATE existing agent - preserves chat context
-        await apiClient.updateDeepAgent(existingAgentId, {
-          name: agentLibraryName.trim(),
-          description: agentLibraryDescription.trim() || 'Custom agent template',
-          config: configPayload
-        });
-        savedAgentId = existingAgentId;
-
-        // Show warning that this affects other workflows
-        showWarning(`Agent updated. This change affects all workflows using "${agentLibraryName}".`);
-      } else {
-        // CREATE new agent copy
-        const agentTemplate = {
-          name: agentLibraryName.trim(),
-          description: agentLibraryDescription.trim() || 'Custom agent template',
-          category: 'workflow',
-          config: configPayload
-        };
-
-        const response = await apiClient.createDeepAgent(agentTemplate);
-        savedAgentId = response.data?.id;
-        showSuccess(`Agent "${agentLibraryName}" saved to library!`);
-      }
-
-      // Update the node with the saved agent ID and new name
-      setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === nodeId) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                label: agentLibraryName.trim(),
-                deepAgentId: savedAgentId,
-                config: {
-                  ...node.data.config,
-                  deepAgentId: savedAgentId,
-                  deep_agent_template_id: savedAgentId,
-                }
-              }
-            };
-          }
-          return node;
-        })
-      );
-
-      setShowSaveToLibraryModal(false);
-      setSaveToLibraryData(null);
-      setAgentLibraryName('');
-      setAgentLibraryDescription('');
-    } catch (error: any) {
-      console.error('Failed to save agent to library:', error);
-      logError('Failed to save agent', error.response?.data?.detail || error.message);
     }
   };
 
@@ -1683,217 +1586,31 @@ if __name__ == "__main__":
     return () => window.removeEventListener('keydown', handleEscape);
   }, [showExecutionDialog]);
 
-  const handleRun = async () => {
-    if (nodes.length === 0) {
-      showWarning('Please add at least one agent to the workflow before running.');
-      return;
-    }
-
-    // Check if workflow is already running
-    if (executionStatus.state === 'running') {
-      const shouldCancel = window.confirm(
-        'A workflow is already running. Do you want to cancel it and start a new execution?'
-      );
-
-      if (shouldCancel) {
-        await handleStop();
-        // Wait a moment for cleanup
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } else {
-        return; // User chose to wait
-      }
-    }
-
-    // Show execution dialog immediately - we'll validate on execution
-    setShowExecutionDialog(true);
-  };
-
-  const handleStop = async () => {
-    if (!currentTaskId) {
-      showWarning('No running workflow to stop.');
-      return;
-    }
-
-    try {
-      await apiClient.cancelTask(currentTaskId);
-
-      // CRITICAL: Clear the task ID so events stop coming
-      setCurrentTaskId(null);
-      localStorage.removeItem('langconfig-current-task-id');
-
-      // DON'T clear events - keep them visible for debugging
-      // clearEvents(); // Removed to allow debugging of stopped workflows
-
-      // Update execution status to stopped
-      setExecutionStatus({
-        state: 'idle',
-        currentNode: '',
-        progress: 0,
-        startTime: '',
-        duration: '0s',
-      });
-
-      // Force clear all node statuses
-      setNodes((nds) =>
-        nds.map((node) => ({
-          ...node,
-          data: {
-            ...node.data,
-            executionStatus: {
-              state: 'idle',
-              thinking: '',
-              thinkingPreview: '',
-            },
-          },
-        }))
-      );
-    } catch (error: any) {
-      console.error('Failed to cancel workflow:', error);
-      logError('Failed to cancel workflow', error.response?.data?.detail || error.message);
-    }
-  };
-
-  const executeWorkflow = async () => {
-    setShowExecutionDialog(false);
-
-    // Find the START node or the first node with no incoming edges
-    const startNode = nodes.find(n => n.data.agentType === 'START_NODE') ||
-      nodes.find(n => !edges.some(e => e.target === n.id)) ||
-      nodes[0];
-
-    setExecutionStatus({
-      state: 'running',
-      currentNode: startNode?.data.label,
-      progress: 0,
-      startTime: new Date().toLocaleTimeString(),
-      duration: '0s',
-    });
-
-    if (onExecutionStart) {
-      onExecutionStart();
-    }
-
-    try {
-      // Make sure we have a workflow ID - always save/update before executing
-      let workflowIdToExecute = currentWorkflowId;
-
-      const configuration = {
-        nodes: nodes.map(n => ({
-          id: n.id,
-          type: n.data.label.toLowerCase().replace(/\s+/g, '_'),
-          config: {
-            model: n.data.config?.model || 'gpt-4o-mini',
-            temperature: n.data.config?.temperature ?? 0.7,
-            system_prompt: n.data.config?.system_prompt || '',
-            // Legacy tools field
-            tools: n.data.config?.tools || [],
-            // CRITICAL: Propagate native_tools and custom_tools for agent factory
-            native_tools: n.data.config?.native_tools || [],
-            cli_tools: n.data.config?.cli_tools || [],
-            custom_tools: n.data.config?.custom_tools || [],
-            enable_model_routing: n.data.config?.enable_model_routing ?? false,
-            enable_parallel_tools: n.data.config?.enable_parallel_tools ?? true,
-            enable_memory: n.data.config?.enable_memory ?? false,
-            enable_rag: n.data.config?.enable_rag ?? false,
-            // Ensure recursion limit is passed if set
-            recursion_limit: n.data.config?.recursion_limit,
-            // Pass pause settings
-            pauseBefore: n.data.config?.pauseBefore ?? false,
-            pauseAfter: n.data.config?.pauseAfter ?? false,
-            // DeepAgent support: pass use_deepagents flag and subagent configs
-            use_deepagents: n.data.config?.use_deepagents ?? false,
-            subagents: n.data.config?.subagents || []
-          }
-        })),
-        edges: edges.map(e => ({
-          source: e.source,
-          target: e.target
-        }))
-      };
-
-      if (workflowIdToExecute) {
-        // UPDATE existing workflow
-        await apiClient.updateWorkflow(workflowIdToExecute, {
-          configuration
-        });
-      } else {
-        // CREATE new workflow
-        const workflowData = {
-          name: `Workflow ${Date.now()}`,
-          configuration
-        };
-
-        const saveResponse = await apiClient.createWorkflow(workflowData);
-        workflowIdToExecute = saveResponse.data.id;
-        setCurrentWorkflowId(workflowIdToExecute);
-      }
-
-      // Clear previous execution events to prepare for new run
-      // SSE connection stays alive across executions
-      clearEvents();
-
-      // Execute workflow with user-provided context
-      const response = await apiClient.executeWorkflow({
-        workflow_id: workflowIdToExecute as number,
-        project_id: activeProjectId || 0, // Use active project if available, 0 for standalone
-        input_data: {
-          query: executionConfig.directive,
-          task: executionConfig.task || executionConfig.directive,
-          additional_context: additionalContext || '',
-          checkpointer_enabled: checkpointerEnabled,
-          recursion_limit: globalRecursionLimit,
-          // Configurable execution limits (use defaults if not set,  backend enforces bounds)
-          max_events: executionConfig.max_events || 10000,  // Default: 10k events
-          timeout_seconds: executionConfig.timeout_seconds || 600  // Default: 10 minutes
-        },
-        context_documents: contextDocuments,
-      });
-
-      // Save task ID for monitoring and persist to localStorage
-      setCurrentTaskId(response.data.task_id);
-      localStorage.setItem('langconfig-current-task-id', response.data.task_id.toString());
-
-      // Set execution to running state
-      setExecutionStatus(prev => ({
-        ...prev,
-        state: 'running',
-        startTime: new Date().toISOString(),
-      }));
-
-      // Auto-open live execution panel when workflow runs
-      setShowLiveExecutionPanel(true);
-
-      // Close node config panel by deselecting all nodes
-      onNodeSelect?.(null, null);
-
-    } catch (error: any) {
-      console.error('Workflow execution error:', error);
-
-      // Extract detailed error information (preserved for future error handling)
-      let _errorMessage = 'Unknown error';
-      let _errorDetails = '';
-
-      if (error.response?.data) {
-        // API error response
-        const errData = error.response.data;
-        _errorMessage = errData.detail || errData.message || 'Execution failed';
-        if (errData.error) _errorDetails = errData.error;
-        if (errData.traceback) _errorDetails += `\n\nTraceback:\n${errData.traceback}`;
-      } else if (error.message) {
-        _errorMessage = error.message;
-      }
-
-      void _errorMessage; // Reserved for future error UI
-      void _errorDetails;
-
-      setExecutionStatus(prev => ({
-        ...prev,
-        state: 'failed',
-      }));
-    } finally {
-      // Execution complete
-    }
-  };
+  // Use extracted hook for execution handlers
+  const { handleRun, handleStop, executeWorkflow } = useExecutionHandlers({
+    nodes,
+    edges,
+    currentWorkflowId,
+    currentTaskId,
+    executionStatus,
+    executionConfig,
+    additionalContext,
+    checkpointerEnabled,
+    globalRecursionLimit,
+    contextDocuments,
+    activeProjectId,
+    setCurrentWorkflowId,
+    setCurrentTaskId,
+    setExecutionStatus,
+    setShowExecutionDialog,
+    setShowLiveExecutionPanel,
+    setNodes,
+    clearEvents,
+    showWarning,
+    logError,
+    onExecutionStart,
+    onNodeSelect,
+  });
 
   // Helper to generate a hash of the workflow state, excluding visual properties like position
   // This ensures that moving nodes doesn't trigger "unsaved changes"
@@ -2848,10 +2565,7 @@ if __name__ == "__main__":
           {/* Save to Agent Library Modal */}
           <SaveToLibraryModal
             isOpen={showSaveToLibraryModal}
-            onClose={() => {
-              setShowSaveToLibraryModal(false);
-              setSaveToLibraryData(null);
-            }}
+            onClose={handleCloseSaveToLibraryModal}
             onSave={handleConfirmSaveToLibrary}
             agentName={agentLibraryName}
             setAgentName={setAgentLibraryName}
