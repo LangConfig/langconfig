@@ -247,15 +247,15 @@ def install_playwright():
 def seed_agent_templates():
     """Seed default agent templates."""
     print_step("Seeding agent templates...")
-    
+
     root = get_project_root()
     backend_path = root / "backend"
     init_script = backend_path / "db" / "init_deepagents.py"
-    
+
     if not init_script.exists():
         print_warning("Agent template seed script not found - skipping")
         return True
-    
+
     try:
         subprocess.run(
             [sys.executable, str(init_script)],
@@ -265,6 +265,29 @@ def seed_agent_templates():
         return True
     except subprocess.CalledProcessError as e:
         print_warning(f"Template seeding failed (non-fatal): {e}")
+        return True
+
+def seed_custom_tools():
+    """Seed default custom tools (Nano Banana, etc.)."""
+    print_step("Seeding custom tools...")
+
+    root = get_project_root()
+    backend_path = root / "backend"
+    init_script = backend_path / "db" / "init_custom_tools.py"
+
+    if not init_script.exists():
+        print_warning("Custom tool seed script not found - skipping")
+        return True
+
+    try:
+        subprocess.run(
+            [sys.executable, str(init_script)],
+            cwd=backend_path, check=True
+        )
+        print_success("Custom tools seeded (Nano Banana Pro, etc.)")
+        return True
+    except subprocess.CalledProcessError as e:
+        print_warning(f"Custom tool seeding failed (non-fatal): {e}")
         return True
 
 def print_next_steps():
@@ -339,7 +362,10 @@ def main():
     
     # Seed templates
     seed_agent_templates()
-    
+
+    # Seed custom tools
+    seed_custom_tools()
+
     # Playwright (optional)
     if not args.db_only and not args.skip_playwright:
         install_playwright()

@@ -276,7 +276,13 @@ export function useWorkflowStream(
       'hitl_approved',
       'hitl_rejected',
       'recursion_limit_hit',
-      'keepalive'
+      'keepalive',
+      // Tool progress events (for long-running tools)
+      'tool_progress',
+      // Debug mode events (detailed tracing when workflow.debug_mode is enabled)
+      'debug_state_transition',
+      'debug_checkpoint',
+      'debug_graph_state',
     ];
 
     eventTypes.forEach((eventType) => {

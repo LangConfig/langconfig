@@ -42,7 +42,6 @@ import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
 import ChatWarningModal from './dialogs/ChatWarningModal';
 import WorkflowResults from './results/WorkflowResults';
 import WorkflowToolbar from './toolbar/WorkflowToolbar';
-import TabNavigation from './toolbar/TabNavigation';
 import NodeContextMenu from './menus/NodeContextMenu';
 import TaskContextMenu from './menus/TaskContextMenu';
 import EmptyCanvasState from './EmptyCanvasState';
@@ -64,6 +63,7 @@ import { useResultsState } from './hooks/useResultsState';
 import { useNodeManagement } from './hooks/useNodeManagement';
 import { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
 import { useTaskManagement } from './hooks/useTaskManagement';
+import { TaskHistoryEntry } from './types';
 
 interface Agent {
   id: string;
@@ -169,6 +169,10 @@ interface WorkflowCanvasProps {
   onTabChange?: (tab: 'studio' | 'results') => void;
   initialTab?: 'studio' | 'results';
   onTokenCostUpdate?: (tokenInfo: { totalTokens: number; promptTokens: number; completionTokens: number; costString: string; }) => void;
+  // Task history callbacks for left sidebar
+  onTaskHistoryUpdate?: (tasks: TaskHistoryEntry[]) => void;
+  onSelectedTaskChange?: (task: TaskHistoryEntry | null) => void;
+  externalSelectedTask?: TaskHistoryEntry | null;
 }
 
 const initialNodes: Node[] = [];
@@ -191,7 +195,10 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   workflowId,
   onTabChange,
   initialTab,
-  onTokenCostUpdate
+  onTokenCostUpdate,
+  onTaskHistoryUpdate,
+  onSelectedTaskChange,
+  externalSelectedTask,
 }, ref) => {
   const { showSuccess, logError, showWarning, NotificationModal } = useNotification();
   const { openChat } = useChat();
@@ -312,6 +319,27 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
       });
     }, []),
   });
+
+  // Sync task history to parent component (for left sidebar)
+  useEffect(() => {
+    if (onTaskHistoryUpdate) {
+      onTaskHistoryUpdate(taskHistory);
+    }
+  }, [taskHistory, onTaskHistoryUpdate]);
+
+  // Sync selected task changes to parent
+  useEffect(() => {
+    if (onSelectedTaskChange && selectedHistoryTask) {
+      onSelectedTaskChange(selectedHistoryTask);
+    }
+  }, [selectedHistoryTask, onSelectedTaskChange]);
+
+  // Handle external task selection (from left sidebar)
+  useEffect(() => {
+    if (externalSelectedTask && externalSelectedTask.id !== selectedHistoryTask?.id) {
+      setSelectedHistoryTask(externalSelectedTask);
+    }
+  }, [externalSelectedTask, selectedHistoryTask?.id, setSelectedHistoryTask]);
 
   // Use extracted hook for context menu state management
   const {
@@ -1619,35 +1647,25 @@ if __name__ == "__main__":
           loadingVersions={loadingVersions}
           handleLoadVersion={handleLoadVersion}
           handleToggleSettingsModal={handleToggleSettingsModal}
-          executionStatus={executionStatus}
-          currentTaskId={currentTaskId}
-          handleRun={handleRun}
-          handleStop={handleStop}
-          handleClear={handleClear}
-        />
-
-        {/* Tab Navigation */}
-        {nodes.length > 0 && (
-          <TabNavigation
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            taskHistoryCount={taskHistory.length}
-            filesCount={files.length}
-            hasUnsavedChanges={hasUnsavedChanges}
-            currentWorkflowId={currentWorkflowId}
-            onResultsTabClick={() => {
+          // Tab props (merged from TabNavigation)
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            handleTabChange(tab);
+            if (tab === 'results') {
               setShowExecutionDialog(false);
               if (executionStatus.state !== 'running') {
                 setCurrentTaskId(null);
                 localStorage.removeItem('langconfig-current-task-id');
               }
-            }}
-            onFilesTabClick={() => {
+            } else if (tab === 'files') {
               setShowExecutionDialog(false);
               fetchFiles();
-            }}
-          />
-        )}
+            }
+          }}
+          taskHistoryCount={taskHistory.length}
+          filesCount={files.length}
+          hasUnsavedChanges={hasUnsavedChanges}
+        />
 
         {/* Canvas Area */}
         <div className="flex-1 bg-gray-50 dark:bg-background-dark relative overflow-hidden" id="workflow-canvas-container">
@@ -1716,6 +1734,11 @@ if __name__ == "__main__":
                     onToggleLiveExecutionPanel={handleToggleLiveExecutionPanel}
                     onToggleThinkingStream={handleToggleThinkingStream}
                     onDebugWorkflow={handleDebugWorkflow}
+                    executionStatus={executionStatus}
+                    currentTaskId={currentTaskId}
+                    onRun={handleRun}
+                    onStop={handleStop}
+                    onClear={handleClear}
                   />
 
                   {/* Workflow Settings Modal */}

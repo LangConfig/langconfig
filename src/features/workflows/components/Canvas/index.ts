@@ -13,7 +13,7 @@ export type { WorkflowCanvasRef } from './WorkflowCanvas';
 export { default as CustomNode } from './nodes/CustomNode';
 export { default as WorkflowResults } from './results/WorkflowResults';
 export { default as WorkflowToolbar } from './toolbar/WorkflowToolbar';
-export { default as TabNavigation } from './toolbar/TabNavigation';
+// TabNavigation is deprecated - merged into WorkflowToolbar
 export { default as NodeContextMenu } from './menus/NodeContextMenu';
 export { default as TaskContextMenu } from './menus/TaskContextMenu';
 export { default as EmptyCanvasState } from './EmptyCanvasState';

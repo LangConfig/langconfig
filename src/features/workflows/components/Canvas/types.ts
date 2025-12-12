@@ -192,6 +192,7 @@ export interface TaskHistoryEntry {
   created_at: string;
   completed_at?: string;
   duration_seconds?: number;
+  user_input?: string;  // The user's prompt/directive
   input_data?: any;
   formatted_input?: string;
   result?: any;

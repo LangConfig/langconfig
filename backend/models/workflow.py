@@ -77,10 +77,13 @@ class WorkflowProfile(Base, OptimisticLockMixin):
         nullable=False
     )
 
-    # Export status tracking 
+    # Export status tracking
     export_status = Column(String(50), nullable=True)  # 'pending', 'in_progress', 'completed', 'failed'
     export_error = Column(Text, nullable=True)  # Error message if export failed
     last_export_at = Column(DateTime(timezone=True), nullable=True)  # Last successful export timestamp
+
+    # Debug mode - when enabled, emits additional state transition events during execution
+    debug_mode = Column(Boolean, default=False, nullable=False)
 
     @validates('name')
     def validate_name(self, key, value):
