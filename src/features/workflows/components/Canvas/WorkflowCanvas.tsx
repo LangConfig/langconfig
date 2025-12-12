@@ -27,7 +27,6 @@ import { useWorkflowStream } from '../../../../hooks/useWorkflowStream';
 import { useNodeExecutionStatus, NodeExecutionStatus } from '../../../../hooks/useNodeExecutionStatus';
 import { useProject } from '../../../../contexts/ProjectContext';
 import { useNotification } from '../../../../hooks/useNotification';
-import { analyzeWorkflowEvents } from '../../../../utils/workflowErrorDetector';
 import { useChat } from '../../../chat/context/ChatContext';
 import CustomNode from './nodes/CustomNode';
 import { WorkflowCanvasContext } from './context';
@@ -60,9 +59,9 @@ import { useFileHandling } from './hooks/useFileHandling';
 import { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 import { useVersionManagement } from './hooks/useVersionManagement';
 import { useResultsState } from './hooks/useResultsState';
-// Future hooks ready for integration:
-// import { useWorkflowManagement } from './hooks/useWorkflowManagement';
-// import { useTaskManagement } from './hooks/useTaskManagement';
+import { useNodeManagement } from './hooks/useNodeManagement';
+import { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
+import { useTaskManagement } from './hooks/useTaskManagement';
 
 interface Agent {
   id: string;
@@ -230,14 +229,15 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     if (hash === 'results') return 'results';
     return 'studio';
   });
-  const [taskHistory, setTaskHistory] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [executionStatus, setExecutionStatus] = useState({
-    state: 'idle' as 'idle' | 'running' | 'completed' | 'failed',
-    currentNode: undefined as string | undefined,
+  const [executionStatus, setExecutionStatus] = useState<{
+    state: 'idle' | 'running' | 'completed' | 'failed';
+    currentNode?: string;
+    progress: number;
+    startTime?: string;
+    duration?: string;
+  }>({
+    state: 'idle',
     progress: 0,
-    startTime: undefined as string | undefined,
-    duration: undefined as string | undefined,
   });
   const [showExecutionDialog, setShowExecutionDialog] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
@@ -275,38 +275,39 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setExpandedToolCalls,
   } = useResultsState();
 
-  // Replay panel state (kept separate as it affects streaming)
-  const [showReplayPanel, setShowReplayPanel] = useState(false);
-  const [replayTaskId, setReplayTaskId] = useState<number | null>(null);
-
   // Workflow Settings
   const [globalRecursionLimit, setGlobalRecursionLimit] = useState(300);
 
-  // Per-node token costs stored by node label (persists across node deletions/recreations)
-  const [nodeTokenCosts, setNodeTokenCosts] = useState<Record<string, {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-    costString: string;
-  }>>(() => {
-    // Load from localStorage on mount
-    if (currentWorkflowId) {
-      const saved = localStorage.getItem(`workflow-${currentWorkflowId}-token-costs`);
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          console.error('Failed to parse saved token costs:', e);
-        }
-      }
-    }
-    return {};
-  });
-  const [selectedHistoryTask, setSelectedHistoryTask] = useState<any>(null); // Selected task from history sidebar
-  const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(() => {
-    // Load from localStorage
-    const saved = localStorage.getItem('workflow-history-collapsed');
-    return saved ? JSON.parse(saved) : false; // Default to expanded
+  // nodeTokenCosts is now managed by useWorkflowEventProcessing hook
+
+  // Use extracted hook for task management (history, replay panel, selection)
+  const {
+    taskHistory,
+    loadingHistory,
+    selectedHistoryTask,
+    setSelectedHistoryTask,
+    isHistoryCollapsed,
+    setIsHistoryCollapsed,
+    fetchTaskHistory,
+    handleDeleteTask,
+    resetTaskHistory,
+    showReplayPanel,
+    setShowReplayPanel,
+    replayTaskId,
+    setReplayTaskId,
+  } = useTaskManagement({
+    currentWorkflowId,
+    showSuccess,
+    logError,
+    onRunningTaskFound: useCallback((taskInfo: { id: number; created_at: string }) => {
+      // Restore execution state when a running task is found
+      setCurrentTaskId(taskInfo.id);
+      setExecutionStatus({
+        state: 'running',
+        progress: 0,
+        startTime: taskInfo.created_at,
+      });
+    }, []),
   });
 
   // Use extracted hook for context menu state management
@@ -317,6 +318,19 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setNodeContextMenu,
     openNodeContextMenu,
   } = useContextMenus();
+
+  // Use extracted hook for node management (click, delete, config updates)
+  // Note: setNodeTokenCosts is passed later after useWorkflowEventProcessing hook
+  const {
+    handleNodeClick,
+    handleNodeDelete,
+    updateNodeConfig,
+  } = useNodeManagement({
+    setNodes,
+    setEdges,
+    onNodeSelect,
+    onNodeDelete,
+  });
 
   // Use extracted hook for save to library functionality
   const {
@@ -524,122 +538,18 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   );
 
-  // Analyze events for errors and warnings, attach to nodes
-  const [nodeWarnings, setNodeWarnings] = useState<Record<string, Array<{ type: string; severity: 'warning' | 'error'; message: string }>>>({});
-
-  useEffect(() => {
-    if (workflowEvents.length > 0) {
-      // Analyze workflow events for common issues
-      const diagnoses = analyzeWorkflowEvents(workflowEvents);
-
-      // Map diagnoses to nodes
-      const warningsMap: Record<string, Array<{ type: string; severity: 'warning' | 'error'; message: string }>> = {};
-
-      diagnoses.forEach(diagnosis => {
-        // Get node ID from diagnosis or find the relevant node
-        const nodeId = diagnosis.nodeId || 'unknown';
-
-        if (!warningsMap[nodeId]) {
-          warningsMap[nodeId] = [];
-        }
-
-        warningsMap[nodeId].push({
-          type: diagnosis.type,
-          severity: diagnosis.severity,
-          message: diagnosis.message
-        });
-
-        // DISABLED: Don't show error popups - user wants uninterrupted stream
-        // if (diagnosis.severity === 'error') {
-        //   logError(diagnosis.message, diagnosis.suggestion);
-        // }
-      });
-
-      setNodeWarnings(warningsMap);
-
-      // Check for errors in the events (for logging only - errors are displayed in LiveExecutionPanel)
-      const errorEvents = workflowEvents.filter(e => e.type === 'error');
-      if (errorEvents.length > 0) {
-        const latestError = errorEvents[errorEvents.length - 1];
-        console.error('[WorkflowCanvas] Workflow error detected:', latestError.data);
-      }
-
-      // Check for complete event with error status - stop execution spinner
-      const completeEvent = workflowEvents.find(e => e.type === 'complete');
-      if (completeEvent?.data?.status === 'error') {
-        console.log('[WorkflowCanvas] Workflow completed with error status:', completeEvent.data?.error);
-        // Stop execution state if still running
-        if (executionStatus.state === 'running') {
-          setExecutionStatus({
-            state: 'failed',
-            currentNode: undefined,
-            progress: 0,
-            startTime: executionStatus.startTime,
-            duration: executionStatus.duration,
-          });
-        }
-      }
-
-      // Check for warnings (e.g., short agent outputs)
-      // DISABLED: Don't show popup warnings during live execution
-      // const warningEvents = workflowEvents.filter(e => e.type === 'warning');
-      // warningEvents.forEach(warning => {
-      //   showWarning(warning.data.message, `Suggestion: ${warning.data.suggestion}`);
-      // });
-
-      // Process node_completed events to update token costs
-      const nodeCompletedEvents = workflowEvents.filter(e => e.type === 'node_completed');
-      if (nodeCompletedEvents.length > 0) {
-        nodeCompletedEvents.forEach(event => {
-          const agentLabel = event.data?.agent_label;
-          const tokenCost = event.data?.tokenCost;
-
-          if (agentLabel && tokenCost) {
-            setNodeTokenCosts(prev => {
-              // Only update if different to avoid unnecessary re-renders
-              if (prev[agentLabel]?.totalTokens === tokenCost.totalTokens) {
-                return prev;
-              }
-              return {
-                ...prev,
-                [agentLabel]: {
-                  promptTokens: tokenCost.promptTokens || 0,
-                  completionTokens: tokenCost.completionTokens || 0,
-                  totalTokens: tokenCost.totalTokens || 0,
-                  costString: tokenCost.costString || '$0.00'
-                }
-              };
-            });
-          }
-        });
-      }
-    }
-  }, [workflowEvents, latestEvent, executionStatus.state]);
-
-  // Handle recursion limit - continue with new limit
-  // Save nodeTokenCosts to localStorage whenever they change
-  useEffect(() => {
-    if (currentWorkflowId && Object.keys(nodeTokenCosts).length > 0) {
-      localStorage.setItem(`workflow-${currentWorkflowId}-token-costs`, JSON.stringify(nodeTokenCosts));
-    }
-  }, [nodeTokenCosts, currentWorkflowId]);
-
-  // Update nodeTokenCosts when execution status has token cost data
-  useEffect(() => {
-    Object.entries(nodeExecutionStatuses).forEach(([nodeLabel, status]) => {
-      if (status.tokenCost) {
-        setNodeTokenCosts(prev => {
-          // Only update if different to avoid unnecessary re-renders
-          if (prev[nodeLabel]?.totalTokens === status.tokenCost?.totalTokens) {
-            return prev;
-          }
-          const newCosts = { ...prev };
-          newCosts[nodeLabel] = status.tokenCost!;
-          return newCosts;
-        });
-      }
-    });
-  }, [nodeExecutionStatuses]);
+  // Use extracted hook for workflow event processing (warnings, token costs, error handling)
+  const {
+    nodeWarnings,
+    nodeTokenCosts,
+  } = useWorkflowEventProcessing({
+    workflowEvents,
+    latestEvent,
+    executionStatus,
+    setExecutionStatus,
+    currentWorkflowId,
+    nodeExecutionStatuses,
+  });
 
   // Update nodes with execution status whenever it changes - OPTIMIZED to only update changed nodes
   useEffect(() => {
@@ -770,39 +680,23 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   }, [currentWorkflowId]);
 
-  // Save history collapsed state to localStorage
-  useEffect(() => {
-    localStorage.setItem('workflow-history-collapsed', JSON.stringify(isHistoryCollapsed));
-  }, [isHistoryCollapsed]);
-
-  // Handle task deletion
-  const handleDeleteTask = async (taskId: number) => {
+  // Handle task deletion with confirmation
+  const handleDeleteTaskWithConfirm = async (taskId: number) => {
     if (!confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
       return;
     }
 
-    try {
-      await apiClient.deleteTask(taskId);
-
-      // Refresh task history
-      await fetchTaskHistory();
-
-      // Clear selected task if it was deleted
-      if (selectedHistoryTask?.id === taskId) {
-        setSelectedHistoryTask(null);
-      }
-
-      // Close replay panel if viewing deleted task
-      if (replayTaskId === taskId) {
-        setShowReplayPanel(false);
-        setReplayTaskId(null);
-      }
-
-      setTaskContextMenu(null);
-    } catch (error: any) {
-      console.error('Failed to delete task:', error);
-      alert(`Failed to delete task: ${error.response?.data?.detail || error.message}`);
+    // Close replay panel if viewing deleted task
+    if (replayTaskId === taskId) {
+      setShowReplayPanel(false);
+      setReplayTaskId(null);
     }
+
+    // Close context menu
+    setTaskContextMenu(null);
+
+    // Delete through hook (handles history update and notification)
+    await handleDeleteTask(taskId);
   };
 
   // Handle duplicating a node
@@ -915,38 +809,6 @@ if __name__ == "__main__":
     } catch (error: any) {
       console.error('Failed to copy code:', error);
       logError('Failed to copy code', error.message);
-    }
-  };
-
-  const fetchTaskHistory = async () => {
-    if (!currentWorkflowId) return;
-
-    setLoadingHistory(true);
-    try {
-      const response = await apiClient.getWorkflowHistory(currentWorkflowId, 50, 0);
-      const tasks = response.data.tasks || [];
-      setTaskHistory(tasks);
-
-      // Check if there's a running task and restore execution state
-      const runningTask = tasks.find((task: any) =>
-        task.status === 'running' || task.status === 'pending'
-      );
-
-      if (runningTask) {
-        setCurrentTaskId(runningTask.id);
-        setExecutionStatus({
-          state: 'running',
-          currentNode: undefined,
-          progress: 0,
-          startTime: runningTask.created_at,
-          duration: undefined,
-        });
-        // Events will auto-load from historical data via useWorkflowStream
-      }
-    } catch (err) {
-      console.error('Failed to fetch task history:', err);
-    } finally {
-      setLoadingHistory(false);
     }
   };
 
@@ -1422,88 +1284,7 @@ if __name__ == "__main__":
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRecipe, onRecipeInserted, reactFlowInstance, nodeIdCounter]);
 
-  // Handle node selection
-  const handleNodeClick = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
-      if (onNodeSelect) {
-        onNodeSelect(node.id, node.data as NodeData);
-      }
-    },
-    [onNodeSelect]
-  );
-
-  // Handle node deletion
-  const handleNodeDelete = useCallback((nodeId: string) => {
-    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-
-    // Notify parent if callback provided
-    if (onNodeDelete) {
-      onNodeDelete(nodeId);
-    }
-  }, [onNodeDelete, setNodes, setEdges]);
-
-  // Update node config function (exposed via ref)
-  const updateNodeConfig = useCallback((nodeId: string, newConfig: any) => {
-    console.log(`[WorkflowCanvas] updateNodeConfig called for node ${nodeId}:`, {
-      native_tools: newConfig.native_tools,
-      custom_tools: newConfig.custom_tools
-    });
-
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === nodeId) {
-          const oldLabel = node.data.label;
-          const newLabel = newConfig.label || newConfig.name || oldLabel;
-
-          // If label changed, transfer token costs to new label
-          if (newLabel !== oldLabel && oldLabel) {
-            setNodeTokenCosts(prev => {
-              const tokenCost = prev[oldLabel];
-              if (tokenCost) {
-                const updated = { ...prev };
-                delete updated[oldLabel];
-                updated[newLabel] = tokenCost;
-                return updated;
-              }
-              return prev;
-            });
-          }
-
-          // Create a completely new node object to force React Flow to detect the change
-          return {
-            ...node,
-            // Force re-render by creating new data object
-            data: {
-              ...node.data,
-              label: newLabel,
-              agentType: newConfig.agentType || node.data.agentType,
-              model: newConfig.model || node.data.model, // Update top-level model
-              config: {
-                ...node.data.config,
-                ...newConfig,
-                model: newConfig.model || node.data.config?.model, // Ensure model is in config too
-                temperature: newConfig.temperature !== undefined ? newConfig.temperature : node.data.config?.temperature,
-                max_tokens: newConfig.max_tokens !== undefined ? newConfig.max_tokens : node.data.config?.max_tokens,
-                max_retries: newConfig.max_retries !== undefined ? newConfig.max_retries : node.data.config?.max_retries,
-                recursion_limit: newConfig.recursion_limit !== undefined ? newConfig.recursion_limit : node.data.config?.recursion_limit,
-                system_prompt: newConfig.system_prompt !== undefined ? newConfig.system_prompt : node.data.config?.system_prompt,
-                // Explicitly update tools arrays to ensure reactivity
-                native_tools: newConfig.native_tools !== undefined ? newConfig.native_tools : node.data.config?.native_tools,
-                tools: newConfig.tools !== undefined ? newConfig.tools : node.data.config?.tools,
-                custom_tools: newConfig.custom_tools !== undefined ? newConfig.custom_tools : node.data.config?.custom_tools,
-                enable_memory: newConfig.enable_memory !== undefined ? newConfig.enable_memory : node.data.config?.enable_memory,
-                enable_rag: newConfig.enable_rag !== undefined ? newConfig.enable_rag : node.data.config?.enable_rag,
-              },
-              // Add a timestamp to ensure React Flow sees this as a new object
-              _lastUpdated: Date.now()
-            }
-          };
-        }
-        return node;
-      })
-    );
-  }, [setNodes, setNodeTokenCosts]);
+  // Node management (handleNodeClick, handleNodeDelete, updateNodeConfig) now provided by useNodeManagement hook
 
   // Load available documents when dialog opens
   useEffect(() => {
@@ -1572,8 +1353,7 @@ if __name__ == "__main__":
       duration: '0s',
     });
     setCurrentTaskId(null);
-    setTaskHistory([]);
-    setSelectedHistoryTask(null);
+    resetTaskHistory();
     localStorage.removeItem('langconfig-workflow-id');
     localStorage.removeItem('langconfig-current-task-id');
   }, [setNodes, setEdges]);
@@ -1784,8 +1564,7 @@ if __name__ == "__main__":
         duration: '0s',
       });
       setCurrentTaskId(null);
-      setTaskHistory([]);
-      setSelectedHistoryTask(null);
+      resetTaskHistory();
       localStorage.setItem('langconfig-workflow-id', String(response.data.id));
 
       // Refresh workflow list
@@ -2004,7 +1783,7 @@ if __name__ == "__main__":
               setIsHistoryCollapsed={setIsHistoryCollapsed}
               taskContextMenu={taskContextMenu}
               setTaskContextMenu={setTaskContextMenu}
-              handleDeleteTask={handleDeleteTask}
+              handleDeleteTask={handleDeleteTaskWithConfirm}
               showReplayPanel={showReplayPanel}
               setShowReplayPanel={setShowReplayPanel}
               replayTaskId={replayTaskId}
@@ -2122,7 +1901,7 @@ if __name__ == "__main__":
             x={taskContextMenu.x}
             y={taskContextMenu.y}
             taskId={taskContextMenu.taskId}
-            onDeleteTask={handleDeleteTask}
+            onDeleteTask={handleDeleteTaskWithConfirm}
           />
         )}
 

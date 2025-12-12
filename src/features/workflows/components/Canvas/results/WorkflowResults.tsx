@@ -18,6 +18,7 @@ import { getFileIcon } from '../../../utils/fileHelpers';
 import InlineFilePreview, { FileContent } from '../../Execution/InlineFilePreview';
 import RealtimeExecutionPanel from '../../Execution/RealtimeExecutionPanel';
 import { ContentBlockRenderer } from '../../../../../components/common/ContentBlockRenderer';
+import { TaskHistoryEntry } from '../types';
 import { exportToPDF } from '../../../../../utils/exportHelpers';
 import apiClient from '../../../../../lib/api-client';
 
@@ -31,17 +32,6 @@ interface TaskFile {
   extension: string;
 }
 
-interface TaskHistoryEntry {
-  id: number;
-  workflow_id: number;
-  status: string;
-  created_at: string;
-  completed_at?: string;
-  duration_seconds?: number;
-  result?: any;
-  formatted_input?: string;
-  input_data?: any;
-}
 
 interface WorkflowVersion {
   id: number;

@@ -7,17 +7,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import apiClient from '../../../../../lib/api-client';
-
-interface TaskHistoryEntry {
-  id: number;
-  task_id: number;
-  status: string;
-  created_at: string;
-  completed_at?: string;
-  input_data?: any;
-  result?: any;
-  error?: string;
-}
+import { TaskHistoryEntry } from '../types';
 
 interface RunningTaskInfo {
   id: number;
@@ -29,6 +19,7 @@ interface UseTaskManagementOptions {
   showSuccess: (message: string) => void;
   logError: (title: string, detail?: string) => void;
   onRunningTaskFound?: (taskInfo: RunningTaskInfo) => void;
+  onTaskDeleted?: () => void;
 }
 
 export function useTaskManagement({
@@ -36,6 +27,7 @@ export function useTaskManagement({
   showSuccess,
   logError,
   onRunningTaskFound,
+  onTaskDeleted,
 }: UseTaskManagementOptions) {
   // Task history state
   const [taskHistory, setTaskHistory] = useState<TaskHistoryEntry[]>([]);
@@ -52,13 +44,6 @@ export function useTaskManagement({
   // Replay panel state
   const [showReplayPanel, setShowReplayPanel] = useState(false);
   const [replayTaskId, setReplayTaskId] = useState<number | null>(null);
-
-  // Task context menu state
-  const [taskContextMenu, setTaskContextMenu] = useState<{
-    x: number;
-    y: number;
-    taskId: number;
-  } | null>(null);
 
   // Persist collapsed state
   useEffect(() => {
@@ -115,15 +100,15 @@ export function useTaskManagement({
         setSelectedHistoryTask(null);
       }
 
-      // Close context menu
-      setTaskContextMenu(null);
-
       showSuccess('Task deleted successfully');
+
+      // Notify parent about deletion for any cleanup
+      onTaskDeleted?.();
     } catch (error: any) {
       console.error('Failed to delete task:', error);
       logError('Failed to delete task', error.response?.data?.detail || error.message);
     }
-  }, [selectedHistoryTask, showSuccess, logError]);
+  }, [selectedHistoryTask, showSuccess, logError, onTaskDeleted]);
 
   // Select a task from history
   const handleSelectTask = useCallback((task: TaskHistoryEntry | null) => {
@@ -149,17 +134,15 @@ export function useTaskManagement({
 
   // Toggle history sidebar collapsed state
   const toggleHistoryCollapsed = useCallback(() => {
-    setIsHistoryCollapsed(prev => !prev);
+    setIsHistoryCollapsed((prev: boolean) => !prev);
   }, []);
 
-  // Open task context menu
-  const openTaskContextMenu = useCallback((x: number, y: number, taskId: number) => {
-    setTaskContextMenu({ x, y, taskId });
-  }, []);
-
-  // Close task context menu
-  const closeTaskContextMenu = useCallback(() => {
-    setTaskContextMenu(null);
+  // Reset task history (e.g., when creating a new workflow)
+  const resetTaskHistory = useCallback(() => {
+    setTaskHistory([]);
+    setSelectedHistoryTask(null);
+    setShowReplayPanel(false);
+    setReplayTaskId(null);
   }, []);
 
   return {
@@ -173,6 +156,7 @@ export function useTaskManagement({
     toggleHistoryCollapsed,
     fetchTaskHistory,
     handleDeleteTask,
+    resetTaskHistory,
 
     // Replay panel
     showReplayPanel,
@@ -181,11 +165,5 @@ export function useTaskManagement({
     setReplayTaskId,
     handleOpenReplay,
     handleCloseReplay,
-
-    // Context menu
-    taskContextMenu,
-    setTaskContextMenu,
-    openTaskContextMenu,
-    closeTaskContextMenu,
   };
 }

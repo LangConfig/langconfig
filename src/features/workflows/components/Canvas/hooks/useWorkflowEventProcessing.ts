@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, SetStateAction, Dispatch } from 'react';
 import { analyzeWorkflowEvents } from '../../../../../utils/workflowErrorDetector';
 
 interface NodeTokenCost {
@@ -33,8 +33,9 @@ interface UseWorkflowEventProcessingOptions {
   workflowEvents: any[];
   latestEvent: any;
   executionStatus: ExecutionStatus;
-  setExecutionStatus: (status: ExecutionStatus) => void;
+  setExecutionStatus: Dispatch<SetStateAction<ExecutionStatus>>;
   currentWorkflowId: number | null;
+  nodeExecutionStatuses: Record<string, { tokenCost?: NodeTokenCost }>;
 }
 
 interface UseWorkflowEventProcessingReturn {
@@ -52,6 +53,7 @@ export function useWorkflowEventProcessing({
   executionStatus,
   setExecutionStatus,
   currentWorkflowId,
+  nodeExecutionStatuses,
 }: UseWorkflowEventProcessingOptions): UseWorkflowEventProcessingReturn {
   // Node warnings from event analysis
   const [nodeWarnings, setNodeWarnings] = useState<Record<string, NodeWarning[]>>({});
@@ -155,6 +157,23 @@ export function useWorkflowEventProcessing({
       localStorage.setItem(`workflow-${currentWorkflowId}-token-costs`, JSON.stringify(nodeTokenCosts));
     }
   }, [nodeTokenCosts, currentWorkflowId]);
+
+  // Update nodeTokenCosts when execution status has token cost data
+  useEffect(() => {
+    Object.entries(nodeExecutionStatuses).forEach(([nodeLabel, status]) => {
+      if (status.tokenCost) {
+        setNodeTokenCosts(prev => {
+          // Only update if different to avoid unnecessary re-renders
+          if (prev[nodeLabel]?.totalTokens === status.tokenCost?.totalTokens) {
+            return prev;
+          }
+          const newCosts = { ...prev };
+          newCosts[nodeLabel] = status.tokenCost!;
+          return newCosts;
+        });
+      }
+    });
+  }, [nodeExecutionStatuses]);
 
   return {
     nodeWarnings,

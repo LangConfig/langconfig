@@ -18,7 +18,7 @@ interface NodeTokenCost {
 interface UseNodeManagementOptions {
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
-  setNodeTokenCosts: React.Dispatch<React.SetStateAction<Record<string, NodeTokenCost>>>;
+  setNodeTokenCosts?: React.Dispatch<React.SetStateAction<Record<string, NodeTokenCost>>>;
   onNodeSelect?: (nodeId: string, nodeData: any) => void;
   onNodeDelete?: (nodeId: string) => void;
 }
@@ -74,7 +74,7 @@ export function useNodeManagement({
           const newLabel = newConfig.label || newConfig.name || oldLabel;
 
           // If label changed, transfer token costs to new label
-          if (newLabel !== oldLabel && oldLabel) {
+          if (newLabel !== oldLabel && oldLabel && setNodeTokenCosts) {
             setNodeTokenCosts(prev => {
               const tokenCost = prev[oldLabel];
               if (tokenCost) {

@@ -186,10 +186,14 @@ export interface ExecutionConfig {
  */
 export interface TaskHistoryEntry {
   id: number;
-  workflow_id: number;
+  task_id: number;
+  workflow_id?: number;
   status: string;
   created_at: string;
   completed_at?: string;
+  duration_seconds?: number;
+  input_data?: any;
+  formatted_input?: string;
   result?: any;
   error?: string;
 }

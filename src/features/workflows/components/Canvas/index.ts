@@ -36,7 +36,8 @@ export { useWorkflowExecution } from './hooks/useWorkflowExecution';
 export { useFileHandling } from './hooks/useFileHandling';
 export { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 export { useVersionManagement } from './hooks/useVersionManagement';
-export { useTaskHistory } from './hooks/useTaskHistory';
+// useTaskHistory is deprecated - use useTaskManagement instead
+export { useTaskManagement } from './hooks/useTaskManagement';
 export { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
 export { useNodeManagement } from './hooks/useNodeManagement';
 export { useWorkflowMetrics } from './hooks/useWorkflowMetrics';
@@ -48,7 +49,6 @@ export { useUIToggles } from './hooks/useUIToggles';
 export { useExecutionHandlers } from './hooks/useExecutionHandlers';
 export { useSaveToLibrary } from './hooks/useSaveToLibrary';
 export { useWorkflowManagement } from './hooks/useWorkflowManagement';
-export { useTaskManagement } from './hooks/useTaskManagement';
 export { useResultsState } from './hooks/useResultsState';
 export type { TaskFile } from './hooks/useFileHandling';
 export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';
