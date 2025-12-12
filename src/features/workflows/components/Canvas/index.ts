@@ -42,8 +42,12 @@ export { useNodeManagement } from './hooks/useNodeManagement';
 export { useWorkflowMetrics } from './hooks/useWorkflowMetrics';
 export { useContextMenus } from './hooks/useContextMenus';
 export { useWorkflowCompletion } from './hooks/useWorkflowCompletion';
+export { useToolsAndActions } from './hooks/useToolsAndActions';
+export { useTokenCostInfo } from './hooks/useTokenCostInfo';
+export { useUIToggles } from './hooks/useUIToggles';
 export type { TaskFile } from './hooks/useFileHandling';
 export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';
+export type { TokenCostInfo } from './hooks/useTokenCostInfo';
 
 // Context
 export { WorkflowCanvasContext, useWorkflowCanvasContext } from './context';
