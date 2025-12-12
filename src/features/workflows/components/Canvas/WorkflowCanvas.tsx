@@ -23,7 +23,6 @@ import apiClient from '../../../../lib/api-client';
 import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
-import { FileContent } from '../Execution/InlineFilePreview';
 import { validateWorkflow } from '../../../../lib/workflow-validator';
 import { validateNodePosition } from '../../../../utils/validation';
 import { useWorkflowStream } from '../../../../hooks/useWorkflowStream';
@@ -58,6 +57,8 @@ import { useToolsAndActions } from './hooks/useToolsAndActions';
 import { useTokenCostInfo } from './hooks/useTokenCostInfo';
 import { useExecutionHandlers } from './hooks/useExecutionHandlers';
 import { useSaveToLibrary } from './hooks/useSaveToLibrary';
+import { useUIToggles } from './hooks/useUIToggles';
+import { useFileHandling } from './hooks/useFileHandling';
 
 interface Agent {
   id: string;
@@ -170,15 +171,7 @@ const initialEdges: Edge[] = [];
 
 // Custom Node Component is imported from ./nodes/CustomNode.tsx
 // WorkflowCanvasContext is imported from ./context.ts
-
-interface TaskFile {
-  filename: string;
-  path: string;
-  size_bytes: number;
-  size_human: string;
-  modified_at: string;
-  extension: string;
-}
+// TaskFile type is imported from ./hooks/useFileHandling
 
 // nodeTypes will be memoized inside the component using imported CustomNode
 
@@ -267,10 +260,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const hasLoadedRef = useRef(false);
   const isDraggingRef = useRef(false); // Track if user is currently dragging a node
   const [workflowName, setWorkflowName] = useState('Untitled Workflow');
-  const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(workflowName);
-  const [showWorkflowDropdown, setShowWorkflowDropdown] = useState(false);
-  const [workflowSearchQuery, setWorkflowSearchQuery] = useState('');
   const [showCreateWorkflowModal, setShowCreateWorkflowModal] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
 
@@ -278,22 +268,12 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
   const [showRawOutput, setShowRawOutput] = useState(false);
   const [resultsSubTab, setResultsSubTab] = useState<'output' | 'memory' | 'files'>('output'); // Results subtabs
-  const [files, setFiles] = useState<TaskFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState<string | null>(null);
-  const [selectedPreviewFile, setSelectedPreviewFile] = useState<TaskFile | null>(null);
-  const [filePreviewContent, setFilePreviewContent] = useState<FileContent | null>(null);
-  const [filePreviewLoading, setFilePreviewLoading] = useState(false);
-  const [showThinkingStream, setShowThinkingStream] = useState(false); // Toggle for thinking toast notifications on canvas
-  const [showLiveExecutionPanel, setShowLiveExecutionPanel] = useState(false); // Toggle for live execution panel
   const [showAnimatedReveal, setShowAnimatedReveal] = useState(true);
   const [showReplayPanel, setShowReplayPanel] = useState(false); // Toggle for execution log replay
   const [replayTaskId, setReplayTaskId] = useState<number | null>(null); // Task ID for replay panel
 
   // Workflow Settings
-  const [checkpointerEnabled, setCheckpointerEnabled] = useState(false);
   const [globalRecursionLimit, setGlobalRecursionLimit] = useState(300);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Per-node token costs stored by node label (persists across node deletions/recreations)
   const [nodeTokenCosts, setNodeTokenCosts] = useState<Record<string, {
@@ -348,6 +328,48 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     showWarning,
     showSuccess,
     logError,
+  });
+
+  // Use extracted hook for UI toggle states
+  const {
+    showWorkflowDropdown,
+    setShowWorkflowDropdown,
+    handleToggleWorkflowDropdown,
+    handleCloseWorkflowDropdown,
+    showSettingsModal,
+    handleToggleSettingsModal,
+    handleCloseSettingsModal,
+    showThinkingStream,
+    handleToggleThinkingStream,
+    showLiveExecutionPanel,
+    setShowLiveExecutionPanel,
+    handleToggleLiveExecutionPanel,
+    checkpointerEnabled,
+    handleToggleCheckpointer,
+    workflowSearchQuery,
+    setWorkflowSearchQuery,
+    handleWorkflowSearchChange,
+    isEditingName,
+    setIsEditingName,
+    handleStartEditingName,
+  } = useUIToggles();
+
+  // Use extracted hook for file handling
+  const {
+    files,
+    filesLoading,
+    filesError,
+    selectedPreviewFile,
+    filePreviewContent,
+    filePreviewLoading,
+    fetchFiles,
+    handleDownloadFile,
+    handleFileSelect,
+    closeFilePreview,
+  } = useFileHandling({
+    currentTaskId,
+    activeTab,
+    resultsSubTab,
   });
 
   // Chat with unsaved agent warning modal
@@ -606,71 +628,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setActiveTab(newTab);
     onTabChange?.(newTab);
   }, [onTabChange]);
-
-  // Fetch files for the current task
-  const fetchFiles = useCallback(async () => {
-    if (!currentTaskId) return;
-
-    setFilesLoading(true);
-    setFilesError(null);
-
-    try {
-      const response = await fetch(`/api/workspace/tasks/${currentTaskId}/files`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch files');
-      }
-
-      const data = await response.json();
-      setFiles(data.files || []);
-    } catch (error) {
-      console.error('Error fetching files:', error);
-      setFilesError(error instanceof Error ? error.message : 'Failed to load files');
-    } finally {
-      setFilesLoading(false);
-    }
-  }, [currentTaskId]);
-
-  // Download a file from the workspace
-  const handleDownloadFile = useCallback((filename: string) => {
-    if (!currentTaskId) return;
-    window.open(`/api/workspace/tasks/${currentTaskId}/files/${filename}`, '_blank');
-  }, [currentTaskId]);
-
-  // Fetch file content for preview
-  const fetchFileContent = useCallback(async (file: TaskFile) => {
-    setFilePreviewLoading(true);
-    try {
-      const url = `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch content');
-      const data = await response.json();
-      setFilePreviewContent(data);
-    } catch (error) {
-      console.error('Error fetching file content:', error);
-      setFilePreviewContent(null);
-    } finally {
-      setFilePreviewLoading(false);
-    }
-  }, []);
-
-  // Handle file selection for preview
-  const handleFileSelect = useCallback((file: TaskFile) => {
-    setSelectedPreviewFile(file);
-    fetchFileContent(file);
-  }, [fetchFileContent]);
-
-  // Close file preview
-  const closeFilePreview = useCallback(() => {
-    setSelectedPreviewFile(null);
-    setFilePreviewContent(null);
-  }, []);
-
-  // Fetch files when Results tab is active and Files subtab is selected
-  useEffect(() => {
-    if (activeTab === 'results' && resultsSubTab === 'files' && currentTaskId) {
-      fetchFiles();
-    }
-  }, [activeTab, resultsSubTab, currentTaskId, fetchFiles]);
 
   // Re-center canvas when execution starts and animate edges
   useEffect(() => {
@@ -1520,44 +1477,6 @@ if __name__ == "__main__":
       })
     );
   }, [setNodes, setNodeTokenCosts]);
-
-  // Memoized event handlers to prevent unnecessary re-renders
-  const handleToggleWorkflowDropdown = useCallback(() => {
-    setShowWorkflowDropdown(prev => !prev);
-  }, []);
-
-  const handleCloseWorkflowDropdown = useCallback(() => {
-    setShowWorkflowDropdown(false);
-  }, []);
-
-  const handleToggleSettingsModal = useCallback(() => {
-    setShowSettingsModal(prev => !prev);
-  }, []);
-
-  const handleCloseSettingsModal = useCallback(() => {
-    setShowSettingsModal(false);
-  }, []);
-
-  const handleToggleThinkingStream = useCallback(() => {
-    setShowThinkingStream(prev => !prev);
-  }, []);
-
-  const handleToggleLiveExecutionPanel = useCallback(() => {
-    setShowLiveExecutionPanel(prev => !prev);
-  }, []);
-
-  const handleToggleCheckpointer = useCallback(() => {
-    setCheckpointerEnabled(prev => !prev);
-  }, []);
-
-  const handleWorkflowSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setWorkflowSearchQuery(e.target.value);
-  }, []);
-
-  const handleStartEditingName = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditingName(true);
-  }, []);
 
   // Load available documents when dialog opens
   useEffect(() => {
