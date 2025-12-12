@@ -52,6 +52,9 @@ import EmptyCanvasState from './EmptyCanvasState';
 import CanvasControlPanel from './panels/CanvasControlPanel';
 import TotalCostPanel from './panels/TotalCostPanel';
 import ThinkingToastRenderer from './panels/ThinkingToastRenderer';
+import { useWorkflowMetrics } from './hooks/useWorkflowMetrics';
+import { useContextMenus } from './hooks/useContextMenus';
+import { useWorkflowCompletion } from './hooks/useWorkflowCompletion';
 
 interface Agent {
   id: string;
@@ -317,20 +320,14 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     return saved ? JSON.parse(saved) : false; // Default to expanded
   });
 
-  // Context menu state for task deletion
-  const [taskContextMenu, setTaskContextMenu] = useState<{
-    taskId: number;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // Context menu state for node operations
-  const [nodeContextMenu, setNodeContextMenu] = useState<{
-    nodeId: string;
-    nodeData: NodeData;
-    x: number;
-    y: number;
-  } | null>(null);
+  // Use extracted hook for context menu state management
+  const {
+    taskContextMenu,
+    setTaskContextMenu,
+    nodeContextMenu,
+    setNodeContextMenu,
+    openNodeContextMenu,
+  } = useContextMenus();
 
   // Save to library modal state
   const [showSaveToLibraryModal, setShowSaveToLibraryModal] = useState(false);
@@ -738,86 +735,11 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     return 'default';
   }, [currentWorkflowId, availableWorkflows, nodes]);
 
-  const workflowMetrics = useMemo(() => {
-    const chainEnds = workflowEvents.filter(e => e.type === 'on_chain_end').length;
-    const toolCalls = workflowEvents.filter(e => e.type === 'on_tool_start').length;
-    const agentActions = workflowEvents.filter(e => e.type === 'on_agent_action').length;
-    const llmCalls = workflowEvents.filter(e => e.type === 'on_llm_end').length;
-    const errors = workflowEvents.filter(e => e.type === 'error').length;
-
-    let totalTokens = 0;
-    workflowEvents.filter(e => e.type === 'on_llm_end').forEach(e => {
-      if (e.data?.tokens_used) {
-        totalTokens += e.data.tokens_used;
-      }
-    });
-
-    const firstEvent = workflowEvents[0];
-    const lastEvent = workflowEvents[workflowEvents.length - 1];
-    let duration = '0s';
-    if (firstEvent && lastEvent && firstEvent.timestamp && lastEvent.timestamp) {
-      const start = new Date(firstEvent.timestamp).getTime();
-      const end = new Date(lastEvent.timestamp).getTime();
-      const durationMs = end - start;
-      const seconds = Math.floor(durationMs / 1000);
-      const minutes = Math.floor(seconds / 60);
-      if (minutes > 0) {
-        duration = `${minutes}m ${seconds % 60}s`;
-      } else {
-        duration = `${seconds}s`;
-      }
-    }
-
-    return {
-      totalEvents: workflowEvents.length,
-      chainEnds,
-      toolCalls,
-      agentActions,
-      llmCalls,
-      totalTokens,
-      errors,
-      duration
-    };
-  }, [workflowEvents]);
-
-  // Log workflow metrics for debugging/analytics
-  useEffect(() => {
-    if (workflowMetrics.totalEvents > 0) {
-      console.log('[WorkflowCanvas] Workflow Metrics Updated:', workflowMetrics);
-    }
-  }, [workflowMetrics]);
-
-  // Detect workflow completion from events
-  useEffect(() => {
-    if (workflowEvents.length > 0) {
-      const lastEvent = workflowEvents[workflowEvents.length - 1];
-
-      // Check for completion or error
-      if (lastEvent.type === 'complete') {
-        setExecutionStatus(prev => ({
-          ...prev,
-          state: 'completed',
-          progress: 100,
-        }));
-
-        // Refresh task history to get the new result
-        fetchTaskHistory();
-
-        // Auto-switch to results tab when workflow completes successfully
-        setTimeout(() => {
-          handleTabChange('results');
-        }, 500); // Small delay to ensure history is fetched
-      }
-      // DISABLED: Don't stop stream on error events - let workflow complete naturally
-      // else if (lastEvent.type === 'error') {
-      //   setExecutionStatus(prev => ({
-      //     ...prev,
-      //     state: 'failed',
-      //     progress: 0,
-      //   }));
-      // }
-    }
-  }, [workflowEvents]);
+  // Use extracted hook for workflow metrics calculation
+  const workflowMetrics = useWorkflowMetrics({
+    workflowEvents,
+    enableLogging: true,
+  });
 
   // Callback to update status from monitoring panel
   // Fetch task history when workflow loads or changes
@@ -831,23 +753,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   useEffect(() => {
     localStorage.setItem('workflow-history-collapsed', JSON.stringify(isHistoryCollapsed));
   }, [isHistoryCollapsed]);
-
-  // Close context menus when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (taskContextMenu) {
-        setTaskContextMenu(null);
-      }
-      if (nodeContextMenu) {
-        setNodeContextMenu(null);
-      }
-    };
-
-    if (taskContextMenu || nodeContextMenu) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [taskContextMenu, nodeContextMenu]);
 
   // Handle task deletion
   const handleDeleteTask = async (taskId: number) => {
@@ -1131,6 +1036,14 @@ if __name__ == "__main__":
       setLoadingHistory(false);
     }
   };
+
+  // Use extracted hook for workflow completion detection
+  useWorkflowCompletion({
+    workflowEvents,
+    setExecutionStatus,
+    fetchTaskHistory,
+    onComplete: () => handleTabChange('results'),
+  });
 
   // Fetch available documents for context
   useEffect(() => {
@@ -2852,11 +2765,6 @@ if __name__ == "__main__":
       showWarning(`Failed to create workflow: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
     }
   }, [newWorkflowName, setNodes, setEdges, showSuccess, showWarning]);
-
-  // Handler to open node context menu
-  const openNodeContextMenu = useCallback((nodeId: string, nodeData: NodeData, x: number, y: number) => {
-    setNodeContextMenu({ nodeId, nodeData, x, y });
-  }, []);
 
   return (
     <WorkflowCanvasContext.Provider value={{ updateNodeConfig, openNodeContextMenu }}>

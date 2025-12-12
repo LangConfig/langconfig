@@ -39,7 +39,11 @@ export { useVersionManagement } from './hooks/useVersionManagement';
 export { useTaskHistory } from './hooks/useTaskHistory';
 export { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
 export { useNodeManagement } from './hooks/useNodeManagement';
+export { useWorkflowMetrics } from './hooks/useWorkflowMetrics';
+export { useContextMenus } from './hooks/useContextMenus';
+export { useWorkflowCompletion } from './hooks/useWorkflowCompletion';
 export type { TaskFile } from './hooks/useFileHandling';
+export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';
 
 // Context
 export { WorkflowCanvasContext, useWorkflowCanvasContext } from './context';
