@@ -20,10 +20,8 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import apiClient from '../../../../lib/api-client';
-import { ConflictErrorClass } from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
-import { validateWorkflow } from '../../../../lib/workflow-validator';
 import { validateNodePosition } from '../../../../utils/validation';
 import { useWorkflowStream } from '../../../../hooks/useWorkflowStream';
 import { useNodeExecutionStatus, NodeExecutionStatus } from '../../../../hooks/useNodeExecutionStatus';
@@ -59,6 +57,8 @@ import { useExecutionHandlers } from './hooks/useExecutionHandlers';
 import { useSaveToLibrary } from './hooks/useSaveToLibrary';
 import { useUIToggles } from './hooks/useUIToggles';
 import { useFileHandling } from './hooks/useFileHandling';
+import { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
+import { useVersionManagement } from './hooks/useVersionManagement';
 
 interface Agent {
   id: string;
@@ -218,13 +218,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     return savedTaskId ? parseInt(savedTaskId, 10) : null;
   });
 
-  // Optimistic Locking
-  const [currentLockVersion, setCurrentLockVersion] = useState<number>(1);
-  const [showConflictDialog, setShowConflictDialog] = useState(false);
-  const [conflictData, setConflictData] = useState<{
-    localData: any;
-    remoteData: any;
-  } | null>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
   const [activeTab, setActiveTab] = useState<'studio' | 'results'>(() => {
@@ -381,24 +374,70 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveWorkflowName, setSaveWorkflowName] = useState('');
 
-  // Version management state
-  const [versions, setVersions] = useState<any[]>([]);
-  const [currentVersion, setCurrentVersion] = useState<any | null>(null);
-  const [showVersionModal, setShowVersionModal] = useState(false);
-  const [versionNotes, setVersionNotes] = useState('');
-  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
-  const [showDebugModal, setShowDebugModal] = useState(false);  // ADDED: Debug workflow modal
-  const [debugData, setDebugData] = useState<any>(null);  // ADDED: Debug data from backend
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);  // Track unsaved changes
-  const [lastSavedState, setLastSavedState] = useState<string>('');  // Track last saved state for comparison
+  // Use extracted hook for workflow persistence (save, conflict resolution)
+  const {
+    currentLockVersion: _currentLockVersion, // Used internally by hook for optimistic locking
+    hasUnsavedChanges,
+    showConflictDialog,
+    conflictData,
+    setCurrentLockVersion: _setCurrentLockVersion, // Used internally
+    setHasUnsavedChanges: _setHasUnsavedChanges, // Used internally
+    handleSave,
+    handleConflictResolve,
+    handleWorkflowNameSave: updateWorkflowName, // Renamed to avoid conflict with local wrapper
+    markAsSaved: _markAsSaved, // Used internally
+    getWorkflowStateHash: _getWorkflowStateHash, // Used internally
+  } = useWorkflowPersistence({
+    nodes,
+    edges,
+    currentWorkflowId,
+    setNodes,
+    setEdges,
+    setWorkflowName,
+    setEditedName,
+    showSuccess,
+    logError,
+    onShowSaveModal: () => setShowSaveModal(true),
+  });
 
-  // Version comparison state
-  const [compareMode, setCompareMode] = useState(false);
-  const [compareVersion1, setCompareVersion1] = useState<any | null>(null);
-  const [compareVersion2, setCompareVersion2] = useState<any | null>(null);
-  const [versionComparison, setVersionComparison] = useState<any | null>(null);
-  const [loadingComparison, setLoadingComparison] = useState(false);
+  // Debug modal state (separate from versioning)
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [debugData, setDebugData] = useState<any>(null);
+
+  // Use extracted hook for version management
+  const {
+    versions,
+    currentVersion,
+    loadingVersions,
+    showVersionModal,
+    versionNotes,
+    showVersionDropdown,
+    compareMode,
+    compareVersion1,
+    compareVersion2,
+    versionComparison,
+    loadingComparison,
+    setVersionNotes,
+    setShowVersionDropdown,
+    setCompareMode,
+    setCompareVersion1,
+    setCompareVersion2,
+    loadVersions: _loadVersions, // Used internally by hook
+    handleSaveVersion,
+    handleSaveVersionConfirm,
+    handleLoadVersion,
+    handleCompareVersions,
+    handleCloseVersionModal,
+  } = useVersionManagement({
+    currentWorkflowId,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    showSuccess,
+    showWarning,
+    logError,
+  });
 
   // Memoize nodeTypes to prevent React Flow warnings about recreation
   const nodeTypes = useMemo(() => ({
@@ -944,32 +983,7 @@ if __name__ == "__main__":
     }
   }, [showWorkflowDropdown]);
 
-  // Fetch workflow details and lock_version when workflowId changes
-  useEffect(() => {
-    const fetchWorkflowDetails = async () => {
-      if (!currentWorkflowId) return;
-
-      try {
-        const response = await apiClient.getWorkflow(currentWorkflowId);
-        const workflow = response.data;
-
-        // Update lock_version for optimistic locking
-        if (workflow.lock_version !== undefined) {
-          setCurrentLockVersion(workflow.lock_version);
-        }
-
-        // Update workflow name if available
-        if (workflow.name) {
-          setWorkflowName(workflow.name);
-          setEditedName(workflow.name);
-        }
-      } catch (error) {
-        console.error('Failed to fetch workflow details:', error);
-      }
-    };
-
-    fetchWorkflowDetails();
-  }, [currentWorkflowId]);
+  // Workflow details (lock_version, name) are now fetched by useWorkflowPersistence hook
 
   // Use extracted hook for tool and action extraction
   const toolsAndActions = useToolsAndActions({
@@ -1531,273 +1545,6 @@ if __name__ == "__main__":
     onNodeSelect,
   });
 
-  // Helper to generate a hash of the workflow state, excluding visual properties like position
-  // This ensures that moving nodes doesn't trigger "unsaved changes"
-  const getWorkflowStateHash = useCallback((nodes: Node[], edges: Edge[]) => {
-    const sanitizedNodes = nodes.map(node => ({
-      id: node.id,
-      type: node.type,
-      data: node.data,
-      // Exclude position, selected, dragging, width, height, etc.
-    }));
-
-    const sanitizedEdges = edges.map(edge => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      // Exclude visual properties
-    }));
-
-    return JSON.stringify({ nodes: sanitizedNodes, edges: sanitizedEdges });
-  }, []);
-
-  const handleSave = useCallback(async (silent: boolean = false) => {
-    if (nodes.length === 0) return;
-
-    // Validate workflow before saving
-    const validation = validateWorkflow(nodes, edges);
-
-    if (!validation.isValid) {
-      // Only show error popup if not silent mode
-      if (!silent) {
-        const errorMessages = validation.errors.map((e) => e.message).join('\n');
-        logError('Cannot save workflow', errorMessages);
-      }
-      return;
-    }
-
-    // Show warnings if any (only in manual save, not auto-save)
-    if (!silent && validation.warnings.length > 0) {
-      const warningMessages = validation.warnings.map((w) => w.message).join('\n');
-      const proceed = confirm(
-        `Workflow has warnings:\n\n${warningMessages}\n\nDo you want to continue?`
-      );
-      if (!proceed) return;
-    }
-
-    // Extract configuration from nodes (declare outside try so it's accessible in catch)
-    const configuration = {
-      nodes: nodes.map(n => {
-        // DEBUG: Log what we're sending to backend
-        // Normalize tool fields from node data
-        const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
-
-        const nodeConfig = {
-          model: n.data.config?.model || 'gpt-4o-mini',
-          temperature: n.data.config?.temperature ?? 0.7,
-          system_prompt: n.data.config?.system_prompt || '',
-          // Deprecated fields kept for backward compatibility
-          tools: n.data.config?.tools || [],
-          // Source of truth for built-in tools
-          native_tools: nativeTools,
-          custom_tools: n.data.config?.custom_tools || [],
-          // Flags can be explicit or inferred from native_tools selections
-          enable_memory: (n.data.config?.enable_memory ?? nativeTools.includes('enable_memory')) || false,
-          enable_rag: (n.data.config?.enable_rag ?? nativeTools.includes('enable_rag')) || false
-        };
-
-        // ADDED: Log tools for debugging
-        console.log(`[WORKFLOW SAVE] Node ${n.id} (${n.data.label}):`, {
-          native_tools: nodeConfig.native_tools,
-          custom_tools: nodeConfig.custom_tools,
-          raw_config: n.data.config
-        });
-
-        return {
-          id: n.id,
-          type: n.data.agentType || n.data.label.toLowerCase().replace(/\s+/g, '_'),
-          data: n.data, // Save the full data object so we can restore it properly
-          position: n.position,
-          config: nodeConfig
-        };
-      }),
-      edges: edges.map(e => ({
-        source: e.source,
-        target: e.target
-      }))
-    };
-
-    try {
-      if (currentWorkflowId) {
-        // UPDATE existing workflow - Include lock_version for optimistic locking
-        const response = await apiClient.updateWorkflow(currentWorkflowId, {
-          configuration,
-          lock_version: currentLockVersion  // Send lock_version
-        });
-
-        // Update lock_version from response
-        const updatedWorkflow = response.data;
-        if (updatedWorkflow.lock_version !== undefined) {
-          setCurrentLockVersion(updatedWorkflow.lock_version);
-        }
-
-        // Mark as saved and update last saved state using the sanitized hash
-        setHasUnsavedChanges(false);
-        setLastSavedState(getWorkflowStateHash(nodes, edges));
-
-        // Only show success message if not auto-save
-        if (!silent) {
-          showSuccess('Workflow saved successfully!');
-        } else {
-        }
-      } else {
-        // CREATE new workflow - show modal (only for manual saves)
-        if (!silent) {
-          setShowSaveModal(true);
-        }
-        return;
-      }
-    } catch (error: any) {
-      console.error('Failed to save workflow:', error);
-
-      // Handle optimistic lock conflicts
-      if (error instanceof ConflictErrorClass) {
-
-        // Only handle conflicts in manual saves (not auto-saves)
-        if (!silent) {
-          // Fetch latest version from server
-          try {
-            const latestResponse = await apiClient.getWorkflow(currentWorkflowId!);
-            const remoteWorkflow = latestResponse.data;
-
-            // Show conflict dialog
-            setConflictData({
-              localData: { configuration, lock_version: currentLockVersion },
-              remoteData: remoteWorkflow
-            });
-            setShowConflictDialog(true);
-          } catch (fetchError) {
-            console.error('Failed to fetch latest version:', fetchError);
-            logError('Conflict detected', 'Unable to fetch latest workflow version');
-          }
-        } else {
-          // Auto-save conflict - silently skip
-        }
-        return;
-      }
-
-      // Only show error notification if not silent mode
-      if (!silent) {
-        logError('Save failed', 'Unable to save workflow changes');
-      }
-    }
-  }, [nodes, edges, currentWorkflowId, currentLockVersion, showSuccess, logError, setShowSaveModal, getWorkflowStateHash]);
-
-  // Handle conflict resolution
-  const handleConflictResolve = useCallback(async (resolution: 'reload' | 'force' | 'cancel') => {
-    if (!conflictData || !currentWorkflowId) return;
-
-    if (resolution === 'reload') {
-      // Reload latest version from server
-      try {
-        const response = await apiClient.getWorkflow(currentWorkflowId);
-        const latestWorkflow = response.data;
-
-        // Update lock_version
-        if (latestWorkflow.lock_version !== undefined) {
-          setCurrentLockVersion(latestWorkflow.lock_version);
-        }
-
-        // Update workflow name
-        if (latestWorkflow.name) {
-          setWorkflowName(latestWorkflow.name);
-          setEditedName(latestWorkflow.name);
-        }
-
-        // Reload canvas with latest configuration
-        if (latestWorkflow.configuration) {
-          const config = latestWorkflow.configuration;
-
-          // Restore nodes
-          if (config.nodes) {
-            const restoredNodes = config.nodes.map((n: any) => ({
-              id: n.id,
-              type: 'custom',
-              position: n.position || { x: 0, y: 0 },
-              data: n.data || {
-                label: n.type,
-                agentType: n.type,
-                model: n.config?.model || 'gpt-4o-mini',
-                config: n.config || {}
-              }
-            }));
-            setNodes(restoredNodes);
-          }
-
-          // Restore edges
-          if (config.edges) {
-            const restoredEdges = config.edges.map((e: any) => ({
-              id: `${e.source}-${e.target}`,
-              source: e.source,
-              target: e.target,
-              type: 'smoothstep',
-              animated: true
-            }));
-            setEdges(restoredEdges);
-          }
-        }
-
-        setHasUnsavedChanges(false);
-        showSuccess('Workflow reloaded with latest changes');
-      } catch (error) {
-        console.error('Failed to reload workflow:', error);
-        logError('Failed to reload', 'Unable to fetch latest workflow');
-      }
-    } else if (resolution === 'force') {
-      // Force save with latest lock_version
-      try {
-        const latestResponse = await apiClient.getWorkflow(currentWorkflowId);
-        const latestWorkflow = latestResponse.data;
-
-        // Use latest lock_version but keep local changes
-        setCurrentLockVersion(latestWorkflow.lock_version);
-
-        // Retry save with new lock_version
-        await handleSave(false);
-
-        showSuccess('Workflow force-saved successfully');
-      } catch (error) {
-        console.error('Failed to force save:', error);
-        logError('Force save failed', 'Unable to save workflow');
-      }
-    }
-    // 'cancel' - just close dialog, do nothing
-
-    setShowConflictDialog(false);
-    setConflictData(null);
-  }, [conflictData, currentWorkflowId, currentLockVersion, setNodes, setEdges, showSuccess, logError, handleSave]);
-
-  // Track changes to nodes/edges to detect unsaved changes
-  useEffect(() => {
-    if (nodes.length === 0 && edges.length === 0) {
-      // Empty workflow, no need to track
-      return;
-    }
-
-    const currentState = getWorkflowStateHash(nodes, edges);
-
-    if (lastSavedState && currentState !== lastSavedState) {
-      setHasUnsavedChanges(true);
-    } else if (!lastSavedState) {
-      // First load, save the initial state
-      setLastSavedState(currentState);
-    }
-  }, [nodes, edges, lastSavedState, getWorkflowStateHash]);
-
-  // Warn user before leaving page with unsaved changes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
-        return e.returnValue;
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
-
   // Clear canvas for new workflow
   const clearCanvas = useCallback(() => {
     setNodes([]);
@@ -1889,165 +1636,7 @@ if __name__ == "__main__":
     }
   };
 
-  // Version Management Functions
-  const loadVersions = async (workflowId: number) => {
-    setLoadingVersions(true);
-    try {
-      const response = await apiClient.getWorkflowVersions(workflowId);
-      setVersions(response.data);
-
-      // Find and set the current version
-      const current = response.data.find((v: any) => v.is_current);
-      if (current) {
-        setCurrentVersion(current);
-      }
-    } catch (error) {
-      console.error('Failed to load versions:', error);
-    } finally {
-      setLoadingVersions(false);
-    }
-  };
-
-  const handleSaveVersion = async () => {
-    if (!currentWorkflowId) {
-      showWarning('Please save the workflow first');
-      return;
-    }
-
-    setShowVersionModal(true);
-  };
-
-  const handleSaveVersionConfirm = async () => {
-    if (!currentWorkflowId) return;
-
-    try {
-      const configuration = {
-        nodes: nodes.map(n => {
-          const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
-          const normalizedConfig = {
-            ...n.data.config,
-            native_tools: nativeTools,
-            enable_memory: (n.data.config?.enable_memory ?? nativeTools.includes('enable_memory')) || false,
-            enable_rag: (n.data.config?.enable_rag ?? nativeTools.includes('enable_rag')) || false,
-          };
-          return {
-            id: n.id,
-            type: n.data.agentType || n.data.label.toLowerCase().replace(/\s+/g, '_'),
-            data: n.data,
-            position: n.position,
-            config: normalizedConfig
-          };
-        }),
-        edges: edges.map(e => ({
-          source: e.source,
-          target: e.target
-        }))
-      };
-
-      const response = await apiClient.createWorkflowVersion(currentWorkflowId, {
-        config_snapshot: configuration,
-        notes: versionNotes || 'Manual save',
-        created_by: 'user' // Default for local mode
-      });
-
-      setShowVersionModal(false);
-      setVersionNotes('');
-
-      // Reload versions
-      await loadVersions(currentWorkflowId);
-
-      showSuccess(`Version ${response.data.version_number} created successfully!`);
-    } catch (error) {
-      console.error('Failed to create version:', error);
-      logError('Failed to create version. Please try again.');
-    }
-  };
-
-  const handleLoadVersion = async (versionId: number) => {
-    if (!currentWorkflowId) return;
-
-    try {
-      const response = await apiClient.getWorkflowVersion(currentWorkflowId, versionId);
-      const versionData = response.data;
-
-      // Load the configuration from this version
-      const config = versionData.config_snapshot;
-
-      if (config.nodes && config.edges) {
-        // Restore nodes with validated positions
-        const restoredNodes = config.nodes.map((n: any, index: number) => {
-          // Validate position to prevent NaN coordinates
-          let validPosition = { x: 250 + (index * 200), y: 250 }; // Default position with spacing
-
-          if (n.position && typeof n.position.x === 'number' && typeof n.position.y === 'number') {
-            if (!isNaN(n.position.x) && !isNaN(n.position.y)) {
-              validPosition = { x: n.position.x, y: n.position.y };
-            }
-          }
-
-          return {
-            id: n.id,
-            type: 'custom',
-            position: validPosition,
-            data: n.data || {
-              label: n.type,
-              agentType: n.type,
-              config: n.config || {}
-            }
-          };
-        });
-
-        // Restore edges
-        const restoredEdges = config.edges.map((e: any) => ({
-          id: `e${e.source}-${e.target}`,
-          source: e.source,
-          target: e.target,
-          type: 'smoothstep',
-          animated: true
-        }));
-
-        setNodes(restoredNodes);
-        setEdges(restoredEdges);
-        setCurrentVersion(versionData);
-        setShowVersionDropdown(false);
-
-        showSuccess(`Loaded Version ${versionData.version_number}`);
-      }
-    } catch (error) {
-      console.error('Failed to load version:', error);
-      logError('Failed to load version. Please try again.');
-    }
-  };
-
-  // Load versions when workflow changes
-  useEffect(() => {
-    if (currentWorkflowId) {
-      loadVersions(currentWorkflowId);
-    }
-  }, [currentWorkflowId]);
-
-  const handleCompareVersions = async () => {
-    if (!compareVersion1 || !compareVersion2 || !currentWorkflowId) {
-      showWarning('Please select two versions to compare');
-      return;
-    }
-
-    setLoadingComparison(true);
-    try {
-      const response = await apiClient.compareWorkflowVersions(
-        currentWorkflowId,
-        compareVersion1.version_number,
-        compareVersion2.version_number
-      );
-      setVersionComparison(response.data);
-      setCompareMode(true);
-    } catch (error) {
-      console.error('Failed to compare versions:', error);
-      logError('Failed to compare versions. Please try again.');
-    } finally {
-      setLoadingComparison(false);
-    }
-  };
+  // Version management functions are now provided by useVersionManagement hook
 
   const handleClear = () => {
     const confirmed = confirm('Are you sure you want to clear the entire workflow? This cannot be undone.');
@@ -2066,21 +1655,10 @@ if __name__ == "__main__":
     }
 
     const newName = editedName.trim();
-    setWorkflowName(newName);
     setIsEditingName(false);
 
-    // Save to backend if we have a workflow ID
-    if (currentWorkflowId) {
-      try {
-        await apiClient.updateWorkflow(currentWorkflowId, {
-          name: newName
-        });
-      } catch (error) {
-        console.error('Failed to update workflow name:', error);
-        // Optionally show error to user
-        alert('Failed to update workflow name. Please try again.');
-      }
-    }
+    // Use the hook's function for actual save
+    await updateWorkflowName(newName);
   };
 
   const handleWorkflowSwitch = async (workflowId: number) => {
@@ -2501,7 +2079,7 @@ if __name__ == "__main__":
           {/* Save Version Modal */}
           <SaveVersionDialog
             isOpen={showVersionModal}
-            onClose={() => setShowVersionModal(false)}
+            onClose={handleCloseVersionModal}
             onSave={handleSaveVersionConfirm}
             versionNotes={versionNotes}
             setVersionNotes={setVersionNotes}
@@ -2569,10 +2147,7 @@ if __name__ == "__main__":
             localData={conflictData.localData}
             remoteData={conflictData.remoteData}
             onResolve={handleConflictResolve}
-            onClose={() => {
-              setShowConflictDialog(false);
-              setConflictData(null);
-            }}
+            onClose={() => handleConflictResolve('cancel')}
           />
         )}
       </div>

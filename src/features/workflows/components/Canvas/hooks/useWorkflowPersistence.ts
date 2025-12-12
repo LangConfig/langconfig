@@ -145,26 +145,37 @@ export function useWorkflowPersistence({
       if (!proceed) return;
     }
 
-    // Extract configuration from nodes
+    // Extract configuration from nodes (declare outside try so it's accessible in catch)
     const configuration = {
       nodes: nodes.map(n => {
+        // Normalize tool fields from node data
         const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
 
         const nodeConfig = {
           model: n.data.config?.model || 'gpt-4o-mini',
           temperature: n.data.config?.temperature ?? 0.7,
           system_prompt: n.data.config?.system_prompt || '',
+          // Deprecated fields kept for backward compatibility
           tools: n.data.config?.tools || [],
+          // Source of truth for built-in tools
           native_tools: nativeTools,
           custom_tools: n.data.config?.custom_tools || [],
+          // Flags can be explicit or inferred from native_tools selections
           enable_memory: (n.data.config?.enable_memory ?? nativeTools.includes('enable_memory')) || false,
           enable_rag: (n.data.config?.enable_rag ?? nativeTools.includes('enable_rag')) || false
         };
 
+        // Log tools for debugging
+        console.log(`[WORKFLOW SAVE] Node ${n.id} (${n.data.label}):`, {
+          native_tools: nodeConfig.native_tools,
+          custom_tools: nodeConfig.custom_tools,
+          raw_config: n.data.config
+        });
+
         return {
           id: n.id,
           type: n.data.agentType || n.data.label.toLowerCase().replace(/\s+/g, '_'),
-          data: n.data,
+          data: n.data, // Save the full data object so we can restore it properly
           position: n.position,
           config: nodeConfig
         };
