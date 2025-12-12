@@ -22,8 +22,7 @@ export interface TaskFile {
 
 interface UseFileHandlingOptions {
   currentTaskId: number | null;
-  activeTab: 'studio' | 'results';
-  resultsSubTab: 'output' | 'memory' | 'files';
+  activeTab: 'studio' | 'results' | 'files';
 }
 
 interface UseFileHandlingReturn {
@@ -48,7 +47,6 @@ interface UseFileHandlingReturn {
 export function useFileHandling({
   currentTaskId,
   activeTab,
-  resultsSubTab,
 }: UseFileHandlingOptions): UseFileHandlingReturn {
   // File state
   const [files, setFiles] = useState<TaskFile[]>([]);
@@ -118,12 +116,12 @@ export function useFileHandling({
     setFilePreviewContent(null);
   }, []);
 
-  // Fetch files when Results tab is active and Files subtab is selected
+  // Fetch files when Files tab is active
   useEffect(() => {
-    if (activeTab === 'results' && resultsSubTab === 'files' && currentTaskId) {
+    if (activeTab === 'files' && currentTaskId) {
       fetchFiles();
     }
-  }, [activeTab, resultsSubTab, currentTaskId, fetchFiles]);
+  }, [activeTab, currentTaskId, fetchFiles]);
 
   return {
     // State

@@ -32,7 +32,7 @@ export { default as CreateWorkflowDialog } from './dialogs/CreateWorkflowDialog'
 export { default as WorkflowSettingsDialog } from './dialogs/WorkflowSettingsDialog';
 
 // Hooks
-export { useWorkflowExecution } from './hooks/useWorkflowExecution';
+// useWorkflowExecution is deprecated - functionality split across useExecutionHandlers, useUIToggles, useWorkflowEventProcessing
 export { useFileHandling } from './hooks/useFileHandling';
 export { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 export { useVersionManagement } from './hooks/useVersionManagement';
@@ -48,7 +48,7 @@ export { useTokenCostInfo } from './hooks/useTokenCostInfo';
 export { useUIToggles } from './hooks/useUIToggles';
 export { useExecutionHandlers } from './hooks/useExecutionHandlers';
 export { useSaveToLibrary } from './hooks/useSaveToLibrary';
-export { useWorkflowManagement } from './hooks/useWorkflowManagement';
+// useWorkflowManagement is deprecated - functionality overlaps with useWorkflowPersistence and inline state
 export { useResultsState } from './hooks/useResultsState';
 export type { TaskFile } from './hooks/useFileHandling';
 export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';

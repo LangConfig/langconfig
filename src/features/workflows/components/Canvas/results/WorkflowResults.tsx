@@ -5,17 +5,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { memo } from 'react';
-import { Node } from 'reactflow';
-import { Download, Copy, Check, Eye, EyeOff, List, Database, FolderOpen, History as HistoryIcon, FileText as FileIcon } from 'lucide-react';
+import { memo, useMemo } from 'react';
+import { Download, Copy, Check, Eye, EyeOff, List, History as HistoryIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
-import { MemoryView } from '../../../../memory/components/MemoryView';
-import { getFileIcon } from '../../../utils/fileHelpers';
-import InlineFilePreview, { FileContent } from '../../Execution/InlineFilePreview';
 import RealtimeExecutionPanel from '../../Execution/RealtimeExecutionPanel';
 import { ContentBlockRenderer } from '../../../../../components/common/ContentBlockRenderer';
 import { TaskHistoryEntry } from '../types';
@@ -23,16 +19,6 @@ import { exportToPDF } from '../../../../../utils/exportHelpers';
 import apiClient from '../../../../../lib/api-client';
 
 // Types
-interface TaskFile {
-  filename: string;
-  path: string;
-  size_bytes: number;
-  size_human: string;
-  modified_at: string;
-  extension: string;
-}
-
-
 interface WorkflowVersion {
   id: number;
   version_number: number;
@@ -63,11 +49,6 @@ interface WorkflowResultsProps {
   // Core data
   currentWorkflowId: number | null;
   workflowName: string;
-  nodes: Node[];
-
-  // Subtab state
-  resultsSubTab: 'output' | 'memory' | 'files';
-  setResultsSubTab: (tab: 'output' | 'memory' | 'files') => void;
 
   // Task history
   taskHistory: TaskHistoryEntry[];
@@ -110,18 +91,6 @@ interface WorkflowResultsProps {
   versionComparison: VersionComparison | null;
   handleCompareVersions: () => void;
 
-  // Files
-  files: TaskFile[];
-  filesLoading: boolean;
-  filesError: string | null;
-  fetchFiles: () => void;
-  selectedPreviewFile: TaskFile | null;
-  filePreviewContent: FileContent | null;
-  filePreviewLoading: boolean;
-  handleFileSelect: (file: TaskFile) => void;
-  handleDownloadFile: (filename: string) => void;
-  closeFilePreview: () => void;
-
   // Tool/Action display data (computed in parent)
   toolsAndActions: {
     tools: any[];
@@ -139,15 +108,11 @@ interface WorkflowResultsProps {
 }
 
 /**
- * WorkflowResults component - Displays workflow execution results with subtabs
- * for Output, Memory, and Files
+ * WorkflowResults component - Displays workflow execution results
  */
 const WorkflowResults = memo(function WorkflowResults({
   currentWorkflowId,
   workflowName,
-  nodes,
-  resultsSubTab,
-  setResultsSubTab,
   taskHistory,
   loadingHistory,
   selectedHistoryTask,
@@ -179,16 +144,6 @@ const WorkflowResults = memo(function WorkflowResults({
   loadingComparison: _loadingComparison,
   versionComparison: _versionComparison,
   handleCompareVersions: _handleCompareVersions,
-  files,
-  filesLoading,
-  filesError,
-  fetchFiles,
-  selectedPreviewFile,
-  filePreviewContent,
-  filePreviewLoading,
-  handleFileSelect,
-  handleDownloadFile,
-  closeFilePreview,
   toolsAndActions,
   tokenCostInfo,
   nodeTokenCosts,
@@ -232,71 +187,150 @@ const WorkflowResults = memo(function WorkflowResults({
     return 'No prompt available';
   };
 
+  // Custom markdown components for proper document-like rendering
+  const markdownComponents = useMemo(() => ({
+    h1: ({ children }: any) => (
+      <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2"
+          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        {children}
+      </h1>
+    ),
+    h2: ({ children }: any) => (
+      <h2 className="text-2xl font-bold mt-6 mb-3"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h2>
+    ),
+    h3: ({ children }: any) => (
+      <h3 className="text-xl font-semibold mt-4 mb-2"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h3>
+    ),
+    h4: ({ children }: any) => (
+      <h4 className="text-lg font-semibold mt-3 mb-2"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h4>
+    ),
+    p: ({ children }: any) => (
+      <p className="mb-4 leading-relaxed"
+         style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </p>
+    ),
+    ul: ({ children }: any) => (
+      <ul className="list-disc list-outside ml-6 mb-4 space-y-1"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children }: any) => (
+      <ol className="list-decimal list-outside ml-6 mb-4 space-y-1"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </ol>
+    ),
+    li: ({ children }: any) => (
+      <li style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </li>
+    ),
+    blockquote: ({ children }: any) => (
+      <blockquote className="border-l-4 pl-4 py-2 my-4 italic rounded-r"
+                  style={{
+                    borderColor: 'var(--color-primary)',
+                    backgroundColor: 'var(--color-panel-dark)',
+                    color: 'var(--color-text-primary)'
+                  }}>
+        {children}
+      </blockquote>
+    ),
+    table: ({ children }: any) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full divide-y border rounded-lg"
+               style={{ borderColor: 'var(--color-border-dark)' }}>
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({ children }: any) => (
+      <thead style={{ backgroundColor: 'var(--color-panel-dark)' }}>
+        {children}
+      </thead>
+    ),
+    th: ({ children }: any) => (
+      <th className="px-4 py-2 text-left text-sm font-semibold border-b"
+          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        {children}
+      </th>
+    ),
+    td: ({ children }: any) => (
+      <td className="px-4 py-2 text-sm border-b"
+          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        {children}
+      </td>
+    ),
+    a: ({ children, href }: any) => (
+      <a href={href}
+         className="underline hover:opacity-80"
+         style={{ color: 'var(--color-primary)' }}
+         target="_blank"
+         rel="noopener noreferrer">
+        {children}
+      </a>
+    ),
+    strong: ({ children }: any) => (
+      <strong className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </strong>
+    ),
+    em: ({ children }: any) => (
+      <em style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </em>
+    ),
+    code: ({ inline, className, children, ...props }: any) => {
+      if (inline) {
+        return (
+          <code className="px-1.5 py-0.5 rounded text-sm font-mono bg-gray-100 dark:bg-gray-800"
+                style={{ color: 'var(--color-primary)' }}
+                {...props}>
+            {children}
+          </code>
+        );
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    pre: ({ children }: any) => (
+      <pre className="p-4 rounded-lg overflow-x-auto my-4 bg-gray-900 text-gray-100">
+        {children}
+      </pre>
+    ),
+    img: ({ src, alt }: any) => (
+      <img
+        src={src}
+        alt={alt || 'Generated image'}
+        className="max-w-full h-auto rounded-lg shadow-md my-4"
+        style={{ maxHeight: '600px' }}
+      />
+    ),
+    hr: () => (
+      <hr className="my-6 border-t" style={{ borderColor: 'var(--color-border-dark)' }} />
+    ),
+  }), []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="w-full h-full flex flex-col">
-        {/* Results Subtabs */}
-        <div className="flex items-center justify-between border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
-          <div className="flex">
-            <button
-              onClick={() => setResultsSubTab('output')}
-              className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'output'
-                ? 'border-primary text-primary'
-                : 'border-transparent hover:text-primary'
-              }`}
-              style={resultsSubTab !== 'output' ? { color: 'var(--color-text-muted)' } : {}}
-            >
-              Workflow Output
-            </button>
-            <button
-              onClick={() => setResultsSubTab('memory')}
-              className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'memory'
-                ? 'border-primary text-primary'
-                : 'border-transparent hover:text-primary'
-              }`}
-              style={resultsSubTab !== 'memory' ? { color: 'var(--color-text-muted)' } : {}}
-            >
-              <Database className="w-4 h-4 inline mr-2" />
-              Memory
-            </button>
-            <button
-              onClick={() => setResultsSubTab('files')}
-              className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${resultsSubTab === 'files'
-                ? 'border-primary text-primary'
-                : 'border-transparent hover:text-primary'
-              }`}
-              style={resultsSubTab !== 'files' ? { color: 'var(--color-text-muted)' } : {}}
-            >
-              <FolderOpen className="w-4 h-4 inline mr-2" />
-              Files {files.length > 0 && `(${files.length})`}
-            </button>
-          </div>
-
-          {/* View Execution Log Button */}
-          {taskHistory.length > 0 && (
-            <button
-              onClick={() => {
-                const taskToView = selectedHistoryTask || taskHistory[0];
-                setReplayTaskId(taskToView.id);
-                setShowReplayPanel(true);
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 mr-4 text-sm font-medium rounded-lg transition-all hover:opacity-90"
-              style={{
-                backgroundColor: 'var(--color-primary)',
-                color: 'white'
-              }}
-              title="View detailed execution log"
-            >
-              <List className="w-4 h-4" />
-              <span>View Execution Log</span>
-            </button>
-          )}
-        </div>
-
-        {/* Subtab Content */}
+        {/* Output Content */}
         <div className="flex-1 overflow-hidden flex">
-          {/* Output Subtab */}
-          {resultsSubTab === 'output' && (
+          {/* Main Output Area */}
+          {(
             <div className="flex-1 overflow-y-auto p-6">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-16">
@@ -468,6 +502,24 @@ const WorkflowResults = memo(function WorkflowResults({
                             ) : (
                               <Eye className="w-4 h-4 text-gray-600 dark:text-text-muted" />
                             )}
+                          </button>
+
+                          {/* View Execution Log Button */}
+                          <button
+                            onClick={() => {
+                              const taskToView = selectedHistoryTask || taskHistory[0];
+                              setReplayTaskId(taskToView.id);
+                              setShowReplayPanel(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90"
+                            style={{
+                              backgroundColor: 'var(--color-primary)',
+                              color: 'white'
+                            }}
+                            title="View detailed execution log"
+                          >
+                            <List className="w-3.5 h-3.5" />
+                            <span>Execution Log</span>
                           </button>
                         </div>
                       </div>
@@ -661,7 +713,7 @@ const WorkflowResults = memo(function WorkflowResults({
 
                         {/* CENTER - Main Output Content */}
                         <div className="flex-1">
-                          <div className="prose dark:prose-invert max-w-none">
+                          <div className="max-w-none">
                             {/* Content Blocks */}
                             {taskOutput?.content_blocks && taskOutput.content_blocks.length > 0 && (
                               <div className="mb-6">
@@ -669,21 +721,12 @@ const WorkflowResults = memo(function WorkflowResults({
                               </div>
                             )}
 
-                            {/* Formatted Content */}
+                            {/* Formatted Content - Paper-like document styling */}
                             {taskOutput?.formatted_content && (
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm, remarkMath]}
                                 rehypePlugins={[rehypeHighlight, rehypeKatex]}
-                                components={{
-                                  img: ({ src, alt }) => (
-                                    <img
-                                      src={src}
-                                      alt={alt || 'Generated image'}
-                                      className="max-w-full h-auto rounded-lg shadow-md my-4"
-                                      style={{ maxHeight: '600px' }}
-                                    />
-                                  ),
-                                }}
+                                components={markdownComponents}
                               >
                                 {taskOutput.formatted_content}
                               </ReactMarkdown>
@@ -691,9 +734,9 @@ const WorkflowResults = memo(function WorkflowResults({
 
                             {/* Raw Output */}
                             {showRawOutput && (
-                              <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg">
-                                <h4 className="text-sm font-semibold mb-2">Raw Output</h4>
-                                <pre className="text-xs overflow-auto whitespace-pre-wrap">
+                              <div className="mt-6 p-4 rounded-lg" style={{ backgroundColor: 'var(--color-panel-dark)' }}>
+                                <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Raw Output</h4>
+                                <pre className="text-xs overflow-auto whitespace-pre-wrap" style={{ color: 'var(--color-text-primary)' }}>
                                   {JSON.stringify(taskOutput, null, 2)}
                                 </pre>
                               </div>
@@ -707,7 +750,7 @@ const WorkflowResults = memo(function WorkflowResults({
               )}
 
               {/* Task History Sidebar */}
-              {taskHistory.length > 0 && resultsSubTab === 'output' && (
+              {taskHistory.length > 0 && (
                 <div className="fixed right-0 top-0 h-full z-40 flex">
                   {/* Collapse Toggle */}
                   <button
@@ -869,118 +912,6 @@ const WorkflowResults = memo(function WorkflowResults({
             </div>
           )}
 
-          {/* Memory Subtab */}
-          {resultsSubTab === 'memory' && currentWorkflowId && (
-            <div className="flex-1 overflow-hidden">
-              <MemoryView workflowId={currentWorkflowId} nodes={nodes} />
-            </div>
-          )}
-
-          {/* Files Subtab */}
-          {resultsSubTab === 'files' && (
-            <div className="flex-1 overflow-hidden flex">
-              <div className={`${selectedPreviewFile ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 transition-all duration-200`}>
-                {filesLoading ? (
-                  <div className="flex items-center justify-center py-16">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
-                      <p className="text-sm text-gray-600 dark:text-text-muted">Loading files...</p>
-                    </div>
-                  </div>
-                ) : filesError ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <FileIcon className="w-16 h-16 text-red-300 dark:text-red-900/30 mb-4" />
-                    <p className="text-lg font-medium text-red-600 dark:text-red-400">
-                      Failed to load files
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                      {filesError}
-                    </p>
-                    <button
-                      onClick={fetchFiles}
-                      className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
-                      style={{ color: 'var(--color-primary)' }}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : files.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <FolderOpen className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
-                    <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                      No files generated
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                      This workflow didn't create any output files.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mb-4">
-                      <p className="text-sm text-gray-600 dark:text-text-muted">
-                        Click a file to preview. {files.length} file{files.length !== 1 ? 's' : ''} generated.
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      {files.map((file, index) => (
-                        <div
-                          key={index}
-                          onClick={() => handleFileSelect(file)}
-                          className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${
-                            selectedPreviewFile?.path === file.path
-                              ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
-                              : 'border-gray-200 dark:border-border-dark hover:bg-gray-50 dark:hover:bg-white/5'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <span className="text-2xl flex-shrink-0">{getFileIcon(file.extension)}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 dark:text-white truncate">
-                                {file.filename}
-                              </p>
-                              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-text-muted mt-1">
-                                <span>{file.size_human}</span>
-                                <span>•</span>
-                                <span>{new Date(file.modified_at).toLocaleDateString()}</span>
-                                {file.extension && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="uppercase">{file.extension.replace('.', '')}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadFile(file.filename);
-                            }}
-                            className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-text-muted"
-                            title="Download file"
-                          >
-                            <Download className="w-4 h-4" />
-                            {!selectedPreviewFile && 'Download'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Preview Panel */}
-              {selectedPreviewFile && (
-                <InlineFilePreview
-                  file={selectedPreviewFile}
-                  content={filePreviewContent}
-                  loading={filePreviewLoading}
-                  onClose={closeFilePreview}
-                  onDownload={handleDownloadFile}
-                />
-              )}
-            </div>
-          )}
         </div>
 
         {/* Execution Log Replay Panel */}

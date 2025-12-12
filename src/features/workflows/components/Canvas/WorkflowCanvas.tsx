@@ -22,6 +22,8 @@ import 'reactflow/dist/style.css';
 import apiClient from '../../../../lib/api-client';
 import ConflictDialog from '../ConflictDialog';
 import RealtimeExecutionPanel from '../Execution/RealtimeExecutionPanel';
+import InlineFilePreview from '../Execution/InlineFilePreview';
+import { getFileIcon } from '../../utils/fileHelpers';
 import { validateNodePosition } from '../../../../utils/validation';
 import { useWorkflowStream } from '../../../../hooks/useWorkflowStream';
 import { useNodeExecutionStatus, NodeExecutionStatus } from '../../../../hooks/useNodeExecutionStatus';
@@ -223,10 +225,11 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
-  const [activeTab, setActiveTab] = useState<'studio' | 'results'>(() => {
+  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files'>(() => {
     // Initialize from URL hash if present
     const hash = window.location.hash.replace('#', '');
     if (hash === 'results') return 'results';
+    if (hash === 'files') return 'files';
     return 'studio';
   });
   const [executionStatus, setExecutionStatus] = useState<{
@@ -263,8 +266,8 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   // Use extracted hook for results tab state
   const {
-    resultsSubTab,
-    setResultsSubTab,
+    resultsSubTab: _resultsSubTab,
+    setResultsSubTab: _setResultsSubTab,
     copiedToClipboard,
     setCopiedToClipboard,
     showRawOutput,
@@ -389,7 +392,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   } = useFileHandling({
     currentTaskId,
     activeTab,
-    resultsSubTab,
   });
 
   // Chat with unsaved agent warning modal
@@ -586,9 +588,11 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   }, [nodeExecutionStatuses, nodeTokenCosts, nodeWarnings, setNodes]);
 
   // Update URL when tab changes - delegate to parent component
-  const handleTabChange = useCallback((newTab: 'studio' | 'results') => {
+  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files') => {
     setActiveTab(newTab);
-    onTabChange?.(newTab);
+    if (newTab === 'studio' || newTab === 'results') {
+      onTabChange?.(newTab);
+    }
   }, [onTabChange]);
 
   // Re-center canvas when execution starts and animate edges
@@ -1628,6 +1632,7 @@ if __name__ == "__main__":
             activeTab={activeTab}
             onTabChange={handleTabChange}
             taskHistoryCount={taskHistory.length}
+            filesCount={files.length}
             hasUnsavedChanges={hasUnsavedChanges}
             currentWorkflowId={currentWorkflowId}
             onResultsTabClick={() => {
@@ -1636,6 +1641,10 @@ if __name__ == "__main__":
                 setCurrentTaskId(null);
                 localStorage.removeItem('langconfig-current-task-id');
               }
+            }}
+            onFilesTabClick={() => {
+              setShowExecutionDialog(false);
+              fetchFiles();
             }}
           />
         )}
@@ -1772,9 +1781,6 @@ if __name__ == "__main__":
             <WorkflowResults
               currentWorkflowId={currentWorkflowId}
               workflowName={workflowName}
-              nodes={nodes}
-              resultsSubTab={resultsSubTab}
-              setResultsSubTab={setResultsSubTab}
               taskHistory={taskHistory}
               loadingHistory={loadingHistory}
               selectedHistoryTask={selectedHistoryTask}
@@ -1806,22 +1812,136 @@ if __name__ == "__main__":
               loadingComparison={loadingComparison}
               versionComparison={versionComparison}
               handleCompareVersions={handleCompareVersions}
-              files={files}
-              filesLoading={filesLoading}
-              filesError={filesError}
-              fetchFiles={fetchFiles}
-              selectedPreviewFile={selectedPreviewFile}
-              filePreviewContent={filePreviewContent}
-              filePreviewLoading={filePreviewLoading}
-              handleFileSelect={handleFileSelect}
-              handleDownloadFile={handleDownloadFile}
-              closeFilePreview={closeFilePreview}
               toolsAndActions={toolsAndActions}
               tokenCostInfo={tokenCostInfo}
               nodeTokenCosts={nodeTokenCosts}
               expandedToolCalls={expandedToolCalls}
               setExpandedToolCalls={setExpandedToolCalls}
             />
+          )}
+
+          {/* Files Tab */}
+          {activeTab === 'files' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div className="w-full h-full flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b px-4 py-2" style={{ borderColor: 'var(--color-border-dark)' }}>
+                  <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Generated Files
+                  </h2>
+                </div>
+
+                {/* Files Content */}
+                <div className="flex-1 overflow-hidden flex">
+                  <div className={`${selectedPreviewFile ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 transition-all duration-200`}>
+                    {filesLoading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
+                          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Loading files...</p>
+                        </div>
+                      </div>
+                    ) : filesError ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <span className="material-symbols-outlined text-6xl text-red-300 dark:text-red-900/30 mb-4">
+                          error
+                        </span>
+                        <p className="text-lg font-medium text-red-600 dark:text-red-400">
+                          Failed to load files
+                        </p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                          {filesError}
+                        </p>
+                        <button
+                          onClick={fetchFiles}
+                          className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
+                          style={{ color: 'var(--color-primary)' }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ) : files.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <span className="material-symbols-outlined text-6xl mb-4" style={{ color: 'var(--color-text-muted)', opacity: 0.3 }}>
+                          folder_open
+                        </span>
+                        <p className="text-lg font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                          No files generated
+                        </p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}>
+                          This workflow hasn't created any output files yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mb-4">
+                          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                            Click a file to preview. {files.length} file{files.length !== 1 ? 's' : ''} generated.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {files.map((file, index) => (
+                            <div
+                              key={index}
+                              onClick={() => handleFileSelect(file)}
+                              className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${
+                                selectedPreviewFile?.path === file.path
+                                  ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
+                                  : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                              }`}
+                              style={{ borderColor: selectedPreviewFile?.path === file.path ? undefined : 'var(--color-border-dark)' }}
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <span className="text-2xl flex-shrink-0">{getFileIcon(file.extension)}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                                    {file.filename}
+                                  </p>
+                                  <div className="flex items-center gap-3 text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                    <span>{file.size_human}</span>
+                                    <span>•</span>
+                                    <span>{new Date(file.modified_at).toLocaleDateString()}</span>
+                                    {file.extension && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="uppercase">{file.extension.replace('.', '')}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadFile(file.filename);
+                                }}
+                                className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium"
+                                style={{ color: 'var(--color-text-muted)' }}
+                                title="Download file"
+                              >
+                                <span className="material-symbols-outlined text-base">download</span>
+                                {!selectedPreviewFile && 'Download'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Preview Panel */}
+                  {selectedPreviewFile && (
+                    <InlineFilePreview
+                      file={selectedPreviewFile}
+                      content={filePreviewContent}
+                      loading={filePreviewLoading}
+                      onClose={closeFilePreview}
+                      onDownload={handleDownloadFile}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Execution Configuration Dialog */}

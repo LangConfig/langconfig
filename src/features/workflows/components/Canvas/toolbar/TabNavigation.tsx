@@ -6,28 +6,33 @@
  */
 
 import { memo } from 'react';
+import { FolderOpen } from 'lucide-react';
 
-type Tab = 'studio' | 'results';
+type Tab = 'studio' | 'results' | 'files';
 
 interface TabNavigationProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
   taskHistoryCount: number;
+  filesCount: number;
   hasUnsavedChanges: boolean;
   currentWorkflowId: number | null;
   onResultsTabClick?: () => void;
+  onFilesTabClick?: () => void;
 }
 
 /**
- * Tab navigation bar for switching between Studio and Results views
+ * Tab navigation bar for switching between Studio, Results, and Files views
  */
 const TabNavigation = memo(function TabNavigation({
   activeTab,
   onTabChange,
   taskHistoryCount,
+  filesCount,
   hasUnsavedChanges,
   currentWorkflowId,
   onResultsTabClick,
+  onFilesTabClick,
 }: TabNavigationProps) {
   const tabClass = (tab: Tab) =>
     `px-4 py-3 text-sm font-semibold border-b-2 transition-all ${
@@ -53,6 +58,16 @@ const TabNavigation = memo(function TabNavigation({
           className={tabClass('results')}
         >
           Results {taskHistoryCount > 0 && `(${taskHistoryCount})`}
+        </button>
+        <button
+          onClick={() => {
+            onTabChange('files');
+            onFilesTabClick?.();
+          }}
+          className={`${tabClass('files')} flex items-center gap-1.5`}
+        >
+          <FolderOpen className="w-4 h-4" />
+          Files {filesCount > 0 && `(${filesCount})`}
         </button>
 
         {/* Spacer to push workflow ID to the right */}
