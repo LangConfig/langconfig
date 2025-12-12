@@ -5,11 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import ModernHeader from './components/layout/ModernHeader';
 import ModernAgentLibrary from './features/agents/components/ModernAgentLibrary';
 import WorkflowCanvas, { WorkflowCanvasRef, WorkflowRecipe } from './features/workflows/components/Canvas/WorkflowCanvas';
+import { TaskHistoryEntry } from './features/workflows/components/Canvas/types';
 import WorkflowLibraryView from './features/workflows/components/Library/WorkflowLibraryView';
 import NodeConfigPanel from './features/workflows/components/NodeConfig/NodeConfigPanel';
 import SettingsView from './pages/SettingsPage';
@@ -140,6 +141,11 @@ function AppContent() {
     costString: string;
   } | null>(null);
 
+  // Task history state (shared between WorkflowCanvas and ModernAgentLibrary)
+  const [taskHistory, setTaskHistory] = useState<TaskHistoryEntry[]>([]);
+  const [selectedHistoryTask, setSelectedHistoryTask] = useState<TaskHistoryEntry | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // Sync workflowTab with current route
   useEffect(() => {
     if (location.pathname === '/results') {
@@ -163,10 +169,18 @@ function AppContent() {
   })();
 
   // Handle tab changes within studio view
-  const handleTabChange = (tab: 'studio' | 'results') => {
+  const handleTabChange = useCallback((tab: 'studio' | 'results') => {
     setWorkflowTab(tab);
     navigate(tab === 'results' ? '/results' : '/studio');
-  };
+  }, [navigate]);
+
+  // Handle sidebar panel change (Agents/History tabs)
+  const handleSidebarPanelChange = useCallback((panel: 'agents' | 'history') => {
+    // Switch to studio tab when clicking Agents tab
+    if (panel === 'agents') {
+      handleTabChange('studio');
+    }
+  }, [handleTabChange]);
 
   const handleViewChange = (view: View) => {
     // Check for unsaved workflow changes before navigating
@@ -341,11 +355,30 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="flex flex-row flex-1 overflow-x-auto overflow-y-hidden">
-        {/* Left Panel - Agent Library (only in studio view AND studio tab) */}
-        {currentView === 'studio' && workflowTab === 'studio' && (
+        {/* Left Panel - Agent Library with Agents/History tabs (always visible in studio view) */}
+        {currentView === 'studio' && (
           <ModernAgentLibrary
-            onSelectAgent={setSelectedAgent}
-            onSelectRecipe={setSelectedRecipe}
+            onSelectAgent={(agent) => {
+              setSelectedAgent(agent);
+              // Switch to studio tab when selecting an agent
+              handleTabChange('studio');
+            }}
+            onSelectRecipe={(recipe) => {
+              setSelectedRecipe(recipe);
+              // Switch to studio tab when selecting a recipe
+              handleTabChange('studio');
+            }}
+            taskHistory={taskHistory}
+            loadingHistory={loadingHistory}
+            selectedHistoryTask={selectedHistoryTask}
+            onSelectHistoryTask={(task) => {
+              setSelectedHistoryTask(task);
+              // Switch to results tab when selecting a task
+              if (task) {
+                handleTabChange('results');
+              }
+            }}
+            onPanelChange={handleSidebarPanelChange}
           />
         )}
 
@@ -367,6 +400,9 @@ function AppContent() {
               onTabChange={handleTabChange}
               initialTab={workflowTab}
               onTokenCostUpdate={setTokenCostInfo}
+              onTaskHistoryUpdate={setTaskHistory}
+              onSelectedTaskChange={setSelectedHistoryTask}
+              externalSelectedTask={selectedHistoryTask}
             />
           )}
           {currentView === 'library' && (

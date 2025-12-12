@@ -114,7 +114,11 @@ const ToolCallItem = ({
   renderedResult,
   contentBlocks,
   artifacts,
-  hasMultimodal
+  hasMultimodal,
+  progressMessage,
+  progressPercent,
+  progressStep,
+  progressTotal
 }: {
   status: 'running' | 'completed' | 'error';
   toolName: string;
@@ -127,6 +131,14 @@ const ToolCallItem = ({
   artifacts?: ContentBlock[];
   /** Whether the result contains multimodal content */
   hasMultimodal?: boolean;
+  /** Progress message from tool_progress events */
+  progressMessage?: string;
+  /** Progress percentage (0-100) */
+  progressPercent?: number;
+  /** Current step number */
+  progressStep?: number;
+  /** Total number of steps */
+  progressTotal?: number;
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -180,6 +192,39 @@ const ToolCallItem = ({
 
       {isOpen && (
         <div className="px-2 pb-2 space-y-2 animate-in slide-in-from-top-1 duration-200 border-t border-white/5 pt-2">
+          {/* Progress indicator for long-running tools */}
+          {status === 'running' && (progressMessage || progressPercent !== undefined) && (
+            <div className="text-xs bg-amber-50 dark:bg-amber-950/30 rounded-md p-2 border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <div className="flex-1 min-w-0">
+                  {progressMessage && (
+                    <div className="text-xs truncate">{progressMessage}</div>
+                  )}
+                  {(progressPercent !== undefined || (progressStep !== undefined && progressTotal !== undefined)) && (
+                    <div className="mt-1">
+                      <div className="w-full bg-amber-200 dark:bg-amber-900 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-amber-500 h-1.5 rounded-full transition-all duration-300 ease-out"
+                          style={{
+                            width: `${progressPercent ?? ((progressStep ?? 0) / (progressTotal ?? 1) * 100)}%`
+                          }}
+                        />
+                      </div>
+                      {progressStep !== undefined && progressTotal !== undefined && (
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 text-right">
+                          Step {progressStep} of {progressTotal}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {progressPercent !== undefined && (
+                  <span className="text-xs font-mono shrink-0">{progressPercent}%</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {renderedInput && (
             <div className="text-xs">
               <div className="font-medium mb-0.5 text-xs" style={{ color: '#000000' }}>Input</div>
@@ -321,6 +366,11 @@ interface SectionItem {
     contentBlocks?: ContentBlock[];
     artifacts?: ContentBlock[];
     hasMultimodal?: boolean;
+    // Progress tracking for long-running tools
+    progressMessage?: string;
+    progressPercent?: number;
+    progressStep?: number;
+    progressTotal?: number;
   };
   id: string;
 }
@@ -843,6 +893,54 @@ export default function RealtimeExecutionPanel({
               content: outputContent,
               id: `output-${section.items.length}`
             });
+          }
+          break;
+
+        case 'tool_progress':
+          // Tool progress events for long-running operations
+          // Display progress updates associated with a tool call
+          {
+            const progressData = event.data as {
+              tool_name: string;
+              message: string;
+              progress_type: 'started' | 'update' | 'completed' | 'error';
+              percent_complete?: number;
+              current_step?: number;
+              total_steps?: number;
+            };
+
+            // Find a running tool with this name and update its status message
+            let foundProgressTool = false;
+            for (let i = section.items.length - 1; i >= 0; i--) {
+              const item = section.items[i];
+              if (item.type === 'tool_call' && item.tool?.toolName === progressData.tool_name && item.tool?.status === 'running') {
+                // Update the tool's progress info (stored as metadata)
+                item.tool.progressMessage = progressData.message;
+                item.tool.progressPercent = progressData.percent_complete;
+                item.tool.progressStep = progressData.current_step;
+                item.tool.progressTotal = progressData.total_steps;
+                foundProgressTool = true;
+                break;
+              }
+            }
+
+            // If no matching tool found, add as a standalone progress item
+            if (!foundProgressTool) {
+              section.items.push({
+                type: 'tool_call',
+                tool: {
+                  toolName: progressData.tool_name,
+                  input: progressData.message,
+                  status: progressData.progress_type === 'error' ? 'error' :
+                          progressData.progress_type === 'completed' ? 'completed' : 'running',
+                  progressMessage: progressData.message,
+                  progressPercent: progressData.percent_complete,
+                  progressStep: progressData.current_step,
+                  progressTotal: progressData.total_steps,
+                },
+                id: `progress-${progressData.tool_name}-${section.items.length}`
+              });
+            }
           }
           break;
 
@@ -1550,6 +1648,10 @@ export default function RealtimeExecutionPanel({
                             contentBlocks={item.tool.contentBlocks}
                             artifacts={item.tool.artifacts}
                             hasMultimodal={item.tool.hasMultimodal}
+                            progressMessage={item.tool.progressMessage}
+                            progressPercent={item.tool.progressPercent}
+                            progressStep={item.tool.progressStep}
+                            progressTotal={item.tool.progressTotal}
                           />
                         );
                       }

@@ -284,7 +284,9 @@ async def execute_workflow_background(
                 # Save clean message history for viewing agent progression
                 "agent_messages": clean_messages,
                 # NEW: Save workflow execution summary (tool calls, tokens, costs by agent)
-                "workflow_summary": result.get("workflow_summary", {})
+                "workflow_summary": result.get("workflow_summary", {}),
+                # Save multimodal content (images, audio, files from tool calls)
+                "content_blocks": result.get("collected_artifacts", [])
             }
         else:
             task.result = {"formatted_content": "Workflow completed with no output"}
@@ -450,6 +452,39 @@ async def get_workflow_history(
         "limit": limit,
         "offset": offset,
         "tasks": task_history
+    }
+
+
+class DebugModeRequest(BaseModel):
+    """Request to toggle debug mode for a workflow"""
+    debug_mode: bool
+
+
+@router.patch("/workflows/{workflow_id}/debug")
+async def toggle_debug_mode(
+    workflow_id: int,
+    request: DebugModeRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Toggle debug mode for a workflow.
+
+    When debug mode is enabled, additional state transition events
+    are emitted during workflow execution for detailed tracing.
+    """
+    workflow = db.query(WorkflowProfile).filter(WorkflowProfile.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    workflow.debug_mode = request.debug_mode
+    db.commit()
+
+    logger.info(f"Debug mode {'enabled' if request.debug_mode else 'disabled'} for workflow {workflow_id}")
+
+    return {
+        "workflow_id": workflow_id,
+        "debug_mode": workflow.debug_mode,
+        "message": f"Debug mode {'enabled' if request.debug_mode else 'disabled'}"
     }
 
 

@@ -328,6 +328,10 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         self.total_tokens = 0
         self.error_count = 0
 
+        # Collect artifacts (images, files, etc.) generated during execution
+        # These are accumulated from tool results and included in final output
+        self.collected_artifacts: List[Dict[str, Any]] = []
+
         # Track current executing node for agent_action event labeling
         self.current_node_info = {}  # {run_id: {agent_label, node_name, agent_type}}
 
@@ -767,6 +771,30 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             if has_multimodal:
                 logger.info(f"[TOOL END] {tool_name} returned multimodal content: "
                            f"{len(content_blocks)} blocks, {len(artifacts)} artifacts")
+
+        # Collect artifacts for final output (images, files, etc.)
+        # This enables the final results view to display generated content
+        if artifacts:
+            for artifact in artifacts:
+                artifact_with_meta = {
+                    **artifact,
+                    "tool_name": tool_name,
+                    "agent_label": agent_label,
+                }
+                self.collected_artifacts.append(artifact_with_meta)
+            logger.info(f"[ARTIFACT COLLECTOR] Added {len(artifacts)} artifacts from {tool_name}. "
+                       f"Total collected: {len(self.collected_artifacts)}")
+
+        # Also collect image content blocks (not just artifacts)
+        for block in content_blocks:
+            if block.get("type") in ["image", "audio", "file"]:
+                block_with_meta = {
+                    **block,
+                    "tool_name": tool_name,
+                    "agent_label": agent_label,
+                }
+                self.collected_artifacts.append(block_with_meta)
+                logger.info(f"[ARTIFACT COLLECTOR] Added {block.get('type')} content block from {tool_name}")
 
         # Handle case where output might not be a string
         try:
@@ -1216,7 +1244,13 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "CHAT_MODEL_STREAM": "on_chat_model_stream",
                 "SUBAGENT_START": "subagent_start",
                 "SUBAGENT_END": "subagent_end",
-                "SUBAGENT_ERROR": "subagent_error"
+                "SUBAGENT_ERROR": "subagent_error",
+                # Debug mode events (emitted when workflow.debug_mode is enabled)
+                "DEBUG_STATE_TRANSITION": "debug_state_transition",
+                "DEBUG_CHECKPOINT": "debug_checkpoint",
+                "DEBUG_GRAPH_STATE": "debug_graph_state",
+                # Tool progress events (emitted by tools during long-running operations)
+                "TOOL_PROGRESS": "tool_progress",
             }
 
             # Get SSE-compatible event type
@@ -1608,6 +1642,18 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             logger.error(f"❌ Error flushing persist tasks: {e}")
         finally:
             self._pending_persist_tasks.clear()
+
+    def get_collected_artifacts(self) -> List[Dict[str, Any]]:
+        """
+        Get all artifacts (images, files, etc.) collected during execution.
+
+        Returns a list of artifact dictionaries with metadata about the source
+        tool and agent. Use this to include generated content in final output.
+
+        Returns:
+            List of artifact dicts with type, data, mimeType, tool_name, agent_label
+        """
+        return self.collected_artifacts.copy()
 
 
 # =============================================================================

@@ -5,8 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { ChevronDown, ChevronRight, Plus, X, History, Bot, Trash2 } from 'lucide-react';
 import { getModelDisplayName } from '../../../lib/modelDisplayNames';
 import DeepAgentBuilder from './DeepAgentBuilder';
 import apiClient from '../../../lib/api-client';
@@ -56,9 +56,38 @@ export interface WorkflowRecipe {
   edge_count: number;
 }
 
+/**
+ * Task history entry from workflow execution
+ */
+interface TaskHistoryEntry {
+  id: number;
+  task_id: number;
+  workflow_id?: number;
+  status: string;
+  created_at: string;
+  completed_at?: string;
+  duration_seconds?: number;
+  user_input?: string;  // The user's prompt/directive
+  input_data?: any;
+  formatted_input?: string;
+  result?: any;
+  error?: string;
+}
+
+type SidebarPanel = 'agents' | 'history';
+
 interface ModernAgentLibraryProps {
   onSelectAgent: (agent: Agent) => void;
   onSelectRecipe?: (recipe: WorkflowRecipe) => void;
+  // Task history props (for History tab)
+  taskHistory?: TaskHistoryEntry[];
+  loadingHistory?: boolean;
+  selectedHistoryTask?: TaskHistoryEntry | null;
+  onSelectHistoryTask?: (task: TaskHistoryEntry | null) => void;
+  onDeleteTask?: (taskId: number) => void;
+  // Panel control
+  activePanel?: SidebarPanel;
+  onPanelChange?: (panel: SidebarPanel) => void;
 }
 
 // Category name mappings for UI display
@@ -230,8 +259,28 @@ const CONTROL_NODES_CATEGORY: AgentCategory = {
   agents: CONTROL_NODES
 };
 
-export default function ModernAgentLibrary({ onSelectAgent, onSelectRecipe }: ModernAgentLibraryProps) {
+export default function ModernAgentLibrary({
+  onSelectAgent,
+  onSelectRecipe,
+  taskHistory = [],
+  loadingHistory = false,
+  selectedHistoryTask,
+  onSelectHistoryTask,
+  onDeleteTask,
+  activePanel: externalActivePanel,
+  onPanelChange,
+}: ModernAgentLibraryProps) {
   const { showSuccess, logError, showWarning, NotificationModal } = useNotification();
+
+  // Internal panel state (can be controlled externally or internally)
+  const [internalActivePanel, setInternalActivePanel] = useState<SidebarPanel>('agents');
+  const activePanel = externalActivePanel ?? internalActivePanel;
+
+  // Handle panel change - update internal state and notify parent
+  const handlePanelChange = useCallback((panel: SidebarPanel) => {
+    setInternalActivePanel(panel);
+    onPanelChange?.(panel);
+  }, [onPanelChange]);
   const [categories, setCategories] = useState<AgentCategory[]>([CONTROL_NODES_CATEGORY]);
   const [recipes, setRecipes] = useState<WorkflowRecipe[]>([]);
   const [loading, setLoading] = useState(true);
@@ -483,32 +532,172 @@ export default function ModernAgentLibrary({ onSelectAgent, onSelectRecipe }: Mo
     )
   })).filter(category => category.agents.length > 0);
 
+  // Filter task history based on search
+  const filteredTaskHistory = useMemo(() => {
+    if (!searchQuery.trim()) return taskHistory;
+    const query = searchQuery.toLowerCase();
+    return taskHistory.filter(task =>
+      task.formatted_input?.toLowerCase().includes(query) ||
+      task.status.toLowerCase().includes(query) ||
+      String(task.task_id).includes(query)
+    );
+  }, [taskHistory, searchQuery]);
+
+  // Helper to format task status
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { bg: string; text: string; icon: string }> = {
+      completed: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', icon: 'check_circle' },
+      running: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-400', icon: 'sync' },
+      pending: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-400', icon: 'schedule' },
+      failed: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', icon: 'error' },
+    };
+    return statusConfig[status] || statusConfig.pending;
+  };
+
   return (
     <aside className="w-80 flex flex-col bg-white dark:bg-panel-dark border-r border-gray-200 dark:border-border-dark overflow-hidden relative">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-border-dark">
-        <h2 className="text-lg font-semibold mb-3" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-          Agent Library
-        </h2>
+      {/* Header with Tabs */}
+      <div className="border-b border-gray-200 dark:border-border-dark">
+        {/* Tab Buttons */}
+        <div className="flex gap-1 p-1">
+          <button
+            onClick={() => handlePanelChange('agents')}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${
+              activePanel === 'agents'
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10'
+            }`}
+          >
+            <Bot className="w-4 h-4" />
+            <span>Agents</span>
+          </button>
+          <button
+            onClick={() => handlePanelChange('history')}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${
+              activePanel === 'history'
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>History</span>
+            {taskHistory.length > 0 && (
+              <span className={`text-xs ${activePanel === 'history' ? 'opacity-80' : 'opacity-70'}`}>({taskHistory.length})</span>
+            )}
+          </button>
+        </div>
 
         {/* Search */}
-        <div className="relative">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-            search
-          </span>
-          <input
-            type="text"
-            placeholder="Search agents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            style={{ color: 'var(--color-text-primary, #1a1a1a)' }}
-          />
+        <div className="p-3">
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+              search
+            </span>
+            <input
+              type="text"
+              placeholder={activePanel === 'agents' ? 'Search agents...' : 'Search tasks...'}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              style={{ color: 'var(--color-text-primary, #1a1a1a)' }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Agent Categories */}
+      {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
+        {/* History Panel */}
+        {activePanel === 'history' && (
+          <div className="p-3">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : filteredTaskHistory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <History className="w-12 h-12 mb-3 opacity-20" style={{ color: 'var(--color-text-muted)' }} />
+                <p className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                  {taskHistory.length === 0 ? 'No task history yet' : 'No matching tasks'}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}>
+                  {taskHistory.length === 0 ? 'Run a workflow to see history here' : 'Try a different search term'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredTaskHistory.map((task) => {
+                  const taskId = task.id || task.task_id;
+                  const isSelected = (selectedHistoryTask?.id || selectedHistoryTask?.task_id) === taskId;
+                  // Extract user prompt from various possible locations
+                  const prompt = task.user_input
+                    || task.formatted_input
+                    || task.input_data?.query
+                    || task.input_data?.task
+                    || task.input_data?.directive
+                    || task.input_data?.prompt
+                    || task.result?.input_data?.query
+                    || task.result?.input_data?.task
+                    || 'No prompt';
+                  const duration = task.duration_seconds
+                    ? task.duration_seconds < 60
+                      ? `${task.duration_seconds.toFixed(1)}s`
+                      : `${(task.duration_seconds / 60).toFixed(1)}m`
+                    : null;
+
+                  return (
+                    <div
+                      key={taskId}
+                      onClick={() => onSelectHistoryTask?.(task)}
+                      className={`group p-3 rounded-lg border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                          : 'border-gray-200 dark:border-border-dark hover:border-primary/50 hover:bg-gray-50 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                          #{taskId}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${
+                            task.status === 'completed' ? 'bg-green-500' :
+                            task.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                            task.status === 'failed' ? 'bg-red-500' :
+                            'bg-yellow-500'
+                          }`} title={task.status} />
+                          {onDeleteTask && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteTask(taskId);
+                              }}
+                              className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                              title="Delete task"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs line-clamp-2 mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                        {prompt.substring(0, 100)}{prompt.length > 100 ? '...' : ''}
+                      </p>
+                      <div className="flex items-center justify-between text-xs" style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}>
+                        <span>{new Date(task.created_at).toLocaleString()}</span>
+                        {duration && <span>{duration}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agents Panel */}
+        {activePanel === 'agents' && (
+          <>
         {/* Workflow Recipes Section */}
         {recipes.length > 0 && (
           <div className="border-b border-gray-200 dark:border-border-dark">
@@ -651,6 +840,8 @@ export default function ModernAgentLibrary({ onSelectAgent, onSelectRecipe }: Mo
               No agents found matching "{searchQuery}"
             </p>
           </div>
+        )}
+          </>
         )}
       </div>
 

@@ -35,7 +35,13 @@ export type WorkflowEventType =
   | 'subagent_start'
   | 'subagent_end'
   | 'subagent_error'
-  | 'keepalive';
+  | 'keepalive'
+  // Tool progress events (for long-running tools)
+  | 'tool_progress'
+  // Debug mode events (detailed tracing)
+  | 'debug_state_transition'
+  | 'debug_checkpoint'
+  | 'debug_graph_state';
 
 export interface BaseEvent {
   event_id: number;
@@ -164,9 +170,75 @@ export interface SubagentErrorEvent extends BaseEvent {
   };
 }
 
+// Tool progress event for long-running operations
+export interface ToolProgressEvent extends BaseEvent {
+  type: 'tool_progress';
+  data: {
+    tool_name: string;
+    message: string;
+    progress_type: 'started' | 'update' | 'completed' | 'error';
+    agent_label?: string;
+    node_id?: string;
+    percent_complete?: number;
+    current_step?: number;
+    total_steps?: number;
+    task_id?: number;
+    project_id?: number;
+    metadata?: Record<string, any>;
+  };
+}
+
+// Debug mode: state transition event
+export interface DebugStateTransitionEvent extends BaseEvent {
+  type: 'debug_state_transition';
+  data: {
+    event_kind: string;
+    event_name: string;
+    tags: string[];
+    node_id?: string;
+    agent_label?: string;
+    run_id: string;
+    parent_run_id?: string;
+    state_keys: string[];
+  };
+}
+
+// Debug mode: checkpoint event
+export interface DebugCheckpointEvent extends BaseEvent {
+  type: 'debug_checkpoint';
+  data: {
+    checkpoint_id: string;
+    checkpoint_ns: string;
+    state_keys: string[];
+  };
+}
+
+// Debug mode: graph state event
+export interface DebugGraphStateEvent extends BaseEvent {
+  type: 'debug_graph_state';
+  data: {
+    node_name: string;
+    state_update: Record<string, any>;
+    state_keys_updated: string[];
+  };
+}
+
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
-  type: Exclude<WorkflowEventType, 'on_chat_model_stream' | 'on_tool_start' | 'on_tool_end' | 'error' | 'node_completed' | 'subagent_start' | 'subagent_end' | 'subagent_error'>;
+  type: Exclude<WorkflowEventType,
+    | 'on_chat_model_stream'
+    | 'on_tool_start'
+    | 'on_tool_end'
+    | 'error'
+    | 'node_completed'
+    | 'subagent_start'
+    | 'subagent_end'
+    | 'subagent_error'
+    | 'tool_progress'
+    | 'debug_state_transition'
+    | 'debug_checkpoint'
+    | 'debug_graph_state'
+  >;
   data: any;
 }
 
@@ -179,4 +251,8 @@ export type WorkflowEvent =
   | SubagentStartEvent
   | SubagentEndEvent
   | SubagentErrorEvent
+  | ToolProgressEvent
+  | DebugStateTransitionEvent
+  | DebugCheckpointEvent
+  | DebugGraphStateEvent
   | GenericEvent;

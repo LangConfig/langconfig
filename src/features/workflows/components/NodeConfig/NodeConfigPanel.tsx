@@ -439,9 +439,28 @@ const NodeConfigPanel = ({
       setEnableAutoSummarization((selectedNode as any).enable_auto_summarization ?? nodeConfig.enable_auto_summarization ?? true);
 
       // Long-Term Memory & RAG (unified section)
-      setEnableLongTermMemory((selectedNode as any).enable_long_term_memory ?? nodeConfig.enable_long_term_memory ?? false);
-      setEnableMemoryStore((selectedNode as any).enable_memory_store ?? nodeConfig.enable_memory_store ?? true);
-      setEnableMemoryRecall((selectedNode as any).enable_memory_recall ?? nodeConfig.enable_memory_recall ?? true);
+      // Check if memory tools are in native_tools array - if so, enable the toggle
+      const hasMemoryStoreInTools = nativeToolsList.includes('memory_store');
+      const hasMemoryRecallInTools = nativeToolsList.includes('memory_recall');
+      const hasAnyMemoryTools = hasMemoryStoreInTools || hasMemoryRecallInTools;
+
+      // Enable long-term memory if explicitly set OR if memory tools are present
+      setEnableLongTermMemory(
+        (selectedNode as any).enable_long_term_memory ??
+        nodeConfig.enable_long_term_memory ??
+        hasAnyMemoryTools
+      );
+      // Set store/recall based on explicit flags OR presence in native_tools
+      setEnableMemoryStore(
+        (selectedNode as any).enable_memory_store ??
+        nodeConfig.enable_memory_store ??
+        hasMemoryStoreInTools
+      );
+      setEnableMemoryRecall(
+        (selectedNode as any).enable_memory_recall ??
+        nodeConfig.enable_memory_recall ??
+        hasMemoryRecallInTools
+      );
       setEnableRAG((selectedNode as any).enable_rag ?? nodeConfig.enable_rag ?? false);
 
       // LangGraph HITL parameters
@@ -518,8 +537,29 @@ const NodeConfigPanel = ({
 
   const handleSave = () => {
     if (config) {
-      // Get native tools from config (no longer need to detect memory flags from tools)
-      const nativeTools = (config as any).native_tools || [];
+      // Get native tools from config and sync with memory tool checkboxes
+      let nativeTools = [...((config as any).native_tools || [])];
+
+      // Sync memory tools with the checkbox states
+      if (enableLongTermMemory) {
+        // Add memory tools if enabled and not already present
+        if (enableMemoryStore && !nativeTools.includes('memory_store')) {
+          nativeTools.push('memory_store');
+        }
+        if (enableMemoryRecall && !nativeTools.includes('memory_recall')) {
+          nativeTools.push('memory_recall');
+        }
+        // Remove memory tools if unchecked
+        if (!enableMemoryStore) {
+          nativeTools = nativeTools.filter(t => t !== 'memory_store');
+        }
+        if (!enableMemoryRecall) {
+          nativeTools = nativeTools.filter(t => t !== 'memory_recall');
+        }
+      } else {
+        // Long-term memory disabled - remove all memory tools
+        nativeTools = nativeTools.filter(t => t !== 'memory_store' && t !== 'memory_recall');
+      }
 
       // Build complete config object matching LangGraph/backend structure
       // DEBUG: Log what we're about to save
@@ -1296,9 +1336,24 @@ const NodeConfigPanel = ({
                         type="checkbox"
                         checked={enableLongTermMemory}
                         onChange={(e) => {
-                          setEnableLongTermMemory(e.target.checked);
+                          const enabled = e.target.checked;
+                          setEnableLongTermMemory(enabled);
                           if (config) {
-                            onSave(config.id, { ...config, enable_long_term_memory: e.target.checked });
+                            // Update native_tools based on toggle state
+                            let updatedTools = [...((config as any).native_tools || [])];
+                            if (enabled) {
+                              // Add memory tools if enabling and sub-options are checked
+                              if (enableMemoryStore && !updatedTools.includes('memory_store')) {
+                                updatedTools.push('memory_store');
+                              }
+                              if (enableMemoryRecall && !updatedTools.includes('memory_recall')) {
+                                updatedTools.push('memory_recall');
+                              }
+                            } else {
+                              // Remove all memory tools when disabling
+                              updatedTools = updatedTools.filter(t => t !== 'memory_store' && t !== 'memory_recall');
+                            }
+                            onSave(config.id, { ...config, enable_long_term_memory: enabled, native_tools: updatedTools });
                           }
                         }}
                         className="sr-only"
@@ -1315,9 +1370,17 @@ const NodeConfigPanel = ({
                           type="checkbox"
                           checked={enableMemoryStore}
                           onChange={(e) => {
-                            setEnableMemoryStore(e.target.checked);
+                            const checked = e.target.checked;
+                            setEnableMemoryStore(checked);
                             if (config) {
-                              onSave(config.id, { ...config, enable_memory_store: e.target.checked });
+                              // Update native_tools array
+                              let updatedTools = [...((config as any).native_tools || [])];
+                              if (checked && !updatedTools.includes('memory_store')) {
+                                updatedTools.push('memory_store');
+                              } else if (!checked) {
+                                updatedTools = updatedTools.filter(t => t !== 'memory_store');
+                              }
+                              onSave(config.id, { ...config, enable_memory_store: checked, native_tools: updatedTools });
                             }
                           }}
                           className="w-3 h-3 rounded"
@@ -1330,9 +1393,17 @@ const NodeConfigPanel = ({
                           type="checkbox"
                           checked={enableMemoryRecall}
                           onChange={(e) => {
-                            setEnableMemoryRecall(e.target.checked);
+                            const checked = e.target.checked;
+                            setEnableMemoryRecall(checked);
                             if (config) {
-                              onSave(config.id, { ...config, enable_memory_recall: e.target.checked });
+                              // Update native_tools array
+                              let updatedTools = [...((config as any).native_tools || [])];
+                              if (checked && !updatedTools.includes('memory_recall')) {
+                                updatedTools.push('memory_recall');
+                              } else if (!checked) {
+                                updatedTools = updatedTools.filter(t => t !== 'memory_recall');
+                              }
+                              onSave(config.id, { ...config, enable_memory_recall: checked, native_tools: updatedTools });
                             }
                           }}
                           className="w-3 h-3 rounded"
