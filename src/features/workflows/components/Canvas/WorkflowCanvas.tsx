@@ -59,6 +59,10 @@ import { useUIToggles } from './hooks/useUIToggles';
 import { useFileHandling } from './hooks/useFileHandling';
 import { useWorkflowPersistence } from './hooks/useWorkflowPersistence';
 import { useVersionManagement } from './hooks/useVersionManagement';
+import { useResultsState } from './hooks/useResultsState';
+// Future hooks ready for integration:
+// import { useWorkflowManagement } from './hooks/useWorkflowManagement';
+// import { useTaskManagement } from './hooks/useTaskManagement';
 
 interface Agent {
   id: string;
@@ -257,13 +261,23 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [showCreateWorkflowModal, setShowCreateWorkflowModal] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
 
-  // Results view state
-  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
-  const [showRawOutput, setShowRawOutput] = useState(false);
-  const [resultsSubTab, setResultsSubTab] = useState<'output' | 'memory' | 'files'>('output'); // Results subtabs
-  const [showAnimatedReveal, setShowAnimatedReveal] = useState(true);
-  const [showReplayPanel, setShowReplayPanel] = useState(false); // Toggle for execution log replay
-  const [replayTaskId, setReplayTaskId] = useState<number | null>(null); // Task ID for replay panel
+  // Use extracted hook for results tab state
+  const {
+    resultsSubTab,
+    setResultsSubTab,
+    copiedToClipboard,
+    setCopiedToClipboard,
+    showRawOutput,
+    setShowRawOutput,
+    showAnimatedReveal,
+    setShowAnimatedReveal,
+    expandedToolCalls,
+    setExpandedToolCalls,
+  } = useResultsState();
+
+  // Replay panel state (kept separate as it affects streaming)
+  const [showReplayPanel, setShowReplayPanel] = useState(false);
+  const [replayTaskId, setReplayTaskId] = useState<number | null>(null);
 
   // Workflow Settings
   const [globalRecursionLimit, setGlobalRecursionLimit] = useState(300);
@@ -289,7 +303,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     return {};
   });
   const [selectedHistoryTask, setSelectedHistoryTask] = useState<any>(null); // Selected task from history sidebar
-  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<number>>(new Set()); // Track which tool calls are expanded
   const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(() => {
     // Load from localStorage
     const saved = localStorage.getItem('workflow-history-collapsed');

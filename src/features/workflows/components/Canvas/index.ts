@@ -47,6 +47,9 @@ export { useTokenCostInfo } from './hooks/useTokenCostInfo';
 export { useUIToggles } from './hooks/useUIToggles';
 export { useExecutionHandlers } from './hooks/useExecutionHandlers';
 export { useSaveToLibrary } from './hooks/useSaveToLibrary';
+export { useWorkflowManagement } from './hooks/useWorkflowManagement';
+export { useTaskManagement } from './hooks/useTaskManagement';
+export { useResultsState } from './hooks/useResultsState';
 export type { TaskFile } from './hooks/useFileHandling';
 export type { WorkflowMetrics } from './hooks/useWorkflowMetrics';
 
