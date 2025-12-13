@@ -89,6 +89,30 @@ class APIClient {
   }
 
   /**
+   * Generic axios helpers for ad-hoc endpoints.
+   * Prefer adding typed methods over time, but these unblock components safely.
+   */
+  get(url: string, config?: any) {
+    return this.client.get(url, config);
+  }
+
+  post(url: string, data?: any, config?: any) {
+    return this.client.post(url, data, config);
+  }
+
+  put(url: string, data?: any, config?: any) {
+    return this.client.put(url, data, config);
+  }
+
+  patch(url: string, data?: any, config?: any) {
+    return this.client.patch(url, data, config);
+  }
+
+  delete(url: string, config?: any) {
+    return this.client.delete(url, config);
+  }
+
+  /**
    * Enhanced error handling
    */
   private handleError(error: AxiosError<ApiError>) {
@@ -784,4 +808,4 @@ class APIClient {
 
 // Export singleton instance
 export const apiClient = new APIClient();
-export default new APIClient();
+export default apiClient;

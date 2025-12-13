@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { useProject } from "../../contexts/ProjectContext";
-import { useChat } from '../../features/chat/context/ChatContext';
+import { useChat } from '../../features/chat/state/ChatContext';
 
 interface ModernHeaderProps {
   currentView: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'home' | 'community';

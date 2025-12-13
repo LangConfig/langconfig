@@ -24,7 +24,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import apiClient from '../lib/api-client';
+import apiClient from '@/lib/api-client';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';

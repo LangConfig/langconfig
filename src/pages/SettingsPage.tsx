@@ -8,11 +8,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import apiClient from '../lib/api-client';
 import { themes, applyTheme, loadTheme, type ThemeName } from '../lib/themes';
-import SettingsLayout, { SettingsCategory } from "../features/settings/components/SettingsLayout";
-import LocalModelsSettings from "../features/settings/components/LocalModelsSettings";
-import LocalWorkspaceSettings from "../features/settings/components/LocalWorkspaceSettings";
-import ModelDefaultsSettings from '../features/settings/components/ModelDefaultsSettings';
-import SettingsSection, { SettingsInput } from '../features/settings/components/SettingsSection';
+import SettingsLayout, { SettingsCategory } from "../features/settings/ui/SettingsLayout";
+import LocalModelsSettings from "../features/settings/ui/LocalModelsSettings";
+import LocalWorkspaceSettings from "../features/settings/ui/LocalWorkspaceSettings";
+import ModelDefaultsSettings from '../features/settings/ui/ModelDefaultsSettings';
+import SettingsSection, { SettingsInput } from '../features/settings/ui/SettingsSection';
 
 export default function SettingsView() {
   const [currentCategory, setCurrentCategory] = useState<SettingsCategory>('general');

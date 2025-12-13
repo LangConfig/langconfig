@@ -111,6 +111,13 @@ export interface WorkflowBlueprint {
  * Workflow configuration
  */
 export interface WorkflowConfiguration {
+  /**
+   * Canvas structure (Studio saves node/edge state here)
+   * Note: some older workflows may store this under `blueprint` instead.
+   */
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
+
   // LangGraph configuration
   checkpointer?: {
     type: string;
