@@ -327,16 +327,22 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   }, [taskHistory, onTaskHistoryUpdate]);
 
-  // Sync selected task changes to parent
+  // Track if the last selection change came from external source to prevent loops
+  const isExternalSelectionRef = useRef(false);
+
+  // Sync selected task changes to parent (only if change was internal)
   useEffect(() => {
-    if (onSelectedTaskChange && selectedHistoryTask) {
+    if (onSelectedTaskChange && selectedHistoryTask && !isExternalSelectionRef.current) {
       onSelectedTaskChange(selectedHistoryTask);
     }
+    // Reset the flag after processing
+    isExternalSelectionRef.current = false;
   }, [selectedHistoryTask, onSelectedTaskChange]);
 
   // Handle external task selection (from left sidebar)
   useEffect(() => {
     if (externalSelectedTask && externalSelectedTask.id !== selectedHistoryTask?.id) {
+      isExternalSelectionRef.current = true; // Mark as external to prevent loop
       setSelectedHistoryTask(externalSelectedTask);
     }
   }, [externalSelectedTask, selectedHistoryTask?.id, setSelectedHistoryTask]);
