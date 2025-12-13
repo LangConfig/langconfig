@@ -41,6 +41,7 @@ import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
 import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
 import ChatWarningModal from './dialogs/ChatWarningModal';
 import WorkflowResults from './results/WorkflowResults';
+import ArtifactsTab from './results/ArtifactsTab';
 import WorkflowToolbar from './toolbar/WorkflowToolbar';
 import NodeContextMenu from './menus/NodeContextMenu';
 import TaskContextMenu from './menus/TaskContextMenu';
@@ -232,11 +233,12 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
-  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files'>(() => {
+  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts'>(() => {
     // Initialize from URL hash if present
     const hash = window.location.hash.replace('#', '');
     if (hash === 'results') return 'results';
     if (hash === 'files') return 'files';
+    if (hash === 'artifacts') return 'artifacts';
     return 'studio';
   });
   const [executionStatus, setExecutionStatus] = useState<{
@@ -424,7 +426,9 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     handleFileSelect,
     closeFilePreview,
   } = useFileHandling({
-    currentTaskId,
+    // Use selected history task when viewing results, otherwise use current running task
+    // Note: API returns task ID as 'id', not 'task_id'
+    currentTaskId: selectedHistoryTask?.id ?? currentTaskId,
     activeTab,
   });
 
@@ -622,7 +626,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   }, [nodeExecutionStatuses, nodeTokenCosts, nodeWarnings, setNodes]);
 
   // Update URL when tab changes - delegate to parent component
-  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files') => {
+  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts') => {
     setActiveTab(newTab);
     if (newTab === 'studio' || newTab === 'results') {
       onTabChange?.(newTab);
@@ -913,6 +917,38 @@ if __name__ == "__main__":
     nodeTokenCosts,
     onTokenCostUpdate,
   });
+
+  // Compute artifacts from task history content_blocks
+  const artifacts = useMemo(() => {
+    const artifactEntries: Array<{
+      id: string;
+      taskId: number;
+      agentLabel?: string;
+      timestamp: string;
+      blocks: any[];
+    }> = [];
+
+    taskHistory.forEach((task) => {
+      // Get content_blocks from task result
+      const contentBlocks = task.result?.content_blocks || [];
+      if (contentBlocks.length > 0) {
+        artifactEntries.push({
+          id: `task-${task.id}`,
+          taskId: task.id,
+          agentLabel: task.result?.agent_label,
+          timestamp: task.created_at,
+          blocks: contentBlocks,
+        });
+      }
+    });
+
+    return artifactEntries;
+  }, [taskHistory]);
+
+  // Count total artifact blocks
+  const artifactsCount = useMemo(() => {
+    return artifacts.reduce((count, entry) => count + entry.blocks.length, 0);
+  }, [artifacts]);
 
   // Load workflow from localStorage on mount (only once)
   useEffect(() => {
@@ -1670,6 +1706,7 @@ if __name__ == "__main__":
           }}
           taskHistoryCount={taskHistory.length}
           filesCount={files.length}
+          artifactsCount={artifactsCount}
           hasUnsavedChanges={hasUnsavedChanges}
         />
 
@@ -1970,6 +2007,13 @@ if __name__ == "__main__":
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Artifacts Tab */}
+          {activeTab === 'artifacts' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <ArtifactsTab artifacts={artifacts} loading={loadingHistory} />
             </div>
           )}
 

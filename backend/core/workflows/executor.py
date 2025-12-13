@@ -1692,7 +1692,8 @@ When your work is complete, deliver the final result and END."""
                         task_id=state.get("task_id", 0),
                         context=context_with_criteria,
                         mcp_manager=mcp_manager,
-                        vector_store=vector_store
+                        vector_store=vector_store,
+                        workflow_id=state.get("workflow_id")
                     )
 
                     logger.info(f"[{display_name}] ✓ DeepAgent created with {len(tools)} tools: {[t.name for t in tools]}")
