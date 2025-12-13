@@ -6,8 +6,9 @@
  */
 
 import { X, Download, ClipboardCopy, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { getFileIcon, getLanguage, isCodeFile, isMarkdownFile } from '@/features/workflows/utils/fileHelpers';
@@ -56,6 +57,142 @@ export default function InlineFilePreview({
     setPathCopied(true);
     setTimeout(() => setPathCopied(false), 2000);
   };
+
+  // Custom markdown components for proper document-like rendering
+  const markdownComponents = useMemo(() => ({
+    h1: ({ children }: any) => (
+      <h1 className="text-2xl font-bold mt-6 mb-3 border-b pb-2"
+          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        {children}
+      </h1>
+    ),
+    h2: ({ children }: any) => (
+      <h2 className="text-xl font-bold mt-5 mb-2"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h2>
+    ),
+    h3: ({ children }: any) => (
+      <h3 className="text-lg font-semibold mt-4 mb-2"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h3>
+    ),
+    h4: ({ children }: any) => (
+      <h4 className="text-base font-semibold mt-3 mb-2"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </h4>
+    ),
+    p: ({ children }: any) => (
+      <p className="mb-3 leading-relaxed"
+         style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </p>
+    ),
+    ul: ({ children }: any) => (
+      <ul className="list-disc list-outside ml-5 mb-3 space-y-1"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </ul>
+    ),
+    ol: ({ children }: any) => (
+      <ol className="list-decimal list-outside ml-5 mb-3 space-y-1"
+          style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </ol>
+    ),
+    li: ({ children }: any) => (
+      <li style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </li>
+    ),
+    blockquote: ({ children }: any) => (
+      <blockquote className="border-l-4 pl-4 py-2 my-3 italic rounded-r"
+                  style={{
+                    borderColor: 'var(--color-primary)',
+                    backgroundColor: 'var(--color-panel-dark)',
+                    color: 'var(--color-text-muted)'
+                  }}>
+        {children}
+      </blockquote>
+    ),
+    code: ({ inline, className, children }: any) => {
+      const match = /language-(\w+)/.exec(className || '');
+      return !inline && match ? (
+        <SyntaxHighlighter
+          language={match[1]}
+          style={oneDark}
+          customStyle={{ margin: '1rem 0', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+          showLineNumbers
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      ) : (
+        <code className="px-1.5 py-0.5 rounded text-sm font-mono"
+              style={{
+                backgroundColor: 'var(--color-panel-dark)',
+                color: 'var(--color-primary)'
+              }}>
+          {children}
+        </code>
+      );
+    },
+    strong: ({ children }: any) => (
+      <strong className="font-bold" style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </strong>
+    ),
+    em: ({ children }: any) => (
+      <em style={{ color: 'var(--color-text-primary)' }}>
+        {children}
+      </em>
+    ),
+    a: ({ href, children }: any) => (
+      <a href={href}
+         className="underline hover:opacity-80"
+         style={{ color: 'var(--color-primary)' }}
+         target="_blank"
+         rel="noopener noreferrer">
+        {children}
+      </a>
+    ),
+    table: ({ children }: any) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full border-collapse border"
+               style={{ borderColor: 'var(--color-border-dark)' }}>
+          {children}
+        </table>
+      </div>
+    ),
+    th: ({ children }: any) => (
+      <th className="border px-3 py-2 text-left font-semibold text-sm"
+          style={{
+            borderColor: 'var(--color-border-dark)',
+            backgroundColor: 'var(--color-panel-dark)',
+            color: 'var(--color-text-primary)'
+          }}>
+        {children}
+      </th>
+    ),
+    td: ({ children }: any) => (
+      <td className="border px-3 py-2 text-sm"
+          style={{
+            borderColor: 'var(--color-border-dark)',
+            color: 'var(--color-text-primary)'
+          }}>
+        {children}
+      </td>
+    ),
+  }), []);
+
+  // Check if content looks like markdown (has headers, lists, code blocks, etc.)
+  const contentLooksLikeMarkdown = useMemo(() => {
+    if (!content?.content) return false;
+    const text = content.content;
+    // Check for common markdown patterns
+    return /^#{1,6}\s|^\*\s|^-\s|^\d+\.\s|```|`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)/m.test(text);
+  }, [content?.content]);
 
   return (
     <div className="w-1/2 flex flex-col border-l border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark animate-in slide-in-from-right duration-200">
@@ -126,21 +263,28 @@ export default function InlineFilePreview({
           </div>
         ) : content?.content ? (
           <div className="p-4">
-            {isMarkdownFile(file.extension) ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown>{content.content}</ReactMarkdown>
+            {isMarkdownFile(file.extension) || contentLooksLikeMarkdown ? (
+              // Render as markdown - includes .md files and text files that look like markdown
+              <div className="prose prose-lg dark:prose-invert max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={markdownComponents}
+                >
+                  {content.content}
+                </ReactMarkdown>
               </div>
             ) : isCodeFile(file.extension) ? (
               <SyntaxHighlighter
                 language={getLanguage(file.extension)}
                 style={oneDark}
-                customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.75rem' }}
+                customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.875rem' }}
                 showLineNumbers
               >
                 {content.content}
               </SyntaxHighlighter>
             ) : (
-              <pre className="text-sm whitespace-pre-wrap break-words font-mono text-gray-800 dark:text-gray-200">
+              // Plain text fallback with proper colors
+              <pre className="text-base whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-primary)' }}>
                 {content.content}
               </pre>
             )}

@@ -73,7 +73,8 @@ class DeepAgentFactory:
         task_id: int,
         context: str,
         mcp_manager=None,
-        vector_store=None
+        vector_store=None,
+        workflow_id: Optional[int] = None
     ) -> Tuple[CompiledStateGraph, List[BaseTool], List[Any]]:
         """
         Create a DeepAgent with middleware, subagents, and backends.
@@ -85,6 +86,7 @@ class DeepAgentFactory:
             context: Additional context string
             mcp_manager: MCP manager for tool loading
             vector_store: Vector store for RAG
+            workflow_id: Workflow ID for file organization
 
         Returns:
             Tuple of (agent, tools, callbacks)
@@ -163,7 +165,7 @@ class DeepAgentFactory:
                 workspace_mgr = get_workspace_manager()
                 workspace_path = workspace_mgr.get_task_workspace(
                     project_id=project_id,
-                    workflow_id=None,  # Will be set by graph execution context if available
+                    workflow_id=workflow_id,
                     task_id=task_id
                 )
 

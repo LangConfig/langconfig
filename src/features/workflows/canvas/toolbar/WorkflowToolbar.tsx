@@ -6,7 +6,7 @@
  */
 
 import { memo } from 'react';
-import { Save, History as HistoryIcon, Settings, FolderOpen, Camera } from 'lucide-react';
+import { Save, History as HistoryIcon, Settings, FolderOpen, Image, Camera } from 'lucide-react';
 
 interface WorkflowVersion {
   id: number;
@@ -22,7 +22,7 @@ interface AvailableWorkflow {
   name: string;
 }
 
-type Tab = 'studio' | 'results' | 'files';
+type Tab = 'studio' | 'results' | 'files' | 'artifacts';
 
 interface WorkflowToolbarProps {
   // Workflow name editing
@@ -65,6 +65,7 @@ interface WorkflowToolbarProps {
   onTabChange: (tab: Tab) => void;
   taskHistoryCount: number;
   filesCount: number;
+  artifactsCount: number;
   hasUnsavedChanges: boolean;
 }
 
@@ -101,6 +102,7 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
   onTabChange,
   taskHistoryCount,
   filesCount,
+  artifactsCount,
   hasUnsavedChanges,
 }: WorkflowToolbarProps) {
   const tabClass = (tab: Tab) =>
@@ -326,6 +328,10 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
             <button onClick={() => onTabChange('files')} className={`${tabClass('files')} flex items-center gap-1.5`}>
               <FolderOpen className="w-4 h-4" />
               Files {filesCount > 0 && <span className="text-xs opacity-70">({filesCount})</span>}
+            </button>
+            <button onClick={() => onTabChange('artifacts')} className={`${tabClass('artifacts')} flex items-center gap-1.5`}>
+              <Image className="w-4 h-4" />
+              Artifacts {artifactsCount > 0 && <span className="text-xs opacity-70">({artifactsCount})</span>}
             </button>
           </div>
         </div>

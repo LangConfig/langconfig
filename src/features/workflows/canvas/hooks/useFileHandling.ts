@@ -22,7 +22,7 @@ export interface TaskFile {
 
 interface UseFileHandlingOptions {
   currentTaskId: number | null;
-  activeTab: 'studio' | 'results' | 'files';
+  activeTab: 'studio' | 'results' | 'files' | 'artifacts';
 }
 
 interface UseFileHandlingReturn {
@@ -116,7 +116,15 @@ export function useFileHandling({
     setFilePreviewContent(null);
   }, []);
 
-  // Fetch files when Files tab is active
+  // Fetch files when Files tab is active or when task changes
+  // Also pre-fetch when task changes so file count is ready
+  useEffect(() => {
+    if (currentTaskId) {
+      fetchFiles();
+    }
+  }, [currentTaskId, fetchFiles]);
+
+  // Re-fetch when switching to files tab in case files were added
   useEffect(() => {
     if (activeTab === 'files' && currentTaskId) {
       fetchFiles();
