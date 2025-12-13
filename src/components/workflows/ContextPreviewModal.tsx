@@ -14,7 +14,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, MessageSquare, Clock, Hash } from 'lucide-react';
-import apiClient from '../../lib/api-client';
+import apiClient from '@/lib/api-client';
 
 interface Message {
   role: string;

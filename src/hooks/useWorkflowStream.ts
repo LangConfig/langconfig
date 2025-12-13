@@ -313,7 +313,7 @@ export function useWorkflowStream(
             processedEventKeys.current = new Set(keys.slice(-1000));
           }
 
-          const event: WorkflowEvent = {
+          const event = {
             type: eventType,
             data: cleanData,  // Clean data without metadata
             event_id: parseInt(e.lastEventId || '0', 10),
@@ -321,7 +321,7 @@ export function useWorkflowStream(
             idempotency_key: eventKey,
             timestamp: timestamp || new Date().toISOString(),
             channel: channel || 'default',
-          };
+          } as WorkflowEvent;
 
           // Gap detection: check for missing sequence numbers
           if (event.sequence_number !== undefined && event.sequence_number > 0) {
