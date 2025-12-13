@@ -1526,8 +1526,23 @@ class SimpleWorkflowExecutor:
                 # Get the user's query
                 query = state.get("query", "")
 
+                logger.info(f"[{display_name}] ===== NODE START =====")
                 logger.info(f"[{display_name}] Received {len(messages)} messages from previous nodes")
                 logger.info(f"[{display_name}] Query: {query[:100] if query else 'None'}...")
+
+                # Log received message types for debugging context passing
+                if messages:
+                    msg_summary = {}
+                    for msg in messages:
+                        msg_type = msg.__class__.__name__
+                        msg_summary[msg_type] = msg_summary.get(msg_type, 0) + 1
+                    logger.info(f"[{display_name}] Message breakdown: {msg_summary}")
+                    # Log last message preview
+                    last_msg = messages[-1]
+                    last_content = str(last_msg.content)[:200] if hasattr(last_msg, 'content') else 'N/A'
+                    logger.info(f"[{display_name}] Last message ({last_msg.__class__.__name__}): {last_content}...")
+                else:
+                    logger.warning(f"[{display_name}] No messages received from previous nodes!")
 
                 # If no messages yet, create initial message from user's query
                 if not messages and query:
@@ -1874,13 +1889,33 @@ When your work is complete, deliver the final result and END."""
                             all_response_messages = response["messages"]
                             # Find messages that weren't in the input
                             input_message_count = len(current_messages)
-                            new_messages = all_response_messages[input_message_count:]  # Only new messages
+
+                            logger.debug(f"[{display_name}] Response has {len(all_response_messages)} messages, input had {input_message_count}")
+
+                            # Safety check: ensure we don't slice beyond the list
+                            if len(all_response_messages) > input_message_count:
+                                new_messages = all_response_messages[input_message_count:]  # Only new messages
+                            elif len(all_response_messages) == input_message_count:
+                                # Agent returned same number of messages - might have modified existing ones
+                                # Check if the last message is different
+                                logger.warning(f"[{display_name}] Agent returned same message count ({input_message_count}), checking for modifications")
+                                if all_response_messages and current_messages:
+                                    last_response = all_response_messages[-1]
+                                    last_input = current_messages[-1]
+                                    if str(last_response.content) != str(last_input.content):
+                                        new_messages = [last_response]
+                                        logger.info(f"[{display_name}] Detected modified last message")
+                            else:
+                                # Response has fewer messages than input - something wrong
+                                logger.warning(f"[{display_name}] Response has fewer messages ({len(all_response_messages)}) than input ({input_message_count})")
 
                         if not new_messages:
                             # Fallback: if no new messages detected, take last AI message
+                            logger.warning(f"[{display_name}] No new messages detected, using fallback to get last AI message")
                             for msg in reversed(all_response_messages):
                                 if hasattr(msg, '__class__') and 'AI' in msg.__class__.__name__:
                                     new_messages = [msg]
+                                    logger.info(f"[{display_name}] Fallback found AI message: {str(msg.content)[:100]}...")
                                     break
 
                         # CHECK FOR UNEXPECTED_TOOL_CALL FAILURE
@@ -2080,7 +2115,13 @@ When your work is complete, deliver the final result and END."""
                     except Exception as event_error:
                         logger.warning(f"[{display_name}] Failed to emit node_completed event: {event_error}")
 
-                    logger.info(f"[{display_name}] Returning {len(new_messages)} new messages")
+                    logger.info(f"[{display_name}] Returning {len(new_messages)} new messages to be added to state")
+
+                    # Log message content preview for debugging context passing
+                    for i, msg in enumerate(new_messages):
+                        msg_type = msg.__class__.__name__
+                        content_preview = str(msg.content)[:150] if hasattr(msg, 'content') else 'N/A'
+                        logger.debug(f"[{display_name}] Message {i+1}/{len(new_messages)} ({msg_type}): {content_preview}...")
 
                     # Return new messages (reducer will append them)
                     return {
@@ -2091,6 +2132,7 @@ When your work is complete, deliver the final result and END."""
                 else:
                     logger.warning(f"[Node: {node_id}] No messages to process")
                     return {
+                        "messages": [],  # Always include messages key for reducer
                         "current_node": node_id,
                         "last_agent_type": agent_type
                     }
@@ -2098,6 +2140,7 @@ When your work is complete, deliver the final result and END."""
             except Exception as e:
                 logger.error(f"[Node: {node_id}] Execution failed: {e}", exc_info=True)
                 return {
+                    "messages": [],  # Always include messages key for reducer
                     "error_message": str(e),
                     "current_node": node_id
                 }
