@@ -424,7 +424,8 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     handleFileSelect,
     closeFilePreview,
   } = useFileHandling({
-    currentTaskId,
+    // Use selected history task when viewing results, otherwise use current running task
+    currentTaskId: selectedHistoryTask?.task_id ?? currentTaskId,
     activeTab,
   });
 
