@@ -7,8 +7,9 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, Trash2, Edit, Download, Copy, Upload, Sparkles, Code, Database, Terminal, X, Save } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, Download, Copy, Upload, Sparkles, Code, Database, Terminal, X, Save, BookOpen, Tag, Clock, TrendingUp } from 'lucide-react';
 import DeepAgentBuilder from './DeepAgentBuilder';
+import SkillBuilderModal from './SkillBuilderModal';
 import CustomToolBuilder from '../../tools/ui/CustomToolBuilder';
 import apiClient, { ConflictErrorClass } from '../../../lib/api-client';
 import ConflictDialog from '../../workflows/ui/ConflictDialog';
@@ -48,9 +49,30 @@ interface CustomTool {
   template_type?: string;
 }
 
+interface Skill {
+  skill_id: string;
+  name: string;
+  description: string;
+  version: string;
+  source_type: 'builtin' | 'personal' | 'project';
+  tags: string[];
+  triggers: string[];
+  allowed_tools: string[] | null;
+  usage_count: number;
+  last_used_at: string | null;
+  avg_success_rate: number;
+  // Extended detail fields (optional, populated when fetching detail)
+  instructions?: string;
+  examples?: string | null;
+  source_path?: string;
+  author?: string | null;
+  required_context?: string[];
+}
+
 type SelectedItem =
   | { type: 'agent'; data: Agent }
   | { type: 'tool'; data: CustomTool }
+  | { type: 'skill'; data: Skill }
   | { type: 'template'; category: 'agent' | 'tool' }
   | null;
 
@@ -1997,7 +2019,352 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
   );
 };
 
+// Skill Configuration View Component (Read-only)
+interface SkillConfigViewProps {
+  skill: Skill;
+  onClose: () => void;
+  onDelete?: (skillId: string) => void;
+}
+
+const SOURCE_STYLES: Record<string, { label: string; color: string }> = {
+  builtin: { label: 'Built-in', color: 'var(--color-primary)' },
+  personal: { label: 'Personal', color: '#10b981' },
+  project: { label: 'Project', color: '#8b5cf6' },
+};
+
+const SkillConfigView = ({ skill, onClose, onDelete }: SkillConfigViewProps) => {
+  const sourceStyle = SOURCE_STYLES[skill.source_type] || SOURCE_STYLES.builtin;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Editable state
+  const [name, setName] = useState(skill.name || '');
+  const [triggers, setTriggers] = useState<string[]>(skill.triggers || []);
+  const [instructions, setInstructions] = useState(skill.instructions || '');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [newTrigger, setNewTrigger] = useState('');
+
+  // Update state when skill changes
+  useEffect(() => {
+    setName(skill.name || '');
+    setTriggers(skill.triggers || []);
+    setInstructions(skill.instructions || '');
+  }, [skill.skill_id]);
+
+  const formatLastUsed = (dateStr: string | null) => {
+    if (!dateStr) return 'Never';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
+  };
+
+  const handleSave = async () => {
+    setSaveStatus('saving');
+    try {
+      await apiClient.put(`/api/skills/${skill.skill_id}`, {
+        name,
+        triggers,
+        instructions
+      });
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (e) {
+      console.error('Failed to save skill:', e);
+      setSaveStatus('idle');
+    }
+  };
+
+  const addTrigger = () => {
+    if (newTrigger.trim()) {
+      setTriggers([...triggers, newTrigger.trim()]);
+      setNewTrigger('');
+    }
+  };
+
+  const removeTrigger = (index: number) => {
+    setTriggers(triggers.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="p-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="mb-6 pb-6 border-b" style={{ borderBottomColor: 'var(--color-border-dark)' }}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start gap-4">
+                <div
+                  className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
+                  style={{ backgroundColor: 'var(--color-background-light)' }}
+                >
+                  <BookOpen className="w-8 h-8" style={{ color: 'var(--color-primary)' }} />
+                </div>
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="text-2xl font-bold mb-2 bg-transparent border-none outline-none w-full"
+                    style={{ color: 'var(--color-text-primary)' }}
+                    placeholder="Skill Name"
+                  />
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs px-2 py-1 rounded" style={{
+                      backgroundColor: `${sourceStyle.color}15`,
+                      color: sourceStyle.color
+                    }}>
+                      {sourceStyle.label}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      v{skill.version}
+                    </span>
+                    {skill.author && (
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        • by {skill.author}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {onDelete && skill.source_type !== 'builtin' && (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                    style={{
+                      backgroundColor: 'var(--color-background-light)',
+                      color: '#ef4444',
+                      border: '1px solid #ef4444'
+                    }}
+                    title="Delete Skill"
+                  >
+                    <Trash2 size={16} />
+                    Delete
+                  </button>
+                )}
+                <button
+                  onClick={handleSave}
+                  disabled={saveStatus === 'saving'}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-2"
+                  style={{ backgroundColor: 'var(--color-primary)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <Save size={16} />
+                  {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}
+                </button>
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-lg border transition-colors"
+                  style={{
+                    backgroundColor: 'var(--color-background-light)',
+                    borderColor: 'var(--color-border-dark)',
+                    color: 'var(--color-text-muted)'
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Delete Confirmation Modal */}
+              {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDeleteConfirm(false)}>
+                  <div className="bg-white dark:bg-panel-dark rounded-xl p-6 max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Delete Skill?</h3>
+                    <p className="text-sm mb-4" style={{ color: 'var(--color-text-muted)' }}>
+                      Are you sure you want to delete "{skill.name}"? This action cannot be undone.
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (onDelete) onDelete(skill.skill_id);
+                          setShowDeleteConfirm(false);
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                        style={{ backgroundColor: '#ef4444' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-4 rounded-lg border" style={{
+                backgroundColor: 'var(--color-background-light)',
+                borderColor: 'var(--color-border-dark)'
+              }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Usage Count</div>
+                <div className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                  {skill.usage_count}
+                </div>
+              </div>
+              <div className="p-4 rounded-lg border" style={{
+                backgroundColor: 'var(--color-background-light)',
+                borderColor: 'var(--color-border-dark)'
+              }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Success Rate</div>
+                <div className="text-2xl font-bold" style={{ color: skill.avg_success_rate >= 0.8 ? '#10b981' : '#f59e0b' }}>
+                  {Math.round(skill.avg_success_rate * 100)}%
+                </div>
+              </div>
+              <div className="p-4 rounded-lg border" style={{
+                backgroundColor: 'var(--color-background-light)',
+                borderColor: 'var(--color-border-dark)'
+              }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Last Used</div>
+                <div className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                  {formatLastUsed(skill.last_used_at)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+              Description
+            </h3>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+              {skill.description}
+            </p>
+          </div>
+
+          {/* Tags */}
+          {skill.tags.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+                <Tag size={14} />
+                Tags
+              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                {skill.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs px-2.5 py-1 rounded-full"
+                    style={{
+                      backgroundColor: 'var(--color-background-dark)',
+                      color: 'var(--color-text-muted)',
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Triggers (Editable) */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+              Auto-triggers
+            </h3>
+            <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-background-light)' }}>
+              <ul className="space-y-2 mb-3">
+                {triggers.map((trigger, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm group" style={{ color: 'var(--color-text-primary)' }}>
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--color-primary)' }} />
+                    <span className="flex-1">{trigger}</span>
+                    <button
+                      onClick={() => removeTrigger(i)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-red-500 transition-opacity"
+                    >
+                      <X size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newTrigger}
+                  onChange={(e) => setNewTrigger(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addTrigger()}
+                  placeholder="Add a trigger..."
+                  className="flex-1 px-3 py-2 rounded-lg text-sm border"
+                  style={{
+                    backgroundColor: 'var(--color-background-dark)',
+                    borderColor: 'var(--color-border-dark)',
+                    color: 'var(--color-text-primary)'
+                  }}
+                />
+                <button
+                  onClick={addTrigger}
+                  className="px-3 py-2 rounded-lg text-sm font-medium"
+                  style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Instructions (Editable) */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+              <BookOpen size={14} />
+              Instructions
+            </h3>
+            <textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={20}
+              className="w-full p-4 rounded-lg font-mono text-xs border resize-y"
+              style={{
+                backgroundColor: 'white',
+                borderColor: 'var(--color-border-dark)',
+                color: 'var(--color-text-primary)',
+                minHeight: '300px'
+              }}
+            />
+          </div>
+
+          {/* Allowed Tools */}
+          {skill.allowed_tools && skill.allowed_tools.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Allowed Tools
+              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                {skill.allowed_tools.map((tool) => (
+                  <span
+                    key={tool}
+                    className="text-xs px-2.5 py-1 rounded-lg font-mono"
+                    style={{
+                      backgroundColor: 'var(--color-primary)',
+                      color: 'white',
+                    }}
+                  >
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AgentLoadouts = () => {
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { showSuccess, logError, showWarning, NotificationModal } = useNotification();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -2013,6 +2380,12 @@ const AgentLoadouts = () => {
   const [editingTool, setEditingTool] = useState<string | null>(null);
   const [cameFromTypeSelector, setCameFromTypeSelector] = useState(false);
   const [toolTemplate, setToolTemplate] = useState<any>(null);
+
+  // Skills state
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillSearchQuery, setSkillSearchQuery] = useState('');
+  const [rightPanelTab, setRightPanelTab] = useState<'tools' | 'skills'>('tools');
+  const [showSkillBuilder, setShowSkillBuilder] = useState(false);
 
   // Optimistic Locking
   const [showConflictDialog, setShowConflictDialog] = useState(false);
@@ -2030,6 +2403,7 @@ const AgentLoadouts = () => {
 
     loadAgents(abortController.signal);
     loadTools(abortController.signal);
+    loadSkills(abortController.signal);
 
     return () => {
       abortController.abort();
@@ -2089,6 +2463,29 @@ const AgentLoadouts = () => {
         return;
       }
       console.error('[AgentLoadouts] Failed to load tools:', e);
+    }
+  };
+
+  const loadSkills = async (signal?: AbortSignal) => {
+    try {
+      const res = await apiClient.get('/api/skills', { signal });
+      setSkills(res.data || []);
+    } catch (e) {
+      // Ignore abort errors
+      if (e instanceof Error && e.name === 'AbortError') {
+        return;
+      }
+      console.error('[AgentLoadouts] Failed to load skills:', e);
+    }
+  };
+
+  const fetchSkillDetail = async (skillId: string) => {
+    try {
+      const res = await apiClient.get(`/api/skills/${skillId}`);
+      // Update selectedItem with full skill details
+      setSelectedItem({ type: 'skill', data: res.data });
+    } catch (e) {
+      console.error('[AgentLoadouts] Failed to fetch skill details:', e);
     }
   };
 
@@ -2354,6 +2751,36 @@ const AgentLoadouts = () => {
     t.name.toLowerCase().includes(toolSearchQuery.toLowerCase()) ||
     t.description?.toLowerCase().includes(toolSearchQuery.toLowerCase())
   );
+
+  const filteredSkills = skills.filter(s =>
+    s.name.toLowerCase().includes(skillSearchQuery.toLowerCase()) ||
+    s.description?.toLowerCase().includes(skillSearchQuery.toLowerCase())
+  );
+
+  // Map tags to 4 main categories
+  const getSkillCategory = (skill: Skill): string => {
+    const tags = skill.tags.map(t => t.toLowerCase());
+    if (tags.some(t => ['code-review', 'refactoring', 'debugging', 'performance', 'security'].includes(t))) {
+      return 'Development';
+    }
+    if (tags.some(t => ['documentation', 'api-docs', 'readme', 'comments'].includes(t))) {
+      return 'Documentation';
+    }
+    if (tags.some(t => ['testing', 'unit-test', 'integration', 'qa', 'quality'].includes(t))) {
+      return 'Testing';
+    }
+    return 'General';
+  };
+
+  // Group skills by category
+  const skillsByCategory = filteredSkills.reduce((acc, skill) => {
+    const category = getSkillCategory(skill);
+    if (!acc[category]) {
+      acc[category] = [];
+    }
+    acc[category].push(skill);
+    return acc;
+  }, {} as Record<string, Skill[]>);
 
   const getToolIcon = (toolType: string) => {
     const icons: Record<string, string> = {
@@ -3030,6 +3457,21 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
               onDelete={() => handleDeleteAgent(selectedItem.data.id)}
               onClose={() => setSelectedItem(null)}
             />
+          ) : selectedItem.type === 'skill' ? (
+            /* Skill Configuration View */
+            <SkillConfigView
+              skill={selectedItem.data}
+              onClose={() => setSelectedItem(null)}
+              onDelete={async (skillId: string) => {
+                try {
+                  await apiClient.delete(`/api/skills/${skillId}`);
+                  await loadSkills();
+                  setSelectedItem(null);
+                } catch (error) {
+                  console.error('Failed to delete skill:', error);
+                }
+              }}
+            />
           ) : (
             /* Tool Configuration View */
             <ToolConfigView
@@ -3041,14 +3483,30 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
           )}
         </div>
 
-        {/* Right Sidebar - Custom Tools (25%) */}
+        {/* Right Sidebar - Custom Tools & Skills (25%) */}
         <div className="w-[25%] flex flex-col border-l border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark">
-          {/* Sidebar Header */}
+          {/* Sidebar Header with Tabs */}
           <div className="p-4 border-b border-gray-200 dark:border-border-dark bg-white/50 dark:bg-panel-dark/50 backdrop-blur-sm sticky top-0 z-10">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white font-display">
+            {/* Tab Headers */}
+            <div className="flex items-center gap-1 mb-4 p-1 rounded-lg" style={{ backgroundColor: 'var(--color-background-dark)' }}>
+              <button
+                onClick={() => setRightPanelTab('tools')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${rightPanelTab === 'tools'
+                  ? 'bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+              >
                 Custom Tools
-              </h2>
+              </button>
+              <button
+                onClick={() => setRightPanelTab('skills')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${rightPanelTab === 'skills'
+                  ? 'bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+              >
+                Claude Skills
+              </button>
             </div>
 
             {/* Search Bar */}
@@ -3056,114 +3514,232 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-primary transition-colors" size={16} />
               <input
                 type="text"
-                placeholder="Search tools..."
-                value={toolSearchQuery}
-                onChange={(e) => setToolSearchQuery(e.target.value)}
+                placeholder={rightPanelTab === 'tools' ? 'Search tools...' : 'Search skills...'}
+                value={rightPanelTab === 'tools' ? toolSearchQuery : skillSearchQuery}
+                onChange={(e) => rightPanelTab === 'tools' ? setToolSearchQuery(e.target.value) : setSkillSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
               />
             </div>
           </div>
 
-          {/* Tools List */}
+          {/* Content Area */}
           <div className="flex-1 overflow-y-auto">
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    Custom Tools
-                  </h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                    backgroundColor: 'var(--color-background-dark)',
-                    color: 'var(--color-text-muted)'
-                  }}>
-                    {filteredTools.length}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingTool(null);
-                    setToolTemplate(null);
-                    setSelectedItem({ type: 'template', category: 'tool' });
-                    setShowToolBuilder(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
-                  style={{ backgroundColor: 'var(--color-primary)' }}
-                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                >
-                  <Plus size={14} />
-                  New Tool
-                </button>
-              </div>
-
-              {loading ? (
-                <div className="text-center py-8 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                  Loading...
-                </div>
-              ) : filteredTools.length === 0 ? (
-                <div className="text-center py-8 px-4">
-                  <span className="material-symbols-outlined text-3xl mb-2 block" style={{ color: 'var(--color-text-muted)' }}>
-                    build
-                  </span>
-                  <p className="text-sm mb-3" style={{ color: 'var(--color-text-muted)' }}>
-                    No tools yet
-                  </p>
+            {rightPanelTab === 'tools' ? (
+              /* Tools List */
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                      Custom Tools
+                    </h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{
+                      backgroundColor: 'var(--color-background-dark)',
+                      color: 'var(--color-text-muted)'
+                    }}>
+                      {filteredTools.length}
+                    </span>
+                  </div>
                   <button
-                    onClick={() => setSelectedItem({ type: 'template', category: 'tool' })}
-                    className="text-xs px-3 py-1.5 rounded-lg"
-                    style={{ color: 'var(--color-primary)', backgroundColor: 'var(--color-background-dark)' }}
+                    onClick={() => {
+                      setEditingTool(null);
+                      setToolTemplate(null);
+                      setSelectedItem({ type: 'template', category: 'tool' });
+                      setShowToolBuilder(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
+                    style={{ backgroundColor: 'var(--color-primary)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                   >
-                    View Templates
+                    <Plus size={14} />
+                    New Tool
                   </button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 px-2">
-                  {filteredTools.map(tool => (
-                    <div
-                      key={tool.tool_id}
-                      onClick={() => setSelectedItem({ type: 'tool', data: tool })}
-                      className={`group p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${selectedItem?.type === 'tool' && selectedItem.data.tool_id === tool.tool_id
-                        ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
-                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50'
-                        }`}
+
+                {loading ? (
+                  <div className="text-center py-8 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Loading...
+                  </div>
+                ) : filteredTools.length === 0 ? (
+                  <div className="text-center py-8 px-4">
+                    <span className="material-symbols-outlined text-3xl mb-2 block" style={{ color: 'var(--color-text-muted)' }}>
+                      build
+                    </span>
+                    <p className="text-sm mb-3" style={{ color: 'var(--color-text-muted)' }}>
+                      No tools yet
+                    </p>
+                    <button
+                      onClick={() => setSelectedItem({ type: 'template', category: 'tool' })}
+                      className="text-xs px-3 py-1.5 rounded-lg"
+                      style={{ color: 'var(--color-primary)', backgroundColor: 'var(--color-background-dark)' }}
                     >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${selectedItem?.type === 'tool' && selectedItem.data.tool_id === tool.tool_id
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:text-primary group-hover:bg-primary/5'
-                            }`}
-                        >
-                          <span className="material-symbols-outlined text-xl">
-                            {getToolIcon(tool.tool_type)}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-0.5">
-                            <h4 className="font-semibold text-sm truncate text-gray-900 dark:text-gray-100">
-                              {tool.name}
-                            </h4>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed mb-1.5">
-                            {tool.description}
-                          </p>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[0.65rem]">
-                              {tool.tool_type}
+                      View Templates
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 px-2">
+                    {filteredTools.map(tool => (
+                      <div
+                        key={tool.tool_id}
+                        onClick={() => setSelectedItem({ type: 'tool', data: tool })}
+                        className={`group p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${selectedItem?.type === 'tool' && selectedItem.data.tool_id === tool.tool_id
+                          ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
+                          : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50'
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${selectedItem?.type === 'tool' && selectedItem.data.tool_id === tool.tool_id
+                              ? 'bg-primary/10 text-primary'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:text-primary group-hover:bg-primary/5'
+                              }`}
+                          >
+                            <span className="material-symbols-outlined text-xl">
+                              {getToolIcon(tool.tool_type)}
                             </span>
-                            {tool.usage_count > 0 && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 text-[0.65rem]">
-                                {tool.usage_count}x
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <h4 className="font-semibold text-sm truncate text-gray-900 dark:text-gray-100">
+                                {tool.name}
+                              </h4>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed mb-1.5">
+                              {tool.description}
+                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[0.65rem]">
+                                {tool.tool_type}
                               </span>
-                            )}
+                              {tool.usage_count > 0 && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400 text-[0.65rem]">
+                                  {tool.usage_count}x
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Skills List */
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                      Claude Skills
+                    </h3>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{
+                      backgroundColor: 'var(--color-background-dark)',
+                      color: 'var(--color-text-muted)'
+                    }}>
+                      {filteredSkills.length}
+                    </span>
+                    <a
+                      href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs hover:underline"
+                      style={{ color: 'var(--color-primary)' }}
+                      title="Learn about Claude Skills"
+                    >
+                      Docs ↗
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => setShowSkillBuilder(true)}
+                    className="p-1.5 rounded-lg transition-colors flex items-center gap-1"
+                    style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                    title="New Skill"
+                  >
+                    <Plus size={14} />
+                    <span className="text-xs font-medium">New Skill</span>
+                  </button>
                 </div>
-              )}
-            </div>
+
+                {loading ? (
+                  <div className="text-center py-8 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Loading...
+                  </div>
+                ) : filteredSkills.length === 0 ? (
+                  <div className="text-center py-8 px-4">
+                    <BookOpen className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--color-text-muted)' }} />
+                    <p className="text-sm mb-3" style={{ color: 'var(--color-text-muted)' }}>
+                      No skills found
+                    </p>
+                    <button
+                      onClick={() => setShowSkillBuilder(true)}
+                      className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 mx-auto"
+                      style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                    >
+                      <Plus size={12} />
+                      New Skill
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.entries(skillsByCategory).map(([category, categorySkills]) => (
+                      <div key={category}>
+                        {/* Category Header */}
+                        <div className="flex items-center gap-2 mb-2 px-2">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-gray-900 dark:text-gray-100">
+                            {category}
+                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded" style={{
+                            backgroundColor: 'var(--color-background-dark)',
+                            color: 'var(--color-text-muted)'
+                          }}>
+                            {categorySkills.length}
+                          </span>
+                        </div>
+                        {/* Skills in Category */}
+                        <div className="grid grid-cols-1 gap-2 px-2">
+                          {categorySkills.map(skill => (
+                            <div
+                              key={skill.skill_id}
+                              onClick={() => fetchSkillDetail(skill.skill_id)}
+                              className={`group p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${selectedItem?.type === 'skill' && selectedItem.data.skill_id === skill.skill_id
+                                ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
+                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50'
+                                }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${selectedItem?.type === 'skill' && selectedItem.data.skill_id === skill.skill_id
+                                    ? 'bg-primary/10 text-primary'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:text-primary group-hover:bg-primary/5'
+                                    }`}
+                                >
+                                  <BookOpen className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <h4 className="font-semibold text-sm truncate text-gray-900 dark:text-gray-100">
+                                      {skill.name}
+                                    </h4>
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed mb-1.5">
+                                    {skill.description}
+                                  </p>
+                                  {skill.usage_count > 0 && (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 text-[0.65rem]">
+                                      {skill.usage_count} uses
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -3404,6 +3980,17 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
 
       {/* Notification Modal */}
       <NotificationModal />
+
+      {/* Skill Builder Modal */}
+      {showSkillBuilder && (
+        <SkillBuilderModal
+          onClose={() => setShowSkillBuilder(false)}
+          onSave={async (skill) => {
+            await loadSkills();
+            setSelectedItem({ type: 'skill', data: skill });
+          }}
+        />
+      )}
     </div >
   );
 };

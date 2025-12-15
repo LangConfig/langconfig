@@ -11,8 +11,8 @@ import { useProject } from "../../contexts/ProjectContext";
 import { useChat } from '../../features/chat/state/ChatContext';
 
 interface ModernHeaderProps {
-  currentView: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'home' | 'community';
-  onViewChange: (view: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'home' | 'community') => void;
+  currentView: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
+  onViewChange: (view: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community') => void;
 }
 
 export default function ModernHeader({

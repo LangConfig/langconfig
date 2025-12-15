@@ -507,6 +507,32 @@ class AgentFactory:
             base_system_prompt, augmented_context, enable_memory, long_term_memory, tools
         )
 
+        # 6a. Inject Skills (if enabled)
+        enable_skills = agent_config.get("enable_skills", False)
+        if enable_skills:
+            explicit_skills = agent_config.get("skills", [])
+            enable_skill_auto_detection = agent_config.get("enable_skill_auto_detection", True)
+
+            # Build context for skill matching
+            skill_context = {
+                "query": context,  # Original user query/context
+                "project_type": agent_config.get("project_type"),
+                "tags": agent_config.get("skill_tags", []),
+            }
+
+            # Add file path from agent_context if available
+            if agent_context:
+                skill_context["file_path"] = agent_context.get("file_path")
+                skill_context["file_content"] = agent_context.get("file_content")
+
+            system_prompt_str = await AgentFactory._inject_skills(
+                system_prompt=system_prompt_str,
+                context=skill_context,
+                explicit_skills=explicit_skills,
+                enable_auto_detection=enable_skill_auto_detection,
+                max_skills=agent_config.get("max_skills", 3)
+            )
+
         # 6b. Setup Middleware (v1.0) or Hooks (legacy)
         middleware = None
         hook_manager = None
@@ -693,6 +719,110 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 ---
 """
         return system_message_content
+
+    @staticmethod
+    async def _inject_skills(
+        system_prompt: str,
+        context: Dict[str, Any],
+        explicit_skills: Optional[List[str]] = None,
+        enable_auto_detection: bool = True,
+        max_skills: int = 3
+    ) -> str:
+        """
+        Inject relevant skill instructions into the system prompt.
+
+        Skills are modular, context-aware capabilities that enhance agent behavior.
+        They can be explicitly requested or automatically detected based on context.
+
+        Args:
+            system_prompt: The base system prompt to enhance
+            context: Execution context for matching (query, file_path, project_type, etc.)
+            explicit_skills: Optional list of skill IDs to always include
+            enable_auto_detection: Whether to auto-detect relevant skills
+            max_skills: Maximum number of skills to inject
+
+        Returns:
+            Enhanced system prompt with skill instructions
+        """
+        try:
+            from core.skills.registry import get_skill_registry
+            from core.skills.matcher import get_skill_matcher
+
+            registry = get_skill_registry()
+            matcher = get_skill_matcher()
+
+            # Ensure registry is initialized
+            if not registry.is_initialized:
+                await registry.initialize()
+
+            skill_instructions = []
+            skills_used = []
+
+            # 1. Add explicitly requested skills
+            if explicit_skills:
+                for skill_id in explicit_skills[:max_skills]:
+                    skill = registry.get_skill(skill_id)
+                    if skill:
+                        skill_instructions.append(AgentFactory._format_skill_for_prompt(skill))
+                        skills_used.append(skill_id)
+
+            # 2. Auto-detect relevant skills (if enabled and room for more)
+            remaining_slots = max_skills - len(skills_used)
+            if enable_auto_detection and remaining_slots > 0 and context:
+                matches = await matcher.find_relevant_skills(
+                    context=context,
+                    max_results=remaining_slots,
+                    min_score=0.6
+                )
+                for match in matches:
+                    if match.skill.skill_id not in skills_used:
+                        skill_instructions.append(AgentFactory._format_skill_for_prompt(match.skill))
+                        skills_used.append(match.skill.skill_id)
+                        logger.info(
+                            f"Auto-injecting skill '{match.skill.skill_id}' "
+                            f"(score={match.score:.2f}, reason={match.match_reason})"
+                        )
+
+            # 3. Inject skills into system prompt if any were found
+            if skill_instructions:
+                skills_section = "\n\n# AVAILABLE SKILLS\n" + \
+                    "The following skills provide specialized guidance for your task:\n\n" + \
+                    "\n\n---\n\n".join(skill_instructions)
+
+                # Insert skills section before the context section
+                if "# CURRENT CONTEXT" in system_prompt:
+                    system_prompt = system_prompt.replace(
+                        "# CURRENT CONTEXT",
+                        f"{skills_section}\n\n# CURRENT CONTEXT"
+                    )
+                else:
+                    system_prompt = system_prompt + skills_section
+
+                logger.info(f"Injected {len(skill_instructions)} skill(s): {skills_used}")
+
+            return system_prompt
+
+        except Exception as e:
+            logger.warning(f"Failed to inject skills: {e}")
+            return system_prompt  # Return original prompt on error
+
+    @staticmethod
+    def _format_skill_for_prompt(skill) -> str:
+        """Format a skill for injection into system prompt."""
+        parts = [
+            f"## Skill: {skill.name}",
+            f"**Description:** {skill.description}",
+            "",
+            skill.instructions
+        ]
+
+        if skill.examples:
+            parts.extend(["", "**Examples:**", "", skill.examples])
+
+        if skill.allowed_tools:
+            parts.extend(["", f"**Allowed Tools:** {', '.join(skill.allowed_tools)}"])
+
+        return "\n".join(parts)
 
     @staticmethod
     def _construct_prompt_template(base_prompt: str, context: str, enable_memory: bool, long_term_memory: bool = False) -> ChatPromptTemplate:
