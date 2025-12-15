@@ -104,6 +104,7 @@ export function useWorkflowStream(
   const reconnectAttemptsRef = useRef(0);
   const lastSequenceRef = useRef<number>(0);  // Track last received sequence number for gap detection
   const processedEventKeys = useRef(new Set<string>()); // Idempotency key tracking
+  const workflowCompletedRef = useRef(false);  // Track if workflow completed normally (prevents reconnect loop)
 
   // Streaming micro-batching to reduce re-renders (aim ~60fps)
   const streamBufferRef = useRef<WorkflowEvent[]>([]);
@@ -352,6 +353,12 @@ export function useWorkflowStream(
               }
             }
             addEvent(event);
+
+            // Track workflow completion to prevent reconnection loop
+            if (eventType === 'complete' || eventType === 'error') {
+              console.log('[useWorkflowStream] Workflow ended, marking complete to prevent reconnection');
+              workflowCompletedRef.current = true;
+            }
           }
 
         } catch (err) {
@@ -374,6 +381,13 @@ export function useWorkflowStream(
 
       // EventSource auto-reconnects by default, but we track it
       if (eventSource.readyState === EventSource.CLOSED) {
+        // Don't reconnect if workflow completed normally
+        if (workflowCompletedRef.current) {
+          console.log('[useWorkflowStream] Workflow completed, not reconnecting');
+          disconnect();
+          return;
+        }
+
         setError('Connection closed');
 
         // Attempt manual reconnect with exponential backoff
@@ -444,6 +458,7 @@ export function useWorkflowStream(
     setLatestEvent(null);
     processedEventKeys.current.clear();
     lastSequenceRef.current = 0;
+    workflowCompletedRef.current = false;  // Reset completion flag
   }, []);
 
   /**

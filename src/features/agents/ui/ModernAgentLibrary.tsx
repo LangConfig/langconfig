@@ -33,6 +33,11 @@ interface Agent {
   enable_rag?: boolean;
   requires_human_approval?: boolean;
   tags?: string[];
+  // DeepAgent fields
+  use_deepagents?: boolean;
+  subagents?: any[];
+  subagents_config?: any[];
+  config?: any;  // Full config object for deep agents
 }
 
 interface AgentCategory {
@@ -348,7 +353,9 @@ export default function ModernAgentLibrary({
             enable_memory: template.enable_memory,
             enable_rag: template.enable_rag,
             requires_human_approval: template.requires_human_approval,
-            tags: template.tags
+            tags: template.tags,
+            // DeepAgent fields - templates from /api/agents/templates are regular agents
+            use_deepagents: false
           };
 
           const category = categoriesMap.get(displayName)!;
@@ -392,7 +399,12 @@ export default function ModernAgentLibrary({
             enable_memory: true,
             enable_rag: false,
             requires_human_approval: false,
-            tags: ['custom']
+            tags: ['custom'],
+            // DeepAgent fields - custom agents from /api/deepagents ARE deep agents
+            use_deepagents: ca.use_deepagents ?? true,  // Deep agents always have this true
+            subagents: ca.subagents || ca.subagents_config || [],
+            subagents_config: ca.subagents_config || [],
+            config: ca.config  // Include full config
           }));
 
           agentCategories.unshift({
@@ -516,7 +528,12 @@ export default function ModernAgentLibrary({
         enable_memory: newlyCreatedAgent.config.enable_memory || false,
         enable_rag: newlyCreatedAgent.config.enable_rag || false,
         requires_human_approval: newlyCreatedAgent.config.requires_human_approval || false,
-        tags: newlyCreatedAgent.config.tags || []
+        tags: newlyCreatedAgent.config.tags || [],
+        // DeepAgent fields - newly created agents from agent builder ARE deep agents
+        use_deepagents: newlyCreatedAgent.use_deepagents ?? newlyCreatedAgent.config.use_deepagents ?? true,
+        subagents: newlyCreatedAgent.subagents || newlyCreatedAgent.subagents_config || [],
+        subagents_config: newlyCreatedAgent.subagents_config || [],
+        config: newlyCreatedAgent.config
       };
       onSelectAgent(agent);
     }
@@ -562,22 +579,20 @@ export default function ModernAgentLibrary({
         <div className="flex gap-1 p-1">
           <button
             onClick={() => handlePanelChange('agents')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${
-              activePanel === 'agents'
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${activePanel === 'agents'
                 ? 'bg-primary text-white shadow-sm'
                 : 'text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10'
-            }`}
+              }`}
           >
             <Bot className="w-4 h-4" />
             <span>Agents</span>
           </button>
           <button
             onClick={() => handlePanelChange('history')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${
-              activePanel === 'history'
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold transition-all rounded-md ${activePanel === 'history'
                 ? 'bg-primary text-white shadow-sm'
                 : 'text-gray-600 dark:text-text-muted hover:bg-gray-100 dark:hover:bg-white/10'
-            }`}
+              }`}
           >
             <History className="w-4 h-4" />
             <span>History</span>
@@ -649,23 +664,21 @@ export default function ModernAgentLibrary({
                     <div
                       key={taskId}
                       onClick={() => onSelectHistoryTask?.(task)}
-                      className={`group p-3 rounded-lg border cursor-pointer transition-all ${
-                        isSelected
+                      className={`group p-3 rounded-lg border cursor-pointer transition-all ${isSelected
                           ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                           : 'border-gray-200 dark:border-border-dark hover:border-primary/50 hover:bg-gray-50 dark:hover:bg-white/5'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
                           #{taskId}
                         </span>
                         <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${
-                            task.status === 'completed' ? 'bg-green-500' :
-                            task.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                            task.status === 'failed' ? 'bg-red-500' :
-                            'bg-yellow-500'
-                          }`} title={task.status} />
+                          <span className={`w-2 h-2 rounded-full ${task.status === 'completed' ? 'bg-green-500' :
+                              task.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                                task.status === 'failed' ? 'bg-red-500' :
+                                  'bg-yellow-500'
+                            }`} title={task.status} />
                           {onDeleteTask && (
                             <button
                               onClick={(e) => {
@@ -698,149 +711,149 @@ export default function ModernAgentLibrary({
         {/* Agents Panel */}
         {activePanel === 'agents' && (
           <>
-        {/* Workflow Recipes Section */}
-        {recipes.length > 0 && (
-          <div className="border-b border-gray-200 dark:border-border-dark">
-            {/* Recipe Category Header */}
-            <button
-              onClick={() => toggleCategory('workflow-recipes')}
-              className="w-full flex items-center justify-between px-3 py-2 transition-colors hover:opacity-90"
-              style={{
-                borderLeft: '3px solid var(--color-primary)',
-                backgroundColor: 'var(--color-primary)',
-                borderBottom: '1px solid var(--color-border-dark)',
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-base text-white">
-                  auto_awesome
-                </span>
-                <span className="text-sm font-semibold text-white">
-                  Workflow Recipes
-                </span>
-                <span className="text-xs text-white/80">
-                  ({recipes.length})
-                </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold bg-white/20 text-white rounded uppercase">
-                  Experimental
-                </span>
-              </div>
-              {expandedCategories.has('workflow-recipes') ? (
-                <ChevronDown className="w-4 h-4 text-white" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-white" />
-              )}
-            </button>
+            {/* Workflow Recipes Section */}
+            {recipes.length > 0 && (
+              <div className="border-b border-gray-200 dark:border-border-dark">
+                {/* Recipe Category Header */}
+                <button
+                  onClick={() => toggleCategory('workflow-recipes')}
+                  className="w-full flex items-center justify-between px-3 py-2 transition-colors hover:opacity-90"
+                  style={{
+                    borderLeft: '3px solid var(--color-primary)',
+                    backgroundColor: 'var(--color-primary)',
+                    borderBottom: '1px solid var(--color-border-dark)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base text-white">
+                      auto_awesome
+                    </span>
+                    <span className="text-sm font-semibold text-white">
+                      Workflow Recipes
+                    </span>
+                    <span className="text-xs text-white/80">
+                      ({recipes.length})
+                    </span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold bg-white/20 text-white rounded uppercase">
+                      Experimental
+                    </span>
+                  </div>
+                  {expandedCategories.has('workflow-recipes') ? (
+                    <ChevronDown className="w-4 h-4 text-white" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-white" />
+                  )}
+                </button>
 
-            {/* Recipes List */}
-            {expandedCategories.has('workflow-recipes') && (
-              <div className="bg-gray-50 dark:bg-background-dark divide-y divide-gray-200 dark:divide-border-dark p-2">
-                {recipes.map(recipe => (
-                  <button
-                    key={recipe.recipe_id}
-                    onClick={() => handleRecipeClick(recipe)}
-                    className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${selectedRecipe?.recipe_id === recipe.recipe_id
-                        ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
-                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50 hover:shadow-md'
-                      }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">
-                        {recipe.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                            {recipe.name}
-                          </p>
-                          <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded">
-                            {recipe.node_count} nodes
+                {/* Recipes List */}
+                {expandedCategories.has('workflow-recipes') && (
+                  <div className="bg-gray-50 dark:bg-background-dark divide-y divide-gray-200 dark:divide-border-dark p-2">
+                    {recipes.map(recipe => (
+                      <button
+                        key={recipe.recipe_id}
+                        onClick={() => handleRecipeClick(recipe)}
+                        className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${selectedRecipe?.recipe_id === recipe.recipe_id
+                          ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
+                          : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50 hover:shadow-md'
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-primary text-lg mt-0.5">
+                            {recipe.icon}
                           </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                                {recipe.name}
+                              </p>
+                              <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded">
+                                {recipe.node_count} nodes
+                              </span>
+                            </div>
+                            <p className="text-xs line-clamp-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                              {recipe.description}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-xs line-clamp-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-                          {recipe.description}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {filteredCategories.map(category => (
-          <div key={category.id} className="border-b border-gray-200 dark:border-border-dark">
-            {/* Category Header */}
-            <button
-              onClick={() => toggleCategory(category.id)}
-              className="w-full flex items-center justify-between px-3 py-2 transition-colors hover:opacity-90"
-              style={{
-                borderLeft: `3px solid var(--color-primary)`,
-                backgroundColor: 'var(--color-primary)',
-                borderBottom: '1px solid var(--color-border-dark)',
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-base text-white">
-                  {category.icon}
-                </span>
-                <span className="text-sm font-semibold text-white">
-                  {category.name}
-                </span>
-                <span className="text-xs text-white/80">
-                  ({category.agents.length})
-                </span>
+            {filteredCategories.map(category => (
+              <div key={category.id} className="border-b border-gray-200 dark:border-border-dark">
+                {/* Category Header */}
+                <button
+                  onClick={() => toggleCategory(category.id)}
+                  className="w-full flex items-center justify-between px-3 py-2 transition-colors hover:opacity-90"
+                  style={{
+                    borderLeft: `3px solid var(--color-primary)`,
+                    backgroundColor: 'var(--color-primary)',
+                    borderBottom: '1px solid var(--color-border-dark)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base text-white">
+                      {category.icon}
+                    </span>
+                    <span className="text-sm font-semibold text-white">
+                      {category.name}
+                    </span>
+                    <span className="text-xs text-white/80">
+                      ({category.agents.length})
+                    </span>
+                  </div>
+                  {expandedCategories.has(category.id) ? (
+                    <ChevronDown className="w-4 h-4 text-white" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-white" />
+                  )}
+                </button>
+
+                {/* Agents List */}
+                {expandedCategories.has(category.id) && (
+                  <div className="bg-gray-50 dark:bg-background-dark divide-y divide-gray-200 dark:divide-border-dark">
+                    {category.agents.map(agent => (
+                      <button
+                        key={agent.id}
+                        onClick={() => handleAgentClick(agent)}
+                        className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${selectedAgent?.id === agent.id
+                          ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
+                          : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50 hover:shadow-md'
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-primary text-lg mt-0.5">
+                            {agent.icon}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                              {agent.name}
+                            </p>
+                            <p className="text-xs line-clamp-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                              {agent.description}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              {expandedCategories.has(category.id) ? (
-                <ChevronDown className="w-4 h-4 text-white" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-white" />
-              )}
-            </button>
+            ))}
 
-            {/* Agents List */}
-            {expandedCategories.has(category.id) && (
-              <div className="bg-gray-50 dark:bg-background-dark divide-y divide-gray-200 dark:divide-border-dark">
-                {category.agents.map(agent => (
-                  <button
-                    key={agent.id}
-                    onClick={() => handleAgentClick(agent)}
-                    className={`w-full px-4 py-3 text-left transition-all duration-200 border rounded-xl mb-2 ${selectedAgent?.id === agent.id
-                      ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
-                      : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50 hover:shadow-md'
-                      }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">
-                        {agent.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                          {agent.name}
-                        </p>
-                        <p className="text-xs line-clamp-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-                          {agent.description}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+            {filteredCategories.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                <span className="material-symbols-outlined text-4xl mb-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                  search_off
+                </span>
+                <p className="text-sm" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                  No agents found matching "{searchQuery}"
+                </p>
               </div>
             )}
-          </div>
-        ))}
-
-        {filteredCategories.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <span className="material-symbols-outlined text-4xl mb-2" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-              search_off
-            </span>
-            <p className="text-sm" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-              No agents found matching "{searchQuery}"
-            </p>
-          </div>
-        )}
           </>
         )}
       </div>

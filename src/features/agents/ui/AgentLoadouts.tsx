@@ -2524,9 +2524,15 @@ const AgentLoadouts = () => {
         throw new Error('Agent not found');
       }
 
+      // Extract name and description from config (they're added by AgentConfigView.handleSave)
+      const { name, description, ...restConfig } = config;
+
       // UPDATE with lock_version for optimistic locking
+      // Include name and description at top level for API
       const response = await apiClient.updateDeepAgent(agentId, {
-        config,
+        name: name || agent.name,
+        description: description !== undefined ? description : agent.description,
+        config: restConfig,
         lock_version: agent.lock_version
       });
 
@@ -2534,7 +2540,7 @@ const AgentLoadouts = () => {
       const updatedAgent = response.data;
       setAgents(prev => prev.map(a =>
         a.id === agentId
-          ? { ...a, config: updatedAgent.config, lock_version: updatedAgent.lock_version }
+          ? { ...a, name: updatedAgent.name, description: updatedAgent.description, config: updatedAgent.config, lock_version: updatedAgent.lock_version }
           : a
       ));
 
@@ -2542,7 +2548,7 @@ const AgentLoadouts = () => {
       if (selectedItem?.type === 'agent' && selectedItem.data.id === agentId) {
         setSelectedItem({
           ...selectedItem,
-          data: { ...selectedItem.data, config: updatedAgent.config, lock_version: updatedAgent.lock_version }
+          data: { ...selectedItem.data, name: updatedAgent.name, description: updatedAgent.description, config: updatedAgent.config, lock_version: updatedAgent.lock_version }
         });
       }
 

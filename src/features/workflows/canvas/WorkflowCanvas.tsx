@@ -1234,9 +1234,14 @@ if __name__ == "__main__":
             enable_memory: selectedAgent.enable_memory,
             enable_rag: selectedAgent.enable_rag || false,
             requires_human_approval: selectedAgent.requires_human_approval || false,
-            // DeepAgent configuration
-            use_deepagents: (selectedAgent as any).use_deepagents || false,
-            subagents: (selectedAgent as any).subagents || [],
+            // DeepAgent configuration - check multiple sources for compatibility
+            // Deep agents return use_deepagents at top-level AND in config
+            use_deepagents: (selectedAgent as any).use_deepagents ||
+              (selectedAgent as any).config?.use_deepagents ||
+              ((selectedAgent as any).subagents?.length > 0) ||
+              ((selectedAgent as any).subagents_config?.length > 0) ||
+              false,
+            subagents: (selectedAgent as any).subagents || (selectedAgent as any).subagents_config || [],
             // Track original library agent for updates (preserves chat context)
             deep_agent_template_id: (selectedAgent as any).id || null,
             // Tool Node configuration (instance-specific)
@@ -1950,11 +1955,10 @@ if __name__ == "__main__":
                             <div
                               key={index}
                               onClick={() => handleFileSelect(file)}
-                              className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${
-                                selectedPreviewFile?.path === file.path
+                              className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${selectedPreviewFile?.path === file.path
                                   ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
                                   : 'hover:bg-gray-50 dark:hover:bg-white/5'
-                              }`}
+                                }`}
                               style={{ borderColor: selectedPreviewFile?.path === file.path ? undefined : 'var(--color-border-dark)' }}
                             >
                               <div className="flex items-center gap-3 flex-1 min-w-0">
