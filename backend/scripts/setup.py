@@ -168,6 +168,7 @@ def init_database():
         # Import all models to register them with Base
         from models import core, workflow, deep_agent, audit_log, settings
         from models import custom_tool, execution_event, local_model, background_task
+        from models import skill
         
         # Import and run init_db
         from db.database import Base, engine
@@ -212,7 +213,7 @@ def init_database():
                 """))
                 conn.execute(text("DELETE FROM alembic_version"))
                 conn.execute(text(
-                    "INSERT INTO alembic_version (version_num) VALUES ('003_session_documents')"
+                    "INSERT INTO alembic_version (version_num) VALUES ('006_skills_system')"
                 ))
             print_success("Alembic version marked as current")
         except Exception as e:

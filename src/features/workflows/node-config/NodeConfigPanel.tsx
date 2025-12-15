@@ -183,6 +183,19 @@ const NodeConfigPanel = ({
   }>>([]);
   const [selectedCustomTools, setSelectedCustomTools] = useState<string[]>([]);
 
+  // Skills
+  const [availableSkills, setAvailableSkills] = useState<Array<{
+    skill_id: string,
+    name: string,
+    description: string,
+    tags: string[]
+  }>>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+
+  // Section collapse state
+  const [middlewareCollapsed, setMiddlewareCollapsed] = useState(true);
+  const [skillsCollapsed, setSkillsCollapsed] = useState(true);
+
   // Subagents configuration (Advanced: DeepAgents)
   const [subagents, setSubagents] = useState<Array<any>>([]);
   const [expandedSubagents, setExpandedSubagents] = useState<Set<number>>(new Set());
@@ -319,6 +332,16 @@ const NodeConfigPanel = ({
     }
   };
 
+  // Fetch available skills
+  const fetchSkills = async (signal?: AbortSignal) => {
+    try {
+      const response = await apiClient.get('/api/skills/');
+      setAvailableSkills(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch skills:', error);
+    }
+  };
+
   // Fetch available workflows for CompiledSubAgent
   useEffect(() => {
     const abortController = new AbortController();
@@ -343,6 +366,7 @@ const NodeConfigPanel = ({
 
     fetchSchemas();
     fetchCustomTools(abortController.signal);
+    fetchSkills(abortController.signal);
     fetchWorkflows();
 
     return () => {
@@ -1763,58 +1787,158 @@ const NodeConfigPanel = ({
             </div>
           )}
 
-          {/* Middleware Configuration - Only for regular agent nodes */}
+          {/* Claude Skills - Collapsible, collapsed by default */}
           {config.agentType !== 'CONDITIONAL_NODE' && config.agentType !== 'LOOP_NODE' && config.agentType !== 'TOOL_NODE' && (
             <div className="border-t border-gray-200 dark:border-border-dark pt-4">
-              <div className="px-3 py-2 rounded-lg mb-3" style={{
-                backgroundColor: 'var(--color-primary)',
-              }}>
+              <button
+                onClick={() => setSkillsCollapsed(!skillsCollapsed)}
+                className="w-full px-3 py-2 rounded-lg mb-3 flex items-center justify-between"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                <h3 className="text-base font-semibold" style={{ color: 'white' }}>
+                  Claude Skills
+                </h3>
+                <div className="flex items-center gap-2">
+                  {selectedSkills.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/20" style={{ color: 'white' }}>
+                      {selectedSkills.length}
+                    </span>
+                  )}
+                  {skillsCollapsed ? (
+                    <ChevronRight size={16} style={{ color: 'white' }} />
+                  ) : (
+                    <ChevronDown size={16} style={{ color: 'white' }} />
+                  )}
+                </div>
+              </button>
+              {!skillsCollapsed && (
+                <>
+                  <p className="text-xs mb-3 px-1" style={{ color: 'var(--color-text-muted)' }}>
+                    Skills provide specialized instructions and context for specific tasks. When enabled, the skill's instructions are injected into the agent's system prompt.
+                  </p>
+                  {availableSkills.length === 0 ? (
+                    <div className="text-center py-4 px-4">
+                      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        No skills available. Create skills in the Agents page.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableSkills.map(skill => (
+                        <label
+                          key={skill.skill_id}
+                          className="flex items-start gap-1.5 p-2 rounded cursor-pointer transition-colors group border hover:border-primary/50"
+                          style={{
+                            backgroundColor: 'var(--color-background-dark, #f9fafb)',
+                            borderColor: 'var(--color-border-dark)'
+                          }}
+                          title={skill.description}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSkills.includes(skill.skill_id)}
+                            onChange={() => {
+                              const newSkills = selectedSkills.includes(skill.skill_id)
+                                ? selectedSkills.filter(id => id !== skill.skill_id)
+                                : [...selectedSkills, skill.skill_id];
+
+                              setSelectedSkills(newSkills);
+
+                              // Auto-save: Update node config immediately
+                              if (config) {
+                                onSave(config.id, {
+                                  ...config,
+                                  skills: newSkills
+                                });
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                              {skill.name}
+                            </span>
+                            <span className="text-[10px] block leading-tight mt-0.5" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                              {skill.description?.substring(0, 50)}{skill.description?.length > 50 ? '...' : ''}
+                            </span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Middleware Configuration - Collapsible, collapsed by default */}
+          {config.agentType !== 'CONDITIONAL_NODE' && config.agentType !== 'LOOP_NODE' && config.agentType !== 'TOOL_NODE' && (
+            <div className="border-t border-gray-200 dark:border-border-dark pt-4">
+              <button
+                onClick={() => setMiddlewareCollapsed(!middlewareCollapsed)}
+                className="w-full px-3 py-2 rounded-lg mb-3 flex items-center justify-between"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
                 <h3 className="text-base font-semibold" style={{ color: 'white' }}>
                   Middleware
                 </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {MIDDLEWARE_TYPES.map((middleware) => (
-                  <label
-                    key={middleware.id}
-                    className="flex items-start gap-1.5 p-2 rounded cursor-pointer transition-colors group border hover:border-primary/50"
-                    style={{
-                      backgroundColor: 'var(--color-background-dark, #f9fafb)',
-                      borderColor: 'var(--color-border-dark)'
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={enabledMiddleware.includes(middleware.id)}
-                      onChange={() => {
-                        const newMiddleware = enabledMiddleware.includes(middleware.id)
-                          ? enabledMiddleware.filter(m => m !== middleware.id)
-                          : [...enabledMiddleware, middleware.id];
-
-                        setEnabledMiddleware(newMiddleware);
-
-                        // Auto-save: Update node config immediately
-                        if (config) {
-                          onSave(config.id, {
-                            ...config,
-                            middleware: newMiddleware.map(type => ({ type, enabled: true, config: {} })),
-                            enable_default_middleware: newMiddleware.length > 0
-                          });
-                        }
+                <div className="flex items-center gap-2">
+                  {enabledMiddleware.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/20" style={{ color: 'white' }}>
+                      {enabledMiddleware.length}
+                    </span>
+                  )}
+                  {middlewareCollapsed ? (
+                    <ChevronRight size={16} style={{ color: 'white' }} />
+                  ) : (
+                    <ChevronDown size={16} style={{ color: 'white' }} />
+                  )}
+                </div>
+              </button>
+              {!middlewareCollapsed && (
+                <div className="grid grid-cols-2 gap-2">
+                  {MIDDLEWARE_TYPES.map((middleware) => (
+                    <label
+                      key={middleware.id}
+                      className="flex items-start gap-1.5 p-2 rounded cursor-pointer transition-colors group border hover:border-primary/50"
+                      style={{
+                        backgroundColor: 'var(--color-background-dark, #f9fafb)',
+                        borderColor: 'var(--color-border-dark)'
                       }}
-                      className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                        {middleware.name}
-                      </span>
-                      <span className="text-[10px] block leading-tight mt-0.5" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-                        {middleware.description}
-                      </span>
-                    </div>
-                  </label>
-                ))}
-              </div>
+                    >
+                      <input
+                        type="checkbox"
+                        checked={enabledMiddleware.includes(middleware.id)}
+                        onChange={() => {
+                          const newMiddleware = enabledMiddleware.includes(middleware.id)
+                            ? enabledMiddleware.filter(m => m !== middleware.id)
+                            : [...enabledMiddleware, middleware.id];
+
+                          setEnabledMiddleware(newMiddleware);
+
+                          // Auto-save: Update node config immediately
+                          if (config) {
+                            onSave(config.id, {
+                              ...config,
+                              middleware: newMiddleware.map(type => ({ type, enabled: true, config: {} })),
+                              enable_default_middleware: newMiddleware.length > 0
+                            });
+                          }
+                        }}
+                        className="w-3.5 h-3.5 text-primary rounded focus:ring-2 focus:ring-primary cursor-pointer mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-medium block leading-tight" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                          {middleware.name}
+                        </span>
+                        <span className="text-[10px] block leading-tight mt-0.5" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
+                          {middleware.description}
+                        </span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

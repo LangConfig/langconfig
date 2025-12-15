@@ -242,6 +242,7 @@ from api.images import routes as images
 from api.memory import routes as memory
 from api.workspace import routes as workspace
 from api.presets import actions as action_presets
+from api.skills import routes as skills
 from api import schemas
 
 # Health check endpoints
@@ -263,6 +264,7 @@ app.include_router(local_models.router, prefix="/api/local-models", tags=["local
 app.include_router(agents.router)  # Agent templates (preset agents)
 app.include_router(action_presets.router)  # Action presets library with enhanced metadata
 app.include_router(custom_tools.router)  # Custom user-defined tools
+app.include_router(skills.router)  # Skills system - modular, context-aware capabilities
 app.include_router(images.router)  # Image storage and serving (for AI-generated images)
 app.include_router(deepagents.router)  # DeepAgents configuration and export
 app.include_router(chat.router)  # DeepAgents chat testing
