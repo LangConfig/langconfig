@@ -31,6 +31,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/deepagents", tags=["deepagents"])
 
 
+def _ensure_deep_agent_config(config: dict) -> dict:
+    """
+    Ensure config has use_deepagents=true for DeepAgents.
+
+    DeepAgents in the deep_agent_templates table should ALWAYS have
+    use_deepagents=True, even if stored incorrectly in the database.
+    This fixes frontend compatibility issues.
+    """
+    config = dict(config)  # Make a copy to avoid mutating
+    config["use_deepagents"] = True
+    return config
+
 # =============================================================================
 # Request/Response Models
 # =============================================================================
@@ -61,6 +73,7 @@ class DeepAgentResponse(BaseModel):
     config: dict
     middleware_config: list
     subagents_config: list
+    subagents: list = []  # Alias for subagents_config for frontend compatibility
     backend_config: dict
     guardrails_config: dict
     usage_count: int
@@ -129,9 +142,10 @@ async def create_deepagent(
             name=agent.name,
             description=agent.description,
             category=agent.category,
-            config=agent.config,
+            config=_ensure_deep_agent_config(agent.config),
             middleware_config=agent.middleware_config,
             subagents_config=agent.subagents_config,
+            subagents=agent.subagents_config,
             backend_config=agent.backend_config,
             guardrails_config=agent.guardrails_config,
             usage_count=agent.usage_count,
@@ -182,9 +196,10 @@ async def list_deepagents(
                 name=agent.name,
                 description=agent.description,
                 category=agent.category,
-                config=agent.config,
+                config=_ensure_deep_agent_config(agent.config),
                 middleware_config=agent.middleware_config,
                 subagents_config=agent.subagents_config,
+                subagents=agent.subagents_config,
                 backend_config=agent.backend_config,
                 guardrails_config=agent.guardrails_config,
                 usage_count=agent.usage_count,
@@ -230,6 +245,7 @@ async def get_deepagent(
         config=agent.config,
         middleware_config=agent.middleware_config,
         subagents_config=agent.subagents_config,
+        subagents=agent.subagents_config,
         backend_config=agent.backend_config,
         guardrails_config=agent.guardrails_config,
         usage_count=agent.usage_count,
@@ -290,6 +306,7 @@ async def update_deepagent(
         config=agent.config,
         middleware_config=agent.middleware_config,
         subagents_config=agent.subagents_config,
+        subagents=agent.subagents_config,
         backend_config=agent.backend_config,
         guardrails_config=agent.guardrails_config,
         usage_count=agent.usage_count,
@@ -517,9 +534,10 @@ async def import_langconfig(
             name=agent.name,
             description=agent.description,
             category=agent.category,
-            config=agent.config,
+            config=_ensure_deep_agent_config(agent.config),
             middleware_config=agent.middleware_config,
             subagents_config=agent.subagents_config,
+            subagents=agent.subagents_config,
             backend_config=agent.backend_config,
             guardrails_config=agent.guardrails_config,
             usage_count=agent.usage_count,

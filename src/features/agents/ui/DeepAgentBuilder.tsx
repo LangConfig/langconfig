@@ -544,7 +544,10 @@ export default function DeepAgentBuilder({
       // Include custom tools in config
       const configWithCustomTools = {
         ...config,
-        custom_tools: selectedCustomTools
+        custom_tools: selectedCustomTools,
+        // CRITICAL: Force use_deepagents based on agentType prop
+        // This ensures the flag is always correct regardless of initialConfig
+        use_deepagents: agentType === 'deep'
       };
       onSave(configWithCustomTools);
     }
