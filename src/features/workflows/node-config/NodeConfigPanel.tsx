@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { X, Settings, Plus, Trash2, ChevronDown, ChevronRight, Workflow, MessageSquare } from 'lucide-react';
 import CustomToolBuilder from '@/features/tools/ui/CustomToolBuilder';
 import { ModelSelectorInline } from '@/components/common/ModelSelector';
+import AttachmentUploader, { Attachment } from '@/components/common/AttachmentUploader';
 import apiClient from '@/lib/api-client';
 import ContextPreviewModal from '@/components/workflows/ContextPreviewModal';
 
@@ -229,6 +230,10 @@ const NodeConfigPanel = ({
   const [showContextPreview, setShowContextPreview] = useState(false);
   const [deepAgentsFetched, setDeepAgentsFetched] = useState(false);
 
+  // Multimodal input configuration
+  const [enableMultimodalInput, setEnableMultimodalInput] = useState(false);
+  const [agentAttachments, setAgentAttachments] = useState<Attachment[]>([]);
+
   // Fetch deep agents only when conversation context is enabled
   useEffect(() => {
     if (enableConversationContext && !deepAgentsFetched) {
@@ -354,13 +359,17 @@ const NodeConfigPanel = ({
         console.error('Failed to fetch workflows:', error);
       }
     };
-    // Fetch available schemas
+    // Fetch available schemas from the new structured output API
     const fetchSchemas = async () => {
       try {
-        const response = await apiClient.apiFetch(`${apiClient.baseURL}/schemas/`, { signal: abortController.signal });
-        setAvailableSchemas(response.names || []);
+        const response = await apiClient.apiFetch(`${apiClient.baseURL}/api/output-schemas`, { signal: abortController.signal });
+        // Extract schema names from the response array
+        const schemaNames = (response || []).map((s: any) => s.name);
+        setAvailableSchemas(schemaNames);
       } catch (error) {
         console.error('Failed to fetch schemas:', error);
+        // Fallback to empty array
+        setAvailableSchemas([]);
       }
     };
 
@@ -1472,7 +1481,68 @@ const NodeConfigPanel = ({
                 </div>
 
                 {/* ─────────────────────────────────────────────────────────────────
-                    SUB-GROUP 4: Conversation History (Toggle)
+                    SUB-GROUP 4: Multimodal Input (Toggle + Attachments)
+                    Allow agent to receive images, documents, videos
+                    ───────────────────────────────────────────────────────────────── */}
+                <div className="mb-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" style={{ color: enableMultimodalInput ? 'var(--color-primary)' : 'var(--color-text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <div>
+                        <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>Multimodal Input</span>
+                        <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>(images, docs)</span>
+                      </div>
+                    </div>
+                    <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableMultimodalInput ? 'bg-primary' : 'bg-gray-300'}`}>
+                      <input
+                        type="checkbox"
+                        checked={enableMultimodalInput}
+                        onChange={(e) => {
+                          const newValue = e.target.checked;
+                          setEnableMultimodalInput(newValue);
+                          if (config) {
+                            onSave(config.id, { ...config, enable_multimodal_input: newValue });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableMultimodalInput ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </div>
+                  </label>
+
+                  {/* Attachment uploader when enabled */}
+                  {enableMultimodalInput && (
+                    <div className="mt-2 pl-6 border-l-2" style={{ borderColor: 'var(--color-primary)' }}>
+                      <AttachmentUploader
+                        attachments={agentAttachments}
+                        onChange={(atts) => {
+                          setAgentAttachments(atts);
+                          if (config) {
+                            // Convert Attachment[] to backend format
+                            const backendAttachments = atts.map(a => ({
+                              type: a.type,
+                              name: a.name,
+                              url: a.url,
+                              data: a.data,
+                              mime_type: a.mimeType,
+                            }));
+                            onSave(config.id, { ...config, attachments: backendAttachments });
+                          }
+                        }}
+                        allowedTypes={['image', 'document']}
+                        maxAttachments={3}
+                        maxFileSizeMB={5}
+                        compact={true}
+                        label="Agent Attachments"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* ─────────────────────────────────────────────────────────────────
+                    SUB-GROUP 5: Conversation History (Toggle)
                     Load chat history from a DeepAgent
                     ───────────────────────────────────────────────────────────────── */}
                 <div>
@@ -1867,6 +1937,94 @@ const NodeConfigPanel = ({
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Structured Output Configuration - Only for regular agent nodes */}
+          {config.agentType !== 'CONDITIONAL_NODE' && config.agentType !== 'LOOP_NODE' && config.agentType !== 'TOOL_NODE' && (
+            <div className="border-t border-gray-200 dark:border-border-dark pt-4">
+              <div className="px-3 py-2 rounded-lg mb-3" style={{
+                backgroundColor: enableStructuredOutput ? 'var(--color-primary)' : 'var(--color-background-dark)',
+                borderColor: 'var(--color-border-dark)',
+                border: '1px solid'
+              }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" style={{ color: enableStructuredOutput ? 'white' : 'var(--color-text-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <div>
+                      <h3 className="text-sm font-semibold" style={{ color: enableStructuredOutput ? 'white' : 'var(--color-text-primary)' }}>
+                        Structured Output
+                      </h3>
+                      <p className="text-[10px]" style={{ color: enableStructuredOutput ? 'rgba(255, 255, 255, 0.8)' : 'var(--color-text-muted)' }}>
+                        Force agent responses to match a schema
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enableStructuredOutput ? 'bg-white/30' : 'bg-gray-300'}`}>
+                    <input
+                      type="checkbox"
+                      checked={enableStructuredOutput}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setEnableStructuredOutput(enabled);
+                        if (config) {
+                          onSave(config.id, { ...config, enable_structured_output: enabled });
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableStructuredOutput ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </div>
+                </div>
+              </div>
+
+              {enableStructuredOutput && (
+                <div className="space-y-3 px-1">
+                  {/* Schema Selection */}
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                      Output Schema
+                    </label>
+                    <select
+                      value={outputSchemaName}
+                      onChange={(e) => {
+                        const schemaName = e.target.value;
+                        setOutputSchemaName(schemaName);
+                        if (config) {
+                          onSave(config.id, { ...config, output_schema_name: schemaName || null });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded-lg border"
+                      style={{
+                        backgroundColor: 'var(--color-input-background)',
+                        borderColor: 'var(--color-border-dark)',
+                        color: 'var(--color-text-primary)'
+                      }}
+                    >
+                      <option value="">Select a schema...</option>
+                      {availableSchemas.map(schema => (
+                        <option key={schema} value={schema}>
+                          {schema}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                      Agent responses will be validated against this schema
+                    </p>
+                  </div>
+
+                  {/* Warning about tools */}
+                  {(((config as any).native_tools || []).length > 0 || selectedCustomTools.length > 0) && (
+                    <div className="p-2 rounded-lg border" style={{ backgroundColor: 'var(--color-warning-bg, #fef3c7)', borderColor: 'var(--color-warning-border, #f59e0b)' }}>
+                      <p className="text-[10px]" style={{ color: 'var(--color-warning-text, #92400e)' }}>
+                        ⚠️ Structured output may conflict with tools. When both are enabled, the model chooses between tool calls OR structured output, which can cause unpredictable behavior.
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

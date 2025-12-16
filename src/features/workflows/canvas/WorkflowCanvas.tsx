@@ -1700,6 +1700,14 @@ if __name__ == "__main__":
             handleTabChange(tab);
             if (tab === 'results') {
               setShowExecutionDialog(false);
+              // Auto-select the latest task to populate results
+              if (taskHistory.length > 0 && !selectedHistoryTask) {
+                const latestTask = taskHistory[0]; // taskHistory is sorted newest first
+                setSelectedHistoryTask(latestTask);
+                if (onSelectedTaskChange) {
+                  onSelectedTaskChange(latestTask);
+                }
+              }
               if (executionStatus.state !== 'running') {
                 setCurrentTaskId(null);
                 localStorage.removeItem('langconfig-current-task-id');
@@ -1956,8 +1964,8 @@ if __name__ == "__main__":
                               key={index}
                               onClick={() => handleFileSelect(file)}
                               className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${selectedPreviewFile?.path === file.path
-                                  ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
-                                  : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                                ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
+                                : 'hover:bg-gray-50 dark:hover:bg-white/5'
                                 }`}
                               style={{ borderColor: selectedPreviewFile?.path === file.path ? undefined : 'var(--color-border-dark)' }}
                             >

@@ -547,7 +547,8 @@ print(result)
                         minWidth: '160px'
                       }}
                     >
-                      <option value="gpt-5">GPT-5</option>
+                      <option value="gpt-5.2">GPT-5.2</option>
+                      <option value="gpt-5.1">GPT-5.1</option>
                       <option value="gpt-4o">GPT-4o</option>
                       <option value="gpt-4o-mini">GPT-4o Mini</option>
                       <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
@@ -1051,6 +1052,7 @@ print(result)
                                     }}
                                   >
                                     <option value="">Use parent agent model</option>
+                                    <option value="openai:gpt-5.2">GPT-5.2</option>
                                     <option value="openai:gpt-4o">GPT-4o</option>
                                     <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
                                     <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
@@ -1676,7 +1678,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                           }}
                         >
                           <option value="google">Google (Nano Banana, Imagen 3, Veo 3)</option>
-                          <option value="openai">OpenAI (DALL-E 3, Sora)</option>
+                          <option value="openai">OpenAI (GPT-Image-1.5, DALL-E 3, Sora)</option>
                         </select>
                       </div>
 
@@ -1696,6 +1698,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                         >
                           {implementationConfig.provider === 'openai' ? (
                             <>
+                              <option value="gpt-image-1.5">GPT-Image-1.5 (Image)</option>
                               <option value="dall-e-3">DALL-E 3 (Image)</option>
                               <option value="sora">Sora (Video)</option>
                             </>

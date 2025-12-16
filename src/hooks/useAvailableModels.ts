@@ -80,9 +80,10 @@ export function useAvailableModels(
       const localModelsList = settingsResponse.data.local_models || [];
 
       // Model display name mapping (public-facing names)
-      // Updated December 4, 2025
+      // Updated December 16, 2025
       const modelDisplayNames: Record<string, { name: string; provider: string }> = {
         // OpenAI - GPT-5 Series (Current)
+        'gpt-5.2': { name: 'GPT-5.2', provider: 'OpenAI' },
         'gpt-5.1': { name: 'GPT-5.1', provider: 'OpenAI' },
         'gpt-4o': { name: 'GPT-4o', provider: 'OpenAI' },
         'gpt-4o-mini': { name: 'GPT-4o Mini', provider: 'OpenAI' },

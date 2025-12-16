@@ -161,43 +161,43 @@ const WorkflowResults = memo(function WorkflowResults({
   const markdownComponents = useMemo(() => ({
     h1: ({ children }: any) => (
       <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2"
-          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
         {children}
       </h1>
     ),
     h2: ({ children }: any) => (
       <h2 className="text-2xl font-bold mt-6 mb-3"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h2>
     ),
     h3: ({ children }: any) => (
       <h3 className="text-xl font-semibold mt-4 mb-2"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h3>
     ),
     h4: ({ children }: any) => (
       <h4 className="text-lg font-semibold mt-3 mb-2"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h4>
     ),
     p: ({ children }: any) => (
       <p className="mb-4 leading-relaxed"
-         style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </p>
     ),
     ul: ({ children }: any) => (
       <ul className="list-disc list-outside ml-6 mb-4 space-y-1"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </ul>
     ),
     ol: ({ children }: any) => (
       <ol className="list-decimal list-outside ml-6 mb-4 space-y-1"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </ol>
     ),
@@ -208,18 +208,18 @@ const WorkflowResults = memo(function WorkflowResults({
     ),
     blockquote: ({ children }: any) => (
       <blockquote className="border-l-4 pl-4 py-2 my-4 italic rounded-r"
-                  style={{
-                    borderColor: 'var(--color-primary)',
-                    backgroundColor: 'var(--color-panel-dark)',
-                    color: 'var(--color-text-primary)'
-                  }}>
+        style={{
+          borderColor: 'var(--color-primary)',
+          backgroundColor: 'var(--color-panel-dark)',
+          color: 'var(--color-text-primary)'
+        }}>
         {children}
       </blockquote>
     ),
     table: ({ children }: any) => (
       <div className="overflow-x-auto my-4">
         <table className="min-w-full divide-y border rounded-lg"
-               style={{ borderColor: 'var(--color-border-dark)' }}>
+          style={{ borderColor: 'var(--color-border-dark)' }}>
           {children}
         </table>
       </div>
@@ -231,22 +231,22 @@ const WorkflowResults = memo(function WorkflowResults({
     ),
     th: ({ children }: any) => (
       <th className="px-4 py-2 text-left text-sm font-semibold border-b"
-          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
         {children}
       </th>
     ),
     td: ({ children }: any) => (
       <td className="px-4 py-2 text-sm border-b"
-          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
         {children}
       </td>
     ),
     a: ({ children, href }: any) => (
       <a href={href}
-         className="underline hover:opacity-80"
-         style={{ color: 'var(--color-primary)' }}
-         target="_blank"
-         rel="noopener noreferrer">
+        className="underline hover:opacity-80"
+        style={{ color: 'var(--color-primary)' }}
+        target="_blank"
+        rel="noopener noreferrer">
         {children}
       </a>
     ),
@@ -264,8 +264,8 @@ const WorkflowResults = memo(function WorkflowResults({
       if (inline) {
         return (
           <code className="px-1.5 py-0.5 rounded text-sm font-mono bg-gray-100 dark:bg-gray-800"
-                style={{ color: 'var(--color-primary)' }}
-                {...props}>
+            style={{ color: 'var(--color-primary)' }}
+            {...props}>
             {children}
           </code>
         );
@@ -322,181 +322,267 @@ const WorkflowResults = memo(function WorkflowResults({
                   <div className="flex-1 flex justify-center overflow-y-auto">
                     <div className="w-full max-w-6xl px-6 py-4">
                       {!taskOutput ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-text-muted/30 mb-4">
-                            pending_actions
-                          </span>
-                          <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
-                            No output data available
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
-                            Task #{displayTask?.id} has no result data.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="bg-white dark:bg-panel-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
-                          {/* Task Header */}
-                          <div className="px-8 py-4 border-b border-gray-200 dark:border-gray-700">
+                        <div className="bg-white dark:bg-panel-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-w-3xl mx-auto">
+                          {/* Header */}
+                          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                             <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0 mr-4">
                               <div className="flex items-center gap-3">
-                                <span className="text-xs font-mono text-gray-500 dark:text-text-muted">
-                                  Task #{displayTask.id}
+                                <span className={`w-3 h-3 rounded-full ${displayTask?.status === 'failed' ? 'bg-red-500' :
+                                    displayTask?.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                                      'bg-yellow-500'
+                                  }`} />
+                                <span className="text-sm font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                  Task #{displayTask?.id}
                                 </span>
-                                {!isLatestTask && (
-                                  <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                                    Historical
-                                  </span>
-                                )}
-                                {isLatestTask && (
-                                  <span className="text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold">
-                                    Latest
-                                  </span>
-                                )}
+                                <span className={`text-xs px-2 py-0.5 rounded font-semibold uppercase ${displayTask?.status === 'failed'
+                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                    : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                                  }`}>
+                                  {displayTask?.status || 'No Result'}
+                                </span>
                               </div>
-                              <h3 className="text-lg font-bold mt-1" style={{ color: 'var(--color-text-primary)' }}>
-                                Workflow Results
-                              </h3>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
                               {displayTask?.created_at && (
                                 <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                                   {new Date(displayTask.created_at).toLocaleString()}
                                 </span>
                               )}
+                            </div>
+                          </div>
 
-                              {/* Toggle Animation Button */}
-                              <button
-                                onClick={() => setShowAnimatedReveal(!showAnimatedReveal)}
-                                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                title={showAnimatedReveal ? "Show static view" : "Show animated reveal"}
-                              >
-                                <span className="material-symbols-outlined text-lg">
-                                  {showAnimatedReveal ? 'auto_awesome' : 'text_fields'}
+                          {/* User Prompt Section */}
+                          <div className="px-6 py-4">
+                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+                              <span className="material-symbols-outlined text-base" style={{ color: 'var(--color-primary)' }}>
+                                chat_bubble
+                              </span>
+                              Your Prompt
+                            </h4>
+                            <div className="p-4 rounded-lg border" style={{
+                              backgroundColor: 'var(--color-panel-dark)',
+                              borderColor: 'var(--color-border-dark)'
+                            }}>
+                              <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--color-text-primary)' }}>
+                                {displayTask?.user_input
+                                  || displayTask?.formatted_input
+                                  || displayTask?.input_data?.query
+                                  || displayTask?.input_data?.task
+                                  || displayTask?.input_data?.directive
+                                  || displayTask?.input_data?.prompt
+                                  || 'No prompt data available'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Error Message (if failed) */}
+                          {(displayTask?.status === 'failed' || displayTask?.error) && (
+                            <div className="px-6 pb-4">
+                              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-red-600 dark:text-red-400">
+                                <span className="material-symbols-outlined text-base">
+                                  error
                                 </span>
-                              </button>
+                                Error Details
+                              </h4>
+                              <div className="p-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+                                <p className="text-sm whitespace-pre-wrap text-red-700 dark:text-red-300 font-mono">
+                                  {displayTask?.error || 'Workflow execution failed. Check the Execution Log for details.'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
-                              {/* Compare Versions Button */}
-                              {currentWorkflowId && _versions.length > 1 && (
-                                <button
-                                  onClick={() => setCompareMode(!compareMode)}
-                                  className={`p-2 rounded-md ${compareMode
-                                    ? 'bg-primary text-white'
-                                    : 'hover:bg-gray-100 dark:hover:bg-white/10'
-                                  }`}
-                                  title="Compare workflow versions"
-                                >
-                                  <span className="material-symbols-outlined text-lg">
-                                    compare_arrows
-                                  </span>
-                                </button>
-                              )}
-
-                              {/* Copy Results Button */}
-                              <button
-                                onClick={() => {
-                                  const textToCopy = taskOutput?.formatted_content || '';
-                                  navigator.clipboard.writeText(textToCopy);
-                                  setCopiedToClipboard(true);
-                                  setTimeout(() => setCopiedToClipboard(false), 2000);
-                                }}
-                                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                title="Copy results to clipboard"
-                              >
-                                {copiedToClipboard ? (
-                                  <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <Copy className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                          {/* Task Metadata */}
+                          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs space-y-1" style={{ color: 'var(--color-text-muted)' }}>
+                                {displayTask?.duration_seconds && (
+                                  <div>Duration: {Math.round(displayTask.duration_seconds)}s</div>
                                 )}
-                              </button>
-
-                              {/* Export to PDF Button */}
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const content = taskOutput?.formatted_content || '';
-                                    const metadata = {
-                                      date: new Date().toLocaleString(),
-                                      duration: selectedHistoryTask?.duration_seconds || taskHistory[0]?.duration_seconds,
-                                      tokens: selectedHistoryTask?.result?.workflow_summary?.total_tokens || taskHistory[0]?.result?.workflow_summary?.total_tokens,
-                                      cost: selectedHistoryTask?.result?.workflow_summary?.total_cost_usd || taskHistory[0]?.result?.workflow_summary?.total_cost_usd,
-                                    };
-                                    await exportToPDF(content, workflowName || 'Workflow_Results', metadata);
-                                  } catch (error) {
-                                    console.error('Failed to export PDF:', error);
-                                    alert('Failed to export PDF. Please try again.');
-                                  }
-                                }}
-                                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                title="Export to PDF"
-                              >
-                                <Download className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                              </button>
-
-                              {/* Export to Word Button */}
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const executionId = selectedHistoryTask?.id || taskHistory[0]?.id;
-                                    if (!executionId) {
-                                      alert('No execution found to export');
-                                      return;
-                                    }
-                                    const response = await apiClient.exportWorkflowExecutionDocx(executionId);
-                                    const url = window.URL.createObjectURL(new Blob([response.data]));
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    const filename = `${workflowName?.replace(/\s+/g, '_') || 'workflow_results'}_${executionId}.docx`;
-                                    link.setAttribute('download', filename);
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    link.parentNode?.removeChild(link);
-                                    window.URL.revokeObjectURL(url);
-                                  } catch (error) {
-                                    console.error('Failed to export Word document:', error);
-                                    alert('Failed to export Word document. Please try again.');
-                                  }
-                                }}
-                                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                title="Export to Word (.docx)"
-                              >
-                                <span className="material-symbols-outlined text-base text-gray-600 dark:text-text-muted">
-                                  description
-                                </span>
-                              </button>
-
-                              {/* View Raw Output Toggle */}
-                              <button
-                                onClick={() => setShowRawOutput(!showRawOutput)}
-                                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-                                title={showRawOutput ? "Hide raw output" : "Show raw output"}
-                              >
-                                {showRawOutput ? (
-                                  <EyeOff className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                ) : (
-                                  <Eye className="w-4 h-4 text-gray-600 dark:text-text-muted" />
-                                )}
-                              </button>
-
+                              </div>
                               {/* View Execution Log Button */}
                               <button
                                 onClick={() => {
-                                  const taskToView = selectedHistoryTask || taskHistory[0];
-                                  setReplayTaskId(taskToView.id);
-                                  setShowReplayPanel(true);
+                                  if (displayTask) {
+                                    setReplayTaskId(displayTask.id);
+                                    setShowReplayPanel(true);
+                                  }
                                 }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90"
+                                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-all hover:opacity-90"
                                 style={{
                                   backgroundColor: 'var(--color-primary)',
                                   color: 'white'
                                 }}
                                 title="View detailed execution log"
                               >
-                                <List className="w-3.5 h-3.5" />
-                                <span>Execution Log</span>
+                                <List className="w-4 h-4" />
+                                <span>View Execution Log</span>
                               </button>
                             </div>
                           </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white dark:bg-panel-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+                          {/* Task Header */}
+                          <div className="px-8 py-4 border-b border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0 mr-4">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs font-mono text-gray-500 dark:text-text-muted">
+                                    Task #{displayTask.id}
+                                  </span>
+                                  {!isLatestTask && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                                      Historical
+                                    </span>
+                                  )}
+                                  {isLatestTask && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold">
+                                      Latest
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="text-lg font-bold mt-1" style={{ color: 'var(--color-text-primary)' }}>
+                                  Workflow Results
+                                </h3>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {displayTask?.created_at && (
+                                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    {new Date(displayTask.created_at).toLocaleString()}
+                                  </span>
+                                )}
+
+                                {/* Toggle Animation Button */}
+                                <button
+                                  onClick={() => setShowAnimatedReveal(!showAnimatedReveal)}
+                                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+                                  title={showAnimatedReveal ? "Show static view" : "Show animated reveal"}
+                                >
+                                  <span className="material-symbols-outlined text-lg">
+                                    {showAnimatedReveal ? 'auto_awesome' : 'text_fields'}
+                                  </span>
+                                </button>
+
+                                {/* Compare Versions Button */}
+                                {currentWorkflowId && _versions.length > 1 && (
+                                  <button
+                                    onClick={() => setCompareMode(!compareMode)}
+                                    className={`p-2 rounded-md ${compareMode
+                                      ? 'bg-primary text-white'
+                                      : 'hover:bg-gray-100 dark:hover:bg-white/10'
+                                      }`}
+                                    title="Compare workflow versions"
+                                  >
+                                    <span className="material-symbols-outlined text-lg">
+                                      compare_arrows
+                                    </span>
+                                  </button>
+                                )}
+
+                                {/* Copy Results Button */}
+                                <button
+                                  onClick={() => {
+                                    const textToCopy = taskOutput?.formatted_content || '';
+                                    navigator.clipboard.writeText(textToCopy);
+                                    setCopiedToClipboard(true);
+                                    setTimeout(() => setCopiedToClipboard(false), 2000);
+                                  }}
+                                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+                                  title="Copy results to clipboard"
+                                >
+                                  {copiedToClipboard ? (
+                                    <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                  ) : (
+                                    <Copy className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                                  )}
+                                </button>
+
+                                {/* Export to PDF Button */}
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const content = taskOutput?.formatted_content || '';
+                                      const metadata = {
+                                        date: new Date().toLocaleString(),
+                                        duration: selectedHistoryTask?.duration_seconds || taskHistory[0]?.duration_seconds,
+                                        tokens: selectedHistoryTask?.result?.workflow_summary?.total_tokens || taskHistory[0]?.result?.workflow_summary?.total_tokens,
+                                        cost: selectedHistoryTask?.result?.workflow_summary?.total_cost_usd || taskHistory[0]?.result?.workflow_summary?.total_cost_usd,
+                                      };
+                                      await exportToPDF(content, workflowName || 'Workflow_Results', metadata);
+                                    } catch (error) {
+                                      console.error('Failed to export PDF:', error);
+                                      alert('Failed to export PDF. Please try again.');
+                                    }
+                                  }}
+                                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+                                  title="Export to PDF"
+                                >
+                                  <Download className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                                </button>
+
+                                {/* Export to Word Button */}
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const executionId = selectedHistoryTask?.id || taskHistory[0]?.id;
+                                      if (!executionId) {
+                                        alert('No execution found to export');
+                                        return;
+                                      }
+                                      const response = await apiClient.exportWorkflowExecutionDocx(executionId);
+                                      const url = window.URL.createObjectURL(new Blob([response.data]));
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      const filename = `${workflowName?.replace(/\s+/g, '_') || 'workflow_results'}_${executionId}.docx`;
+                                      link.setAttribute('download', filename);
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      link.parentNode?.removeChild(link);
+                                      window.URL.revokeObjectURL(url);
+                                    } catch (error) {
+                                      console.error('Failed to export Word document:', error);
+                                      alert('Failed to export Word document. Please try again.');
+                                    }
+                                  }}
+                                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+                                  title="Export to Word (.docx)"
+                                >
+                                  <span className="material-symbols-outlined text-base text-gray-600 dark:text-text-muted">
+                                    description
+                                  </span>
+                                </button>
+
+                                {/* View Raw Output Toggle */}
+                                <button
+                                  onClick={() => setShowRawOutput(!showRawOutput)}
+                                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+                                  title={showRawOutput ? "Hide raw output" : "Show raw output"}
+                                >
+                                  {showRawOutput ? (
+                                    <EyeOff className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                                  ) : (
+                                    <Eye className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+                                  )}
+                                </button>
+
+                                {/* View Execution Log Button */}
+                                <button
+                                  onClick={() => {
+                                    const taskToView = selectedHistoryTask || taskHistory[0];
+                                    setReplayTaskId(taskToView.id);
+                                    setShowReplayPanel(true);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90"
+                                  style={{
+                                    backgroundColor: 'var(--color-primary)',
+                                    color: 'white'
+                                  }}
+                                  title="View detailed execution log"
+                                >
+                                  <List className="w-3.5 h-3.5" />
+                                  <span>Execution Log</span>
+                                </button>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Main Output Content - Document-style margins */}

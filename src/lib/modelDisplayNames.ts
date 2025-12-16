@@ -6,9 +6,10 @@
  */
 
 // Maps internal model IDs to user-friendly display names
-// Updated December 4, 2025
+// Updated December 16, 2025
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // OpenAI - GPT-5 Series (Current)
+  'gpt-5.2': 'GPT-5.2',
   'gpt-5.1': 'GPT-5.1',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o Mini',

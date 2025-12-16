@@ -82,10 +82,16 @@ export function useFileHandling({
   }, [currentTaskId]);
 
   // Download a file from the workspace
-  const handleDownloadFile = useCallback((filename: string) => {
-    if (!currentTaskId) return;
-    window.open(`/api/workspace/tasks/${currentTaskId}/files/${filename}`, '_blank');
-  }, [currentTaskId]);
+  // Uses path-based endpoint to support files in subdirectories
+  const handleDownloadFile = useCallback((filenameOrPath: string) => {
+    // Try to find the file in the files list to get the full path
+    const file = files.find(f => f.filename === filenameOrPath || f.path === filenameOrPath);
+    const filePath = file?.path || filenameOrPath;
+
+    // Use path-based download endpoint
+    const url = `/api/workspace/by-path/download?file_path=${encodeURIComponent(filePath)}`;
+    window.open(url, '_blank');
+  }, [files]);
 
   // Fetch file content for preview
   const fetchFileContent = useCallback(async (file: TaskFile) => {

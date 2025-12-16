@@ -278,21 +278,30 @@ class AgentFactory:
         model_hooks = agent_config.get("model_hooks", [])
         enable_default_hooks = agent_config.get("enable_default_hooks", False)  # Disabled by default in v1.0
 
-        # Structured output configuration (NEW: LangChain v1-alpha feature)
+        # Structured output configuration (LangChain v1.1: ProviderStrategy support)
         output_schema = agent_config.get("output_schema", None)
         output_schema_name = agent_config.get("output_schema_name", None)
         enable_structured_output = agent_config.get("enable_structured_output", False)
 
         # Resolve schema name to actual schema if provided
         if not output_schema and output_schema_name and enable_structured_output:
-            from core.utils.structured_outputs import STRUCTURED_OUTPUT_SCHEMAS
-            output_schema = STRUCTURED_OUTPUT_SCHEMAS.get(output_schema_name)
+            # Use OutputSchemaRegistry to get both built-in and custom schemas
+            from models.custom_schema import OutputSchemaRegistry
+
+            output_schema = OutputSchemaRegistry.get(output_schema_name)
             if output_schema:
                 logger.info(f"📋 Resolved schema name '{output_schema_name}' to {output_schema.__name__}")
                 agent_config["output_schema"] = output_schema  # Set for later use
             else:
-                logger.warning(f"⚠️ Unknown schema name: {output_schema_name}. Available: {list(STRUCTURED_OUTPUT_SCHEMAS.keys())}")
-                enable_structured_output = False  # Disable if schema not found
+                # Fallback to built-in only (legacy)
+                from core.utils.structured_outputs import STRUCTURED_OUTPUT_SCHEMAS
+                output_schema = STRUCTURED_OUTPUT_SCHEMAS.get(output_schema_name)
+                if output_schema:
+                    logger.info(f"📋 Resolved schema name '{output_schema_name}' to {output_schema.__name__} (built-in)")
+                    agent_config["output_schema"] = output_schema
+                else:
+                    logger.warning(f"⚠️ Unknown schema name: {output_schema_name}")
+                    enable_structured_output = False  # Disable if schema not found
 
         # Parallel tool calling configuration
         enable_parallel_tools = agent_config.get("enable_parallel_tools", True)
@@ -301,10 +310,15 @@ class AgentFactory:
         interrupt_before = agent_config.get("interrupt_before", False)
         interrupt_after = agent_config.get("interrupt_after", False)
 
+        # Multimodal input configuration
+        enable_multimodal_input = agent_config.get("enable_multimodal_input", False)
+        multimodal_attachments = agent_config.get("attachments", [])
+
         logger.info(
             f"Creating agent for task {task_id} (model={model_name}, memory={enable_memory}, "
             f"long_term_memory={long_term_memory}, middleware={len(middleware_list)}, hooks={len(model_hooks)}, "
-            f"structured_output={enable_structured_output}, streaming={enable_streaming})"
+            f"structured_output={enable_structured_output}, streaming={enable_streaming}, "
+            f"multimodal={enable_multimodal_input}, attachments={len(multimodal_attachments)})"
         )
 
         # 1b. Dynamic Model Routing (OPT-IN ONLY)
@@ -437,7 +451,7 @@ class AgentFactory:
             logger.warning(f"Failed to wrap tools with constraints: {e}. Tools will run without constraint enforcement.")
             # Continue without constraint wrapping - tools still work, just without safety enforcement
 
-        # 4. Check if structured output is enabled (v1.0: Use strategies)
+        # 4. Check if structured output is enabled (v1.1: Support ProviderStrategy)
         structured_output_strategy = None
         if enable_structured_output and output_schema:
             # NOTE: Structured output and tools are mutually exclusive in most models.
@@ -449,13 +463,33 @@ class AgentFactory:
                 )
                 enable_structured_output = False
             else:
-                # v1.0: Use ToolStrategy for structured output (more reliable than provider-native)
-                from langchain.agents.structured_output import ToolStrategy
+                # v1.1: Use ProviderStrategy for native structured output (better performance)
+                # Falls back to ToolStrategy for models that don't support native structured output
+                try:
+                    from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
 
-                structured_output_strategy = ToolStrategy(output_schema)
-                logger.info(f"🔧 Structured output ENABLED: {output_schema.__name__} (using ToolStrategy)")
-                agent_config["_output_schema"] = output_schema
-                agent_config["_structured_output_strategy"] = structured_output_strategy
+                    # Determine strategy based on agent config or model capabilities
+                    use_provider_strategy = agent_config.get("use_provider_strategy", True)
+
+                    if use_provider_strategy:
+                        # ProviderStrategy uses native model structured output (faster, more reliable)
+                        structured_output_strategy = ProviderStrategy(output_schema)
+                        logger.info(f"🔧 Structured output ENABLED: {output_schema.__name__} (using ProviderStrategy)")
+                    else:
+                        # ToolStrategy wraps output as a tool call (works with all models)
+                        structured_output_strategy = ToolStrategy(output_schema)
+                        logger.info(f"🔧 Structured output ENABLED: {output_schema.__name__} (using ToolStrategy)")
+
+                    agent_config["_output_schema"] = output_schema
+                    agent_config["_structured_output_strategy"] = structured_output_strategy
+
+                except ImportError:
+                    # Fallback for older LangChain versions
+                    from langchain.agents.structured_output import ToolStrategy
+                    structured_output_strategy = ToolStrategy(output_schema)
+                    logger.info(f"🔧 Structured output ENABLED: {output_schema.__name__} (using ToolStrategy - ProviderStrategy not available)")
+                    agent_config["_output_schema"] = output_schema
+                    agent_config["_structured_output_strategy"] = structured_output_strategy
 
         # 4b. Check if dynamic model routing is enabled (NEW: LangChain v1-alpha feature)
         # NOTE: Dynamic model routing requires middleware-based model selection

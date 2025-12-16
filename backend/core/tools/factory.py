@@ -1642,7 +1642,13 @@ class ToolFactory:
         tool_config: Dict[str, Any],
         impl_config: Dict[str, Any]
     ) -> BaseTool:
-        """Create Google Gemini Veo 3/3.1 video generation tool"""
+        """Create Google Gemini Veo 3/3.1 video generation tool
+
+        Supports three modes:
+        1. Text-to-video: Generate video from text prompt only
+        2. Image-to-video: Animate an image using prompt + image_url
+        3. Video extension: Continue an existing video using prompt + video_url
+        """
         # Fallback chain: tool config -> settings -> env vars
         api_key = (
             impl_config.get("api_key") or
@@ -1651,46 +1657,115 @@ class ToolFactory:
             os.getenv("GOOGLE_API_KEY") or
             ""
         )
-        model = impl_config.get("model", "veo-3")
-        default_duration = impl_config.get("duration", 5)
-        default_resolution = impl_config.get("resolution", "1080p")
+        model = impl_config.get("model", "veo-3.1-fast-generate-preview")
+        default_duration = impl_config.get("duration", 8)
+        default_resolution = impl_config.get("resolution", "720p")
         default_fps = impl_config.get("fps", 24)
         default_aspect_ratio = impl_config.get("aspect_ratio", "16:9")
-        timeout = impl_config.get("timeout", 120)
+        generate_audio = impl_config.get("generate_audio", True)
+        timeout = impl_config.get("timeout", 180)  # Video generation can take time
 
         if not api_key:
             raise ValueError("Google API key is required for Veo. Set GEMINI_API_KEY in .env or configure in tool settings.")
 
+        logger.info(f"Creating Veo tool: {model} (API key source: {'config' if impl_config.get('api_key') else 'environment'})")
+
         async def generate_veo_video(
             prompt: str,
+            image_url: Optional[str] = None,
+            video_url: Optional[str] = None,
             duration: Optional[int] = None,
-            aspect_ratio: Optional[str] = None
+            aspect_ratio: Optional[str] = None,
+            negative_prompt: Optional[str] = None
         ) -> str:
-            """Generate a video using Veo 3"""
+            """Generate a video using Veo 3.1
+
+            Args:
+                prompt: Text description of the video to generate
+                image_url: Optional URL/base64 of an image to animate (image-to-video mode)
+                video_url: Optional URL of a Veo-generated video to extend (video extension mode)
+                duration: Video duration in seconds (4, 6, or 8)
+                aspect_ratio: Video aspect ratio (16:9 or 9:16)
+                negative_prompt: Elements to avoid in the video
+            """
             try:
-                payload = {
-                    "instances": [
-                        {
-                            "prompt": prompt
+                # Determine generation mode
+                if video_url:
+                    mode = "video_extension"
+                    logger.info(f"Veo mode: Video extension from existing video")
+                elif image_url:
+                    mode = "image_to_video"
+                    logger.info(f"Veo mode: Image-to-video animation")
+                else:
+                    mode = "text_to_video"
+                    logger.info(f"Veo mode: Text-to-video generation")
+
+                # Build the prompt with negative prompt if provided
+                full_prompt = prompt
+                if negative_prompt:
+                    full_prompt = f"{prompt}. Avoid: {negative_prompt}"
+
+                # Google AI Studio API endpoint for Veo
+                endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+                # Build payload based on mode
+                parts = [{"text": full_prompt}]
+
+                if image_url:
+                    # Add image for image-to-video mode
+                    if image_url.startswith("data:"):
+                        # Base64 encoded image
+                        mime_match = image_url.split(";")[0].split(":")[1] if ";" in image_url else "image/jpeg"
+                        base64_data = image_url.split(",")[1] if "," in image_url else image_url
+                        parts.append({
+                            "inlineData": {
+                                "mimeType": mime_match,
+                                "data": base64_data
+                            }
+                        })
+                    else:
+                        # URL reference
+                        parts.append({
+                            "fileData": {
+                                "fileUri": image_url,
+                                "mimeType": "image/jpeg"
+                            }
+                        })
+
+                if video_url:
+                    # Add video for extension mode
+                    parts.append({
+                        "fileData": {
+                            "fileUri": video_url,
+                            "mimeType": "video/mp4"
                         }
-                    ],
-                    "parameters": {
-                        "duration": duration or default_duration,
-                        "resolution": default_resolution,
-                        "fps": default_fps,
-                        "aspectRatio": aspect_ratio or default_aspect_ratio
+                    })
+
+                payload = {
+                    "contents": [{
+                        "parts": parts
+                    }],
+                    "generationConfig": {
+                        "responseModalities": ["VIDEO"],
+                        "videoDuration": duration or default_duration,
+                        "aspectRatio": aspect_ratio or default_aspect_ratio,
+                        "generateAudio": generate_audio
                     }
                 }
 
                 headers = {
-                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
 
-                # Call Google Vertex AI API for Veo
+                # Add API key as query parameter
+                url = f"{endpoint}?key={api_key}"
+
+                logger.info(f"Calling Veo API: mode={mode}, duration={duration or default_duration}s")
+
+                # Call Google AI Studio API
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     response = await client.post(
-                        "https://us-central1-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/us-central1/publishers/google/models/veo:predict",
+                        url,
                         json=payload,
                         headers=headers
                     )
@@ -1698,20 +1773,59 @@ class ToolFactory:
                     response.raise_for_status()
                     data = response.json()
 
-                    if data.get("predictions") and len(data["predictions"]) > 0:
-                        video_data = data["predictions"][0]
-                        logger.info(f"Veo 3 video generated successfully")
-                        return f"Video generated successfully: {video_data}"
-                    else:
-                        return "Error: No video was generated"
+                    # Log response structure for debugging
+                    logger.info(f"Veo API response keys: {data.keys() if isinstance(data, dict) else type(data)}")
+
+                    # Extract video from response
+                    if data.get("candidates") and len(data["candidates"]) > 0:
+                        candidate = data["candidates"][0]
+                        if candidate.get("content", {}).get("parts"):
+                            parts = candidate["content"]["parts"]
+
+                            for part in parts:
+                                if "inlineData" in part:
+                                    video_data = part["inlineData"]["data"]
+                                    mime_type = part["inlineData"]["mimeType"]
+                                    video_size_mb = len(video_data) * 3 // 4 // 1024 // 1024
+
+                                    # Store video artifact for UI display
+                                    store_artifact({
+                                        "type": "video",
+                                        "data": video_data,
+                                        "mimeType": mime_type
+                                    })
+
+                                    logger.info(f"Veo video generated: {mime_type}, ~{video_size_mb}MB")
+                                    return f"Video generated successfully ({video_size_mb}MB, {duration or default_duration}s). The video has been created and is displayed to the user."
+
+                                elif "fileData" in part:
+                                    # Video returned as file reference
+                                    file_uri = part["fileData"].get("fileUri", "")
+                                    logger.info(f"Veo video generated as file: {file_uri}")
+                                    return f"Video generated successfully: {file_uri}"
+
+                    # Check for operation status (async generation)
+                    if data.get("name"):
+                        operation_name = data["name"]
+                        logger.info(f"Veo video generation started: {operation_name}")
+                        return f"Video generation started. Operation ID: {operation_name}. The video is being processed and will be available shortly."
+
+                    logger.warning(f"Unexpected Veo response format: {data}")
+                    return "Error: No video was generated"
 
             except httpx.HTTPStatusError as e:
                 error_msg = f"Veo API error {e.response.status_code}"
+                try:
+                    error_detail = e.response.json()
+                    if "error" in error_detail:
+                        error_msg = f"{error_msg}: {error_detail['error'].get('message', str(error_detail))}"
+                except:
+                    pass
                 logger.error(error_msg)
                 return f"Error: {error_msg}"
             except httpx.TimeoutException:
-                logger.error(f"Veo request timed out")
-                return f"Error: Request timed out after {timeout}s"
+                logger.error(f"Veo request timed out after {timeout}s")
+                return f"Error: Request timed out after {timeout}s. Video generation can take up to 3 minutes."
             except Exception as e:
                 logger.error(f"Veo generation failed: {e}")
                 return f"Error: {str(e)}"
@@ -1729,7 +1843,7 @@ class ToolFactory:
             handle_tool_error=True  # Allow agent to recover from tool errors
         )
 
-        logger.info(f"Created Veo 3 tool: {tool_config['name']}")
+        logger.info(f"✓ Created Veo tool: {tool_config['name']} (model: {model})")
         return tool
 
     # =============================================================================

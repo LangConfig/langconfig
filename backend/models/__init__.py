@@ -36,6 +36,7 @@ from .local_model import LocalModel
 from .background_task import BackgroundTask
 from .audit_log import AuditLog, AuditAction
 from .workspace_file import WorkspaceFile
+from .custom_schema import CustomOutputSchema, OutputSchemaRegistry
 
 __all__ = [
     "Project",
@@ -67,5 +68,7 @@ __all__ = [
     "BackgroundTask",
     "AuditLog",
     "AuditAction",
-    "WorkspaceFile"
+    "WorkspaceFile",
+    "CustomOutputSchema",
+    "OutputSchemaRegistry"
 ]

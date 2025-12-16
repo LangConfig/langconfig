@@ -67,10 +67,64 @@ DEFAULT_CUSTOM_TOOLS: List[Dict[str, Any]] = [
         "category": "image_video",
         "tags": ["image", "generation", "google", "gemini", "nano-banana", "fast", "featured", "workflow"]
     },
-    # Add more default tools here as needed:
-    # - slack_notification
-    # - discord_notification
-    # - etc.
+    {
+        "tool_id": "video_generation",
+        "name": "Veo 3.1 Fast (Video Generator)",
+        "description": "AI video generation using Google's Veo 3.1 Fast model. Supports text-to-video, image-to-video animation, and video continuation/extension. Generate up to 8 seconds per clip with audio.",
+        "tool_type": ToolType.IMAGE_VIDEO,
+        "template_type": ToolTemplateType.VIDEO_GEMINI_VEO31,
+        "implementation_config": {
+            "provider": "google",
+            "model": "veo-3.1-fast-generate-preview",
+            "duration": 8,
+            "resolution": "720p",
+            "fps": 24,
+            "aspect_ratio": "16:9",
+            "generate_audio": True,
+            "timeout": 180
+        },
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Text description of the video to generate, including desired actions, scenes, and style"
+                },
+                "image_url": {
+                    "type": "string",
+                    "description": "Optional: URL or base64 data URI of an image to animate (image-to-video mode)",
+                    "default": ""
+                },
+                "video_url": {
+                    "type": "string",
+                    "description": "Optional: URL of a previously generated Veo video to extend/continue",
+                    "default": ""
+                },
+                "duration": {
+                    "type": "integer",
+                    "description": "Video duration in seconds: 4, 6, or 8",
+                    "default": 8
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "description": "Video aspect ratio: 16:9 (landscape) or 9:16 (portrait)",
+                    "default": "16:9"
+                },
+                "negative_prompt": {
+                    "type": "string",
+                    "description": "Optional: Elements or styles to avoid in the video",
+                    "default": ""
+                }
+            },
+            "required": ["prompt"]
+        },
+        "output_format": "json",
+        "is_template_based": True,
+        "is_advanced_mode": False,
+        "is_public": True,
+        "category": "image_video",
+        "tags": ["video", "generation", "google", "veo", "fast", "image-to-video", "video-extension", "featured", "workflow"]
+    },
 ]
 
 

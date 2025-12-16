@@ -14,6 +14,7 @@ export type ToolTemplateType =
   | 'discord_notification'
   | 'email_notification'
   | 'dalle3_image'
+  | 'gpt_image_1_5'
   | 'video_generator'
   | 'sql_query'
   | 'rest_api'

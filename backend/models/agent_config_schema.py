@@ -207,6 +207,20 @@ class AgentConfigV2(BaseModel):
         description="Node names to interrupt after execution"
     )
 
+    # Multimodal input configuration
+    enable_multimodal_input: bool = Field(
+        default=False,
+        description="Enable multimodal input (images, documents, videos)"
+    )
+    supported_input_types: List[str] = Field(
+        default_factory=lambda: ["image"],
+        description="Supported input types: image, document, video, audio"
+    )
+    attachments: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Pre-configured attachments for this agent (URL or base64)"
+    )
+
     # Fallback configuration
     fallback_models: List[str] = Field(
         default_factory=list,

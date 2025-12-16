@@ -10,6 +10,8 @@
  */
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // OpenAI
+  'gpt-5.2': 'GPT-5.2',
+  'gpt-5.1': 'GPT-5.1',
   'gpt-5': 'GPT-5',
   'gpt-5-pro': 'GPT-5 Pro',
   'gpt-4o': 'GPT-4o',

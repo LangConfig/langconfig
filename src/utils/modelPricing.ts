@@ -29,6 +29,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'o3-mini': { input: 4.00, output: 16.00 },
   'o4-mini': { input: 3.00, output: 12.00 },
 
+  // OpenAI GPT-5 Series
+  'gpt-5.2': { input: 5.00, output: 15.00 },
+  'gpt-5.1': { input: 4.00, output: 12.00 },
+
   // OpenAI GPT-4o Series
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },

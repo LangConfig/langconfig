@@ -62,43 +62,43 @@ export default function InlineFilePreview({
   const markdownComponents = useMemo(() => ({
     h1: ({ children }: any) => (
       <h1 className="text-2xl font-bold mt-6 mb-3 border-b pb-2"
-          style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+        style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
         {children}
       </h1>
     ),
     h2: ({ children }: any) => (
       <h2 className="text-xl font-bold mt-5 mb-2"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h2>
     ),
     h3: ({ children }: any) => (
       <h3 className="text-lg font-semibold mt-4 mb-2"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h3>
     ),
     h4: ({ children }: any) => (
       <h4 className="text-base font-semibold mt-3 mb-2"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </h4>
     ),
     p: ({ children }: any) => (
       <p className="mb-3 leading-relaxed"
-         style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </p>
     ),
     ul: ({ children }: any) => (
       <ul className="list-disc list-outside ml-5 mb-3 space-y-1"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </ul>
     ),
     ol: ({ children }: any) => (
       <ol className="list-decimal list-outside ml-5 mb-3 space-y-1"
-          style={{ color: 'var(--color-text-primary)' }}>
+        style={{ color: 'var(--color-text-primary)' }}>
         {children}
       </ol>
     ),
@@ -109,11 +109,11 @@ export default function InlineFilePreview({
     ),
     blockquote: ({ children }: any) => (
       <blockquote className="border-l-4 pl-4 py-2 my-3 italic rounded-r"
-                  style={{
-                    borderColor: 'var(--color-primary)',
-                    backgroundColor: 'var(--color-panel-dark)',
-                    color: 'var(--color-text-muted)'
-                  }}>
+        style={{
+          borderColor: 'var(--color-primary)',
+          backgroundColor: 'var(--color-panel-dark)',
+          color: 'var(--color-text-muted)'
+        }}>
         {children}
       </blockquote>
     ),
@@ -130,10 +130,10 @@ export default function InlineFilePreview({
         </SyntaxHighlighter>
       ) : (
         <code className="px-1.5 py-0.5 rounded text-sm font-mono"
-              style={{
-                backgroundColor: 'var(--color-panel-dark)',
-                color: 'var(--color-primary)'
-              }}>
+          style={{
+            backgroundColor: 'var(--color-panel-dark)',
+            color: 'var(--color-primary)'
+          }}>
           {children}
         </code>
       );
@@ -150,37 +150,37 @@ export default function InlineFilePreview({
     ),
     a: ({ href, children }: any) => (
       <a href={href}
-         className="underline hover:opacity-80"
-         style={{ color: 'var(--color-primary)' }}
-         target="_blank"
-         rel="noopener noreferrer">
+        className="underline hover:opacity-80"
+        style={{ color: 'var(--color-primary)' }}
+        target="_blank"
+        rel="noopener noreferrer">
         {children}
       </a>
     ),
     table: ({ children }: any) => (
       <div className="overflow-x-auto my-4">
         <table className="min-w-full border-collapse border"
-               style={{ borderColor: 'var(--color-border-dark)' }}>
+          style={{ borderColor: 'var(--color-border-dark)' }}>
           {children}
         </table>
       </div>
     ),
     th: ({ children }: any) => (
       <th className="border px-3 py-2 text-left font-semibold text-sm"
-          style={{
-            borderColor: 'var(--color-border-dark)',
-            backgroundColor: 'var(--color-panel-dark)',
-            color: 'var(--color-text-primary)'
-          }}>
+        style={{
+          borderColor: 'var(--color-border-dark)',
+          backgroundColor: 'var(--color-panel-dark)',
+          color: 'var(--color-text-primary)'
+        }}>
         {children}
       </th>
     ),
     td: ({ children }: any) => (
       <td className="border px-3 py-2 text-sm"
-          style={{
-            borderColor: 'var(--color-border-dark)',
-            color: 'var(--color-text-primary)'
-          }}>
+        style={{
+          borderColor: 'var(--color-border-dark)',
+          color: 'var(--color-text-primary)'
+        }}>
         {children}
       </td>
     ),
@@ -223,7 +223,7 @@ export default function InlineFilePreview({
             )}
           </button>
           <button
-            onClick={() => onDownload(file.filename)}
+            onClick={() => onDownload(file.path)}
             className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
             title="Download"
           >
@@ -253,7 +253,7 @@ export default function InlineFilePreview({
               {file.size_human}
             </p>
             <button
-              onClick={() => onDownload(file.filename)}
+              onClick={() => onDownload(file.path)}
               className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium flex items-center gap-2"
               style={{ color: 'var(--color-primary)' }}
             >
