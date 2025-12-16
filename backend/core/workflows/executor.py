@@ -77,6 +77,12 @@ class SimpleWorkflowState(TypedDict):
     loop_should_exit: Optional[bool]  # Whether loop should exit
     loop_exit_reason: Optional[str]  # Reason for loop exit
 
+    # Multimodal attachments (images, documents, videos, audio)
+    # workflow_attachments: Provided at workflow start, passed to all agents
+    # agent_attachments: Retrieved per-agent from node config
+    workflow_attachments: Optional[List[Dict[str, Any]]]
+    agent_attachments: Optional[Dict[str, List[Dict[str, Any]]]]  # {node_id: [attachments]}
+
 
 class SimpleWorkflowExecutor:
     """
@@ -217,7 +223,10 @@ class SimpleWorkflowExecutor:
                 "error_message": None,
                 "started_at": now,
                 "completed_at": None,
-                "execution_duration_seconds": None
+                "execution_duration_seconds": None,
+                # Multimodal attachments from workflow input
+                "workflow_attachments": input_data.get("attachments"),
+                "agent_attachments": None  # Will be populated per-agent from node configs
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -1582,7 +1591,20 @@ class SimpleWorkflowExecutor:
                     "workflow_id": state.get("workflow_id"),
                     "workflow_name": state.get("workflow_name"),
                     "execution_id": state.get("execution_id"),
+                    # Multimodal input configuration
+                    "enable_multimodal_input": agent_config.get("enable_multimodal_input", False),
+                    "supported_input_types": agent_config.get("supported_input_types", ["image"]),
                 }
+
+                # Collect multimodal attachments for this agent
+                # Combine workflow-level attachments with agent-specific attachments
+                workflow_attachments = state.get("workflow_attachments", []) or []
+                agent_attachments = agent_config.get("attachments", []) or []
+                all_attachments = workflow_attachments + agent_attachments
+
+                if all_attachments:
+                    full_agent_config["attachments"] = all_attachments
+                    logger.info(f"[{display_name}] Multimodal attachments: {len(all_attachments)} total ({len(workflow_attachments)} workflow + {len(agent_attachments)} agent)")
 
                 # Build agent context for file metadata tracking
                 agent_context = {

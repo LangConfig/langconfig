@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from db.database import get_db
 from models.settings import Settings as SettingsModel
+from constants.models import ModelChoice
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -187,28 +188,15 @@ async def get_available_models(db: Session = Depends(get_db)):
 
     # OpenAI models (require OpenAI API key)
     if api_keys.get("openai"):
-        available.extend([
-            'gpt-5',
-            'gpt-5-pro',
-            'gpt-4o',
-            'gpt-4o-mini',
-        ])
+        available.extend([m.value for m in ModelChoice if m.value.startswith('gpt')])
 
     # Anthropic/Claude models (require Anthropic API key)
     if api_keys.get("anthropic"):
-        available.extend([
-            'claude-sonnet-4-5',
-            'claude-sonnet-4-5-20250929',
-            'claude-haiku-4-5',
-        ])
+        available.extend([m.value for m in ModelChoice if 'claude' in m.value])
 
     # Google Gemini models (require Google API key)
     if api_keys.get("google"):
-        available.extend([
-            'gemini-2.5-pro',
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-        ])
+        available.extend([m.value for m in ModelChoice if 'gemini' in m.value])
 
     # Local models (validated only)
     from models.local_model import LocalModel
@@ -319,27 +307,8 @@ async def list_available_models(db: Session = Depends(get_db)):
     api_keys = settings.api_keys or {}
     available = []
 
-    # OpenAI models (always available - users provide keys at runtime if needed)
-    available.extend([
-        'gpt-5',
-        'gpt-4o',
-        'gpt-4o-mini',
-        'gpt-4-turbo',
-    ])
-
-    # Anthropic/Claude models (current generation only)
-    available.extend([
-        'claude-opus-4',
-        'claude-sonnet-4-5',
-        'claude-haiku-4-5',
-    ])
-
-    # Google Gemini models
-    available.extend([
-        'gemini-2.5-pro',
-        'gemini-2.5-flash',
-        'gemini-2.0-flash-exp',
-    ])
+    # Get all models from the ModelChoice enum (single source of truth)
+    available = [m.value for m in ModelChoice]
 
     # Local models (validated only)
     from models.local_model import LocalModel

@@ -289,11 +289,13 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
 
   const handleStartFromScratch = () => {
     setAdvancedMode(true);
-    setSelectedTemplate(null);
     setShowingTemplateGallery(false);
   };
 
   const handleSave = async () => {
+    // Clear previous errors before validating again
+    setValidationErrors([]);
+
     const isValid = validateAllSections();
 
     if (!isValid) {
@@ -903,7 +905,7 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
                 }}
               >
                 <option value="google">Google (Nano Banana, Imagen 3, Veo 3)</option>
-                <option value="openai">OpenAI (DALL-E 3, Sora)</option>
+                <option value="openai">OpenAI (GPT-Image-1.5, DALL-E 3, Sora)</option>
               </select>
             </div>
 
@@ -923,6 +925,7 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
               >
                 {implementationConfig.provider === 'openai' ? (
                   <>
+                    <option value="gpt-image-1.5">GPT-Image-1.5 (Image)</option>
                     <option value="dall-e-3">DALL-E 3 (Image)</option>
                     <option value="sora">Sora (Video)</option>
                   </>

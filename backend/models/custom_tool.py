@@ -29,6 +29,7 @@ class ToolTemplateType(str, Enum):
     API_WEBHOOK = "api_webhook"
     IMAGE_OPENAI_DALLE3 = "image_openai_dalle3"
     IMAGE_OPENAI_SORA = "image_openai_sora"
+    IMAGE_OPENAI_GPT_IMAGE_1_5 = "image_openai_gpt_image_1_5"  # GPT-Image-1.5 (December 2025)
     IMAGE_GEMINI_IMAGEN3 = "image_gemini_imagen3"
     IMAGE_GEMINI_NANO_BANANA = "image_gemini_nano_banana"  # Nano Banana (Gemini 2.5 Flash Image)
     VIDEO_GEMINI_VEO3 = "video_gemini_veo3"

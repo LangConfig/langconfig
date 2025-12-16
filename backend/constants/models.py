@@ -5,15 +5,16 @@
 
 """
 Model constants for LangConfig
-Updated December 4, 2025
+Updated December 16, 2025
 """
 from enum import Enum
 
 
 class ModelChoice(str, Enum):
-    """Available AI models - Updated December 4, 2025"""
+    """Available AI models - Updated December 16, 2025"""
 
     # OpenAI - GPT-5 Series (Current)
+    GPT_5_2 = "gpt-5.2"  # Latest flagship model
     GPT_5_1 = "gpt-5.1"
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"  # Lean/fast model
