@@ -12,11 +12,12 @@
  * Shows a gallery view of all multimodal content created by agents.
  */
 
-import { useState, useMemo } from 'react';
-import { Image, FileText, Music, File, Download, Maximize2, X, Calendar, Bot } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { Image, FileText, Music, File, Download, Maximize2, X, Calendar, Bot, CheckSquare, Square, Package } from 'lucide-react';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import type { ContentBlock, ImageContentBlock } from '@/types/content-blocks';
 import { isImageBlock } from '@/types/content-blocks';
+import JSZip from 'jszip';
 
 interface ArtifactEntry {
   id: string;
@@ -65,18 +66,44 @@ const getBlockTypeName = (type: string) => {
   }
 };
 
+// Helper to download a base64 image as PNG
+const downloadImage = (data: string, mimeType: string, filename: string) => {
+  const link = document.createElement('a');
+  link.href = `data:${mimeType};base64,${data}`;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// Helper to base64 to blob
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+};
+
 export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactEntry | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'gallery' | 'list'>('gallery');
   const [filterType, setFilterType] = useState<string>('all');
 
+  // Multi-select state
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isSelecting, setIsSelecting] = useState(false);
+
   // Flatten all blocks for filtering/counting
   const allBlocks = useMemo(() => {
-    const blocks: { artifact: ArtifactEntry; block: ContentBlock; index: number }[] = [];
+    const blocks: { artifact: ArtifactEntry; block: ContentBlock; index: number; key: string }[] = [];
     artifacts.forEach(artifact => {
       artifact.blocks.forEach((block, index) => {
-        blocks.push({ artifact, block, index });
+        const key = `${artifact.id}-${index}`;
+        blocks.push({ artifact, block, index, key });
       });
     });
     return blocks;
@@ -103,6 +130,77 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
     });
     return counts;
   }, [allBlocks]);
+
+  // Get only image blocks for download
+  const downloadableImages = useMemo(() => {
+    return filteredBlocks.filter(({ block }) => isImageBlock(block));
+  }, [filteredBlocks]);
+
+  // Toggle item selection
+  const toggleSelection = useCallback((key: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  // Select/deselect all visible images
+  const toggleSelectAll = useCallback(() => {
+    if (selectedItems.size === downloadableImages.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+    }
+  }, [downloadableImages, selectedItems.size]);
+
+  // Download selected images as zip
+  const downloadSelectedAsZip = useCallback(async () => {
+    const selected = allBlocks.filter(({ key, block }) =>
+      selectedItems.has(key) && isImageBlock(block)
+    );
+
+    if (selected.length === 0) return;
+
+    const zip = new JSZip();
+
+    selected.forEach(({ artifact, block, index }) => {
+      if (isImageBlock(block)) {
+        // Always save as PNG for consistency (user preference)
+        const filename = `${artifact.agentLabel || 'image'}_task${artifact.taskId}_${index + 1}.png`;
+        const blob = base64ToBlob(block.data, 'image/png');
+        zip.file(filename, blob);
+      }
+    });
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(zipBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `workflow_images_${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    // Clear selection after download
+    setSelectedItems(new Set());
+    setIsSelecting(false);
+  }, [allBlocks, selectedItems]);
+
+  // Download single image
+  const downloadSingleImage = useCallback((block: ContentBlock, artifact: ArtifactEntry, index: number) => {
+    if (isImageBlock(block)) {
+      // Always save as PNG for consistency (user preference)
+      const filename = `${artifact.agentLabel || 'image'}_task${artifact.taskId}_${index + 1}.png`;
+      downloadImage(block.data, 'image/png', filename);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -153,15 +251,95 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Selection mode toggle and actions */}
+          {downloadableImages.length > 0 && (
+            <>
+              {isSelecting ? (
+                <>
+                  {/* Select All / Deselect All */}
+                  <button
+                    onClick={toggleSelectAll}
+                    className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg border transition-colors hover:bg-white/5"
+                    style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}
+                    title={selectedItems.size === downloadableImages.length ? "Deselect All" : "Select All"}
+                  >
+                    {selectedItems.size === downloadableImages.length ? (
+                      <CheckSquare className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                    {selectedItems.size > 0 ? `${selectedItems.size} selected` : 'Select All'}
+                  </button>
+
+                  {/* Download Selected */}
+                  <button
+                    onClick={downloadSelectedAsZip}
+                    disabled={selectedItems.size === 0}
+                    className={`px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg transition-colors ${selectedItems.size > 0
+                      ? 'bg-primary hover:bg-primary/90'
+                      : 'bg-gray-600 cursor-not-allowed'
+                      }`}
+                    style={{ color: 'white' }}
+                    title="Download selected as ZIP"
+                  >
+                    <Package className="w-4 h-4" />
+                    Download ZIP
+                  </button>
+
+                  {/* Cancel selection */}
+                  <button
+                    onClick={() => {
+                      setIsSelecting(false);
+                      setSelectedItems(new Set());
+                    }}
+                    className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg border transition-colors hover:bg-white/5"
+                    style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}
+                    title="Cancel selection"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Enter selection mode */}
+                  <button
+                    onClick={() => setIsSelecting(true)}
+                    className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg border transition-colors hover:bg-white/5"
+                    style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}
+                    title="Select images to download"
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                    Select
+                  </button>
+
+                  {/* Quick download all images */}
+                  <button
+                    onClick={() => {
+                      setSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+                      // Immediate trigger
+                      setTimeout(downloadSelectedAsZip, 100);
+                    }}
+                    className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg transition-colors hover:bg-primary/90"
+                    style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                    title="Download all images as ZIP"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download All ({downloadableImages.length})
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
           {/* View Toggle */}
           <div className="flex border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border-dark)' }}>
             <button
               onClick={() => setViewMode('gallery')}
-              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 ${
-                viewMode === 'gallery'
-                  ? 'bg-primary/10'
-                  : 'hover:bg-white/5'
-              }`}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 ${viewMode === 'gallery'
+                ? 'bg-primary/10'
+                : 'hover:bg-white/5'
+                }`}
               style={{ color: viewMode === 'gallery' ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
               title="Gallery View"
             >
@@ -170,11 +348,10 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 border-l ${
-                viewMode === 'list'
-                  ? 'bg-primary/10'
-                  : 'hover:bg-white/5'
-              }`}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 border-l ${viewMode === 'list'
+                ? 'bg-primary/10'
+                : 'hover:bg-white/5'
+                }`}
               style={{
                 color: viewMode === 'list' ? 'var(--color-primary)' : 'var(--color-text-muted)',
                 borderColor: 'var(--color-border-dark)'
@@ -193,16 +370,36 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
         {viewMode === 'gallery' ? (
           // Gallery View - Grid of artifacts
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredBlocks.map(({ artifact, block, index }) => (
+            {filteredBlocks.map(({ artifact, block, index, key }) => (
               <div
-                key={`${artifact.id}-${index}`}
-                className="group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                key={key}
+                className={`group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${selectedItems.has(key) ? 'ring-2 ring-primary' : ''
+                  }`}
                 style={{
                   backgroundColor: 'var(--color-panel-dark)',
-                  borderColor: 'var(--color-border-dark)'
+                  borderColor: selectedItems.has(key) ? 'var(--color-primary)' : 'var(--color-border-dark)'
                 }}
-                onClick={() => setSelectedArtifact(artifact)}
+                onClick={() => isSelecting && isImageBlock(block) ? toggleSelection(key, { stopPropagation: () => { } } as React.MouseEvent) : setSelectedArtifact(artifact)}
               >
+                {/* Selection checkbox (when in selection mode) */}
+                {isSelecting && isImageBlock(block) && (
+                  <div
+                    className="absolute top-2 left-2 z-10"
+                    onClick={(e) => toggleSelection(key, e)}
+                  >
+                    <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${selectedItems.has(key)
+                      ? 'bg-primary'
+                      : 'bg-black/40 hover:bg-black/60'
+                      }`}>
+                      {selectedItems.has(key) ? (
+                        <CheckSquare className="w-4 h-4 text-white" />
+                      ) : (
+                        <Square className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Preview */}
                 <div className="aspect-square flex items-center justify-center p-2" style={{ backgroundColor: 'var(--color-background-light)' }}>
                   {isImageBlock(block) ? (
@@ -237,19 +434,33 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
                   </div>
                 </div>
 
-                {/* Hover overlay */}
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedArtifact(artifact);
-                    }}
-                    className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                    title="View details"
-                  >
-                    <Maximize2 className="w-5 h-5 text-white" />
-                  </button>
-                </div>
+                {/* Hover overlay - show different actions based on selection mode */}
+                {!isSelecting && (
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedArtifact(artifact);
+                      }}
+                      className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                      title="View details"
+                    >
+                      <Maximize2 className="w-5 h-5 text-white" />
+                    </button>
+                    {isImageBlock(block) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadSingleImage(block, artifact, index);
+                        }}
+                        className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                        title="Download image"
+                      >
+                        <Download className="w-5 h-5 text-white" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

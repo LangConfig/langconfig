@@ -38,6 +38,8 @@ export type WorkflowEventType =
   | 'keepalive'
   // Tool progress events (for long-running tools)
   | 'tool_progress'
+  // Agent context event (for debugging)
+  | 'agent_context'
   // Debug mode events (detailed tracing)
   | 'debug_state_transition'
   | 'debug_checkpoint'
@@ -223,6 +225,40 @@ export interface DebugGraphStateEvent extends BaseEvent {
   };
 }
 
+// Agent context event for debugging (shows what agent has access to)
+export interface AgentContextEvent extends BaseEvent {
+  type: 'agent_context';
+  data: {
+    agent_label: string;
+    node_id: string;
+    timestamp: string;
+    system_prompt: {
+      preview: string;
+      length: number;
+    };
+    tools: string[];
+    attachments: Array<{
+      name: string;
+      mimeType: string;
+      hasData: boolean;
+      dataSize?: number;
+    }>;
+    messages: Array<{
+      type: string;
+      content: any;
+    }>;
+    model_config: {
+      model: string;
+      temperature: number;
+      max_tokens?: number;
+      enable_memory?: boolean;
+      enable_rag?: boolean;
+    };
+    metadata?: Record<string, any>;
+    task_id?: number;
+  };
+}
+
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
   type: Exclude<WorkflowEventType,
@@ -235,6 +271,7 @@ export interface GenericEvent extends BaseEvent {
     | 'subagent_end'
     | 'subagent_error'
     | 'tool_progress'
+    | 'agent_context'
     | 'debug_state_transition'
     | 'debug_checkpoint'
     | 'debug_graph_state'
@@ -255,4 +292,5 @@ export type WorkflowEvent =
   | DebugStateTransitionEvent
   | DebugCheckpointEvent
   | DebugGraphStateEvent
+  | AgentContextEvent
   | GenericEvent;

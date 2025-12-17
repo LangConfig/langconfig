@@ -35,6 +35,7 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Multi-Model Support** - OpenAI (GPT-4o, GPT-5), Anthropic (Claude 4.5 Sonnet/Opus/Haiku), Google (Gemini 3 Pro, Gemini 2.5), DeepSeek, local models (Ollama, LM Studio)
 - **Custom Tool Builder** - Create specialized tools beyond built-in MCP servers
 - **Real-Time Monitoring** - Watch agent execution, tool calls, token usage, and costs live
+- **Artifact Gallery** - View and bulk download generated images and files from workflow executions
 - **Export to Code** - Generate standalone Python packages with Streamlit UI, or view LangGraph code
 - **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
@@ -160,7 +161,7 @@ langconfig/
 │   │   ├── tools/            # Native and custom tool integrations
 │   │   ├── codegen/          # Python code export generation
 │   │   └── middleware/       # LangGraph middleware (RAG, validation)
-│   ├── services/             
+│   ├── services/
 │   │   ├── context_retrieval.py    # RAG retrieval with HyDE
 │   │   ├── llama_config.py         # Vector store (pgvector)
 │   │   └── token_counter.py        # Token tracking & cost calculation

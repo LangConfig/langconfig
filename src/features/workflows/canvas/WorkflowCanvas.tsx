@@ -32,7 +32,9 @@ import { useNotification } from '@/hooks/useNotification';
 import { useChat } from '@/features/chat/state/ChatContext';
 import CustomNode from './nodes/CustomNode';
 import { WorkflowCanvasContext } from './context';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import ExecutionConfigDialog from './dialogs/ExecutionConfigDialog';
+import { Attachment } from '@/components/common/AttachmentUploader';
 import SaveWorkflowModal from './dialogs/SaveWorkflowModal';
 import SaveToLibraryModal from './dialogs/SaveToLibraryModal';
 import SaveVersionDialog from './dialogs/SaveVersionDialog';
@@ -266,6 +268,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [contextDocuments, setContextDocuments] = useState<number[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
   const [additionalContext, setAdditionalContext] = useState('');
+  const [workflowAttachments, setWorkflowAttachments] = useState<Attachment[]>([]);
   const hasLoadedRef = useRef(false);
   const isDraggingRef = useRef(false); // Track if user is currently dragging a node
   const [workflowName, setWorkflowName] = useState('Untitled Workflow');
@@ -715,12 +718,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   });
 
   // Callback to update status from monitoring panel
-  // Fetch task history when workflow loads or changes
-  useEffect(() => {
-    if (currentWorkflowId) {
-      fetchTaskHistory();
-    }
-  }, [currentWorkflowId]);
+  // NOTE: fetchTaskHistory is already called by useTaskManagement when currentWorkflowId changes
 
   // Handle task deletion with confirmation
   const handleDeleteTaskWithConfirm = async (taskId: number) => {
@@ -860,6 +858,7 @@ if __name__ == "__main__":
     setExecutionStatus,
     fetchTaskHistory,
     onComplete: () => handleTabChange('results'),
+    clearSelectedTask: () => setSelectedHistoryTask(null),
   });
 
   // Fetch available documents for context
@@ -1404,6 +1403,7 @@ if __name__ == "__main__":
     checkpointerEnabled,
     globalRecursionLimit,
     contextDocuments,
+    workflowAttachments,
     activeProjectId,
     setCurrentWorkflowId,
     setCurrentTaskId,
@@ -1730,7 +1730,7 @@ if __name__ == "__main__":
             {nodes.length === 0 ? (
               <EmptyCanvasState />
             ) : (
-              <>
+              <ErrorBoundary>
                 <ReactFlow
                   nodes={validatedNodes}
                   edges={validatedEdges}
@@ -1843,7 +1843,7 @@ if __name__ == "__main__":
                   showThinkingStream={showThinkingStream}
                   currentZoom={currentZoom}
                 />
-              </>
+              </ErrorBoundary>
             )}
 
             {/* Floating Total Cost Panel - Top Right */}
@@ -2044,6 +2044,8 @@ if __name__ == "__main__":
               contextDocuments={contextDocuments}
               setContextDocuments={setContextDocuments}
               availableDocuments={availableDocuments}
+              attachments={workflowAttachments}
+              onAttachmentsChange={setWorkflowAttachments}
             />
           )}
 

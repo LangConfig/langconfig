@@ -6,51 +6,45 @@
  */
 
 /**
- * AudioBlock Component
+ * VideoBlock Component
  *
- * Renders an audio content block from MCP tool results.
- * Supports base64-encoded audio with native HTML5 audio controls.
+ * Renders a video content block from MCP tool results.
+ * Supports base64-encoded videos with native HTML5 video controls and download.
  */
 
 import React from 'react';
-import { Volume2, Download } from 'lucide-react';
-import { AudioContentBlock, contentBlockToDataUri } from '@/types/content-blocks';
+import { Video, Download } from 'lucide-react';
 import { useDownloadContext, sanitizeFilename } from '@/contexts/DownloadContext';
 
-interface AudioBlockProps {
-  block: AudioContentBlock;
+interface VideoBlockProps {
+  block: {
+    type: 'video';
+    data: string;
+    mimeType: string;
+    duration_seconds?: number;
+  };
   className?: string;
 }
 
-export const AudioBlock: React.FC<AudioBlockProps> = ({ block, className = '' }) => {
-  const src = contentBlockToDataUri(block);
+export const VideoBlock: React.FC<VideoBlockProps> = ({ block, className = '' }) => {
+  const src = `data:${block.mimeType};base64,${block.data}`;
   const { workflowName, getNextNumber } = useDownloadContext();
 
   const handleDownload = () => {
-    if (!src) return;
-
     const link = document.createElement('a');
     link.href = src;
 
     // Use workflow name + number for filename
-    const mimeType = block.mimeType || 'audio/mp3';
-    const extension = mimeType.split('/')[1] || 'mp3';
+    const mimeType = block.mimeType || 'video/mp4';
+    const extension = mimeType.split('/')[1] || 'mp4';
     const safeName = sanitizeFilename(workflowName);
     const number = getNextNumber();
-    link.download = `${safeName}_audio_${number}.${extension}`;
+    link.download = `${safeName}_video_${number}.${extension}`;
 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
-
-  if (!src) {
-    return (
-      <div className={`p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-500 ${className}`}>
-        Audio data unavailable
-      </div>
-    );
-  }
 
   // Format duration for display
   const formatDuration = (seconds: number): string => {
@@ -61,9 +55,9 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({ block, className = '' })
 
   return (
     <div className={`my-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg ${className}`}>
-      <div className="flex items-center gap-3 mb-2">
-        <Volume2 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Audio Output</span>
+      <div className="flex items-center gap-3 mb-3">
+        <Video className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Generated Video</span>
         {block.duration_seconds && (
           <span className="text-xs text-gray-500 dark:text-gray-500">
             {formatDuration(block.duration_seconds)}
@@ -72,17 +66,21 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({ block, className = '' })
         <button
           onClick={handleDownload}
           className="ml-auto p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
-          title="Download audio"
+          title="Download video"
         >
           <Download className="w-4 h-4 text-gray-600 dark:text-gray-400" />
         </button>
       </div>
-      <audio controls className="w-full" preload="metadata">
+      <video
+        controls
+        className="w-full max-h-[500px] rounded-lg shadow-lg"
+        preload="metadata"
+      >
         <source src={src} type={block.mimeType} />
-        Your browser does not support audio playback.
-      </audio>
+        Your browser does not support video playback.
+      </video>
     </div>
   );
 };
 
-export default AudioBlock;
+export default VideoBlock;

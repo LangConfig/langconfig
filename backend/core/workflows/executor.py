@@ -23,6 +23,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from models.workflow import WorkflowProfile
 from core.workflows.events.emitter import create_execution_callback_handler
+from core.workflows.events.progress import clear_execution_context
 from core.workflows.checkpointing.manager import get_store
 
 logger = logging.getLogger(__name__)
@@ -318,7 +319,21 @@ class SimpleWorkflowExecutor:
             if debug_mode:
                 logger.info(f"Debug mode ENABLED for workflow {workflow.id} - emitting detailed state transitions")
 
-            async for event in compiled_graph.astream_events(initial_state, config=config, version="v2"):
+            # ========================================================================
+            # SUBGRAPH STREAMING: Enable with subgraphs=True
+            # ========================================================================
+            # When subgraphs=True, astream_events() yields events from BOTH parent graph
+            # AND any nested subgraphs (e.g., subagents called via 'task' tool).
+            # Events from subgraphs include a 'langgraph_node' in tags showing the
+            # subgraph path (e.g., "task:uuid:model" for a subagent's model node).
+            # This is the official LangGraph approach for real-time subagent monitoring.
+            # ========================================================================
+            async for event in compiled_graph.astream_events(
+                initial_state,
+                config=config,
+                version="v2",
+                include_subgraphs=True  # Stream events from nested subgraphs (subagents)
+            ):
                 event_count += 1
 
                 # Check event count limit
@@ -369,6 +384,49 @@ class SimpleWorkflowExecutor:
                         }
                     })
                     raise asyncio.CancelledError("Task cancelled by user")
+
+                # ====================================================================
+                # SUBGRAPH NAMESPACE DETECTION
+                # ====================================================================
+                # With include_subgraphs=True, events from nested subgraphs have
+                # special metadata indicating the subgraph path. Extract this to
+                # route events to the correct SubAgentPanel in the frontend.
+                # ====================================================================
+                tags = event.get("tags", [])
+                metadata = event.get("metadata", {})
+
+                # Check for subgraph namespace in metadata (LangGraph convention)
+                # Format: "langgraph_node" tag with path like "task:uuid", or
+                # metadata with "langgraph_subgraph" or nested run_id references
+                subgraph_namespace = None
+                subgraph_run_id = None
+
+                # Method 1: Check for langgraph_node tag with subgraph path
+                for tag in tags:
+                    if isinstance(tag, str) and ":" in tag:
+                        # Tags like "task:abc123" or "subagent:xyz789" indicate subgraph
+                        parts = tag.split(":")
+                        if len(parts) >= 2 and parts[0] in ("task", "subagent", "delegate"):
+                            subgraph_namespace = tag
+                            subgraph_run_id = parts[1] if len(parts) > 1 else None
+                            break
+
+                # Method 2: Check in metadata for langgraph_checkpoint_ns
+                if not subgraph_namespace:
+                    checkpoint_ns = metadata.get("langgraph_checkpoint_ns", "")
+                    if checkpoint_ns and "|" in checkpoint_ns:
+                        # Format: "parent_ns|subgraph_ns" - extract subgraph part
+                        ns_parts = checkpoint_ns.split("|")
+                        if len(ns_parts) > 1:
+                            subgraph_namespace = ns_parts[-1]
+                            # Try to extract run_id from namespace (format: "node_name:run_id")
+                            if ":" in ns_parts[-1]:
+                                subgraph_run_id = ns_parts[-1].split(":")[1]
+
+                # If we have a subgraph namespace, log it for debugging
+                if subgraph_namespace:
+                    logger.debug(f"[SUBGRAPH EVENT] namespace={subgraph_namespace}, run_id={subgraph_run_id}")
+
                 # astream_events yields ALL events including LLM tokens and state updates
                 kind = event.get("event")
 
@@ -592,6 +650,9 @@ class SimpleWorkflowExecutor:
                                 "node_id": node_id,  # Include node_id for proper grouping in frontend
                                 "run_id": str(event.get("run_id", "")),
                                 "parent_run_id": str(event.get("parent_run_id", "")) if event.get("parent_run_id") else None,
+                                # SUBGRAPH ROUTING: Include subgraph context for SubAgentPanel
+                                "subgraph_run_id": subgraph_run_id,  # Routes to correct SubAgentPanel
+                                "subgraph_namespace": subgraph_namespace,  # Full namespace path
                                 "timestamp": datetime.utcnow().isoformat()
                             }
 
@@ -1553,10 +1614,29 @@ class SimpleWorkflowExecutor:
                 else:
                     logger.warning(f"[{display_name}] No messages received from previous nodes!")
 
+                # Collect multimodal attachments BEFORE creating initial message
+                # Combine workflow-level attachments with agent-specific attachments
+                workflow_attachments = state.get("workflow_attachments", []) or []
+                agent_attachments = agent_config.get("attachments", []) or []
+                all_attachments = workflow_attachments + agent_attachments
+
                 # If no messages yet, create initial message from user's query
+                # Use multimodal message if attachments exist
                 if not messages and query:
-                    messages = [HumanMessage(content=query)]
-                    logger.info(f"[{display_name}] Created initial HumanMessage from query")
+                    if all_attachments:
+                        # DEBUG: Log attachment data structure
+                        for i, att in enumerate(all_attachments):
+                            data_preview = att.get('data', '')[:50] if att.get('data') else 'NO_DATA'
+                            url_preview = att.get('url', '')[:50] if att.get('url') else 'NO_URL'
+                            logger.info(f"[{display_name}] Attachment {i}: type={att.get('type')}, mime={att.get('mime_type')}, data_preview={data_preview}, url_preview={url_preview}")
+
+                        # Create multimodal message with attachments
+                        from core.agents.multimodal import create_multimodal_message
+                        messages = [create_multimodal_message(query, all_attachments)]
+                        logger.info(f"[{display_name}] Created multimodal HumanMessage with {len(all_attachments)} attachments")
+                    else:
+                        messages = [HumanMessage(content=query)]
+                        logger.info(f"[{display_name}] Created initial HumanMessage from query")
 
                 # Create agent for this node using AgentFactory
                 # Build agent_config dict matching AgentFactory.create_agent() API
@@ -1596,12 +1676,8 @@ class SimpleWorkflowExecutor:
                     "supported_input_types": agent_config.get("supported_input_types", ["image"]),
                 }
 
-                # Collect multimodal attachments for this agent
-                # Combine workflow-level attachments with agent-specific attachments
-                workflow_attachments = state.get("workflow_attachments", []) or []
-                agent_attachments = agent_config.get("attachments", []) or []
-                all_attachments = workflow_attachments + agent_attachments
 
+                # Add attachments to agent config (already collected above)
                 if all_attachments:
                     full_agent_config["attachments"] = all_attachments
                     logger.info(f"[{display_name}] Multimodal attachments: {len(all_attachments)} total ({len(workflow_attachments)} workflow + {len(agent_attachments)} agent)")
@@ -1613,6 +1689,29 @@ class SimpleWorkflowExecutor:
                     "node_id": node_id,
                     "original_query": query,
                 }
+
+                # Emit agent context event for debugging (shows what agent has access to)
+                from core.workflows.events.progress import emit_agent_context
+                all_tools = (
+                    agent_config.get("native_tools", []) +
+                    mcp_tools_list + cli_tools_list + custom_tools_list
+                )
+                await emit_agent_context(
+                    agent_label=display_name,
+                    node_id=node_id,
+                    system_prompt=system_prompt,
+                    tools=all_tools,
+                    attachments=all_attachments,
+                    input_messages=messages,
+                    model_config={
+                        "model": model,
+                        "temperature": temperature,
+                        "max_tokens": agent_config.get("max_tokens"),
+                        "enable_memory": agent_config.get("enable_memory", False),
+                        "enable_rag": agent_config.get("enable_rag", False),
+                    },
+                    metadata={"query": query[:200] if query else None}
+                )
 
                 # Shared setup: MCP manager and vector store
                 from services.mcp_manager import get_mcp_manager
@@ -2613,9 +2712,19 @@ When your work is complete, deliver the final result and END."""
 
             except Exception as e:
                 error_msg = f"Failed to initialize Playwright browser: {str(e)}"
-                logger.error(error_msg)
-                logger.error("Make sure Playwright is installed: playwright install chromium")
-                raise ValueError(error_msg)
+                logger.warning(error_msg)
+                logger.warning("Browser tools will not be available for this workflow")
+                logger.warning("To enable browser tools, run: playwright install chromium")
+
+                # Non-fatal: notify user but continue workflow without browser tools
+                await event_bus.publish(channel, {
+                    "type": "warning",
+                    "data": {
+                        "message": "Browser tools unavailable - Playwright failed to initialize",
+                        "details": str(e),
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
 
         # All tools validated and ready
         logger.info("✓ Tool validation complete - all tools ready")

@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import apiClient from '@/lib/api-client';
 import { TaskHistoryEntry } from '../types';
 
@@ -45,6 +45,15 @@ export function useTaskManagement({
   const [showReplayPanel, setShowReplayPanel] = useState(false);
   const [replayTaskId, setReplayTaskId] = useState<number | null>(null);
 
+  // Ref to prevent duplicate fetches
+  const isFetchingRef = useRef(false);
+  const onRunningTaskFoundRef = useRef(onRunningTaskFound);
+
+  // Keep ref updated
+  useEffect(() => {
+    onRunningTaskFoundRef.current = onRunningTaskFound;
+  }, [onRunningTaskFound]);
+
   // Persist collapsed state
   useEffect(() => {
     localStorage.setItem('workflow-history-collapsed', JSON.stringify(isHistoryCollapsed));
@@ -57,6 +66,12 @@ export function useTaskManagement({
       return;
     }
 
+    // Prevent duplicate/loop fetches
+    if (isFetchingRef.current) {
+      return;
+    }
+
+    isFetchingRef.current = true;
     setLoadingHistory(true);
     try {
       const response = await apiClient.getWorkflowHistory(currentWorkflowId, 50, 0);
@@ -68,8 +83,8 @@ export function useTaskManagement({
         task.status === 'running' || task.status === 'pending'
       );
 
-      if (runningTask && onRunningTaskFound) {
-        onRunningTaskFound({
+      if (runningTask && onRunningTaskFoundRef.current) {
+        onRunningTaskFoundRef.current({
           id: runningTask.id,
           created_at: runningTask.created_at,
         });
@@ -78,14 +93,15 @@ export function useTaskManagement({
       console.error('Failed to fetch task history:', error);
       setTaskHistory([]);
     } finally {
+      isFetchingRef.current = false;
       setLoadingHistory(false);
     }
-  }, [currentWorkflowId, onRunningTaskFound]);
+  }, [currentWorkflowId]); // Only depend on workflowId, not callbacks
 
   // Load task history when workflow changes
   useEffect(() => {
     fetchTaskHistory();
-  }, [fetchTaskHistory]);
+  }, [currentWorkflowId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Delete a task from history
   const handleDeleteTask = useCallback(async (taskId: number) => {

@@ -75,13 +75,20 @@ def get_schema_fields(schema_class) -> List[Dict[str, Any]]:
 
     # Handle Pydantic model
     if hasattr(schema_class, 'model_fields'):
+        from pydantic_core import PydanticUndefined
+
         for name, field_info in schema_class.model_fields.items():
+            # Check if default is PydanticUndefined (can't be serialized)
+            default_value = field_info.default
+            if default_value is PydanticUndefined:
+                default_value = None
+
             fields.append({
                 "name": name,
                 "type": str(field_info.annotation.__name__) if hasattr(field_info.annotation, '__name__') else str(field_info.annotation),
                 "description": field_info.description or "",
                 "required": field_info.is_required(),
-                "default": field_info.default if field_info.default is not None else None
+                "default": default_value
             })
 
     return fields
