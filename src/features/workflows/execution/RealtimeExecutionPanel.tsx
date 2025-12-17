@@ -30,6 +30,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { calculateAndFormatCost } from '@/utils/modelPricing';
 import { SubAgentPanelStack } from './SubagentPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
+import { AgentContextViewer } from './AgentContextViewer';
 import type { ContentBlock } from '@/types/content-blocks';
 
 // Helper component for code blocks with copy button
@@ -381,6 +382,34 @@ interface AgentSection {
   items: SectionItem[];
   startTime: string;
   endTime?: string;
+  context?: {
+    agent_label: string;
+    node_id: string;
+    timestamp: string;
+    system_prompt: {
+      preview: string;
+      length: number;
+    };
+    tools: string[];
+    attachments: Array<{
+      name: string;
+      mimeType: string;
+      hasData: boolean;
+      dataSize?: number;
+    }>;
+    messages: Array<{
+      type: string;
+      content: any;
+    }>;
+    model_config: {
+      model: string;
+      temperature: number;
+      max_tokens?: number;
+      enable_memory?: boolean;
+      enable_rag?: boolean;
+    };
+    metadata?: Record<string, any>;
+  };
 }
 
 // Lightweight token sanitizer for normal (non-diagnostics) view
@@ -554,21 +583,25 @@ export default function RealtimeExecutionPanel({
           subagent.outputPreview = full_output || output_preview || '';
         }
       }
-      // SUBAGENT EVENT ROUTING: Route events using subagent_run_id field from backend
-      // This is the primary routing mechanism - backend now includes subagent_run_id in all events
+      // SUBAGENT EVENT ROUTING: Route events using subagent_run_id or subgraph_run_id
+      // Primary: subagent_run_id (from callback handler's task tool detection)
+      // Secondary: subgraph_run_id (from LangGraph subgraph streaming with include_subgraphs=True)
       else {
-        const subagentRunId = (event.data as any)?.subagent_run_id;
-        if (subagentRunId && subagentMap.has(subagentRunId)) {
+        const eventData = event.data as any;
+        const routingId = eventData?.subagent_run_id || eventData?.subgraph_run_id;
+
+        if (routingId && subagentMap.has(routingId)) {
           // This event belongs to a subagent - add to its events array
-          subagentMap.get(subagentRunId)!.events.push(event);
-          console.log('[SUBAGENT EVENT ROUTED]', event.type, 'to', subagentRunId);
+          subagentMap.get(routingId)!.events.push(event);
+          console.log('[SUBAGENT EVENT ROUTED]', event.type, 'to', routingId);
         }
         // Fallback: Route events by parent_run_id matching (legacy behavior)
-        else if ((event.data as any)?.parent_run_id) {
-          const parentId = (event.data as any).parent_run_id;
+        else if (eventData?.parent_run_id) {
+          const parentId = eventData.parent_run_id;
           for (const [subId, sub] of subagentMap) {
             if (sub.parentRunId === parentId || subId === parentId) {
               sub.events.push(event);
+              console.log('[SUBAGENT EVENT ROUTED via parent]', event.type, 'to', subId);
             }
           }
         }
@@ -932,7 +965,7 @@ export default function RealtimeExecutionPanel({
                   toolName: progressData.tool_name,
                   input: progressData.message,
                   status: progressData.progress_type === 'error' ? 'error' :
-                          progressData.progress_type === 'completed' ? 'completed' : 'running',
+                    progressData.progress_type === 'completed' ? 'completed' : 'running',
                   progressMessage: progressData.message,
                   progressPercent: progressData.percent_complete,
                   progressStep: progressData.current_step,
@@ -952,6 +985,11 @@ export default function RealtimeExecutionPanel({
               item.tool.result = event.data?.error || 'Unknown error';
             }
           });
+          break;
+
+        case 'agent_context':
+          // Store agent context for debugging
+          section.context = event.data as AgentSection['context'];
           break;
       }
     }
@@ -1481,187 +1519,192 @@ export default function RealtimeExecutionPanel({
             </div>
           ) : (
             <>
-            {filteredSections.map((section, sectionIdx) => {
-              return (
-                <div
-                  key={`${section.nodeId}-${sectionIdx}`}
-                  className="space-y-2 p-3 mb-3 rounded-lg last:mb-0 transition-all duration-200 shadow-sm"
-                  style={{
-                    backgroundColor: 'white',
-                    border: '1px solid var(--color-border-dark)'
-                  }}
-                >
-                  {/* Agent Header */}
-                  <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
-                    <div
-                      className="w-7 h-7 rounded-md flex items-center justify-center"
-                      style={{
-                        background: section.endTime ? '#10b981' : 'var(--color-primary)'
-                      }}
-                    >
-                      <PenLine className="w-4 h-4 text-white" />
+              {filteredSections.map((section, sectionIdx) => {
+                return (
+                  <div
+                    key={`${section.nodeId}-${sectionIdx}`}
+                    className="space-y-2 p-3 mb-3 rounded-lg last:mb-0 transition-all duration-200 shadow-sm"
+                    style={{
+                      backgroundColor: 'white',
+                      border: '1px solid var(--color-border-dark)'
+                    }}
+                  >
+                    {/* Agent Header */}
+                    <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
+                      <div
+                        className="w-7 h-7 rounded-md flex items-center justify-center"
+                        style={{
+                          background: section.endTime ? '#10b981' : 'var(--color-primary)'
+                        }}
+                      >
+                        <PenLine className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm truncate" style={{
+                          color: 'var(--color-text-primary)',
+                          fontFamily: 'var(--font-family-display)'
+                        }}>
+                          {(() => {
+                            const headerText = section.agentLabel;
+                            const result = renderTextWithLimit(headerText, charIndex);
+                            charIndex += result.charsUsed;
+                            return result.rendered;
+                          })()}
+                        </h3>
+                        <p className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                          <span className="inline-block w-1 h-1 rounded-full" style={{
+                            backgroundColor: section.endTime ? '#10b981' : 'var(--color-primary)',
+                            animation: section.endTime ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                          }}></span>
+                          {new Date(section.startTime).toLocaleTimeString()}
+                        </p>
+                      </div>
+                      {section.endTime && (
+                        <CheckCircle className="w-4 h-4" style={{ color: '#10b981' }} />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm truncate" style={{
-                        color: 'var(--color-text-primary)',
-                        fontFamily: 'var(--font-family-display)'
-                      }}>
-                        {(() => {
-                          const headerText = section.agentLabel;
-                          const result = renderTextWithLimit(headerText, charIndex);
-                          charIndex += result.charsUsed;
-                          return result.rendered;
-                        })()}
-                      </h3>
-                      <p className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--color-text-muted)' }}>
-                        <span className="inline-block w-1 h-1 rounded-full" style={{
-                          backgroundColor: section.endTime ? '#10b981' : 'var(--color-primary)',
-                          animation: section.endTime ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                        }}></span>
-                        {new Date(section.startTime).toLocaleTimeString()}
-                      </p>
-                    </div>
-                    {section.endTime && (
-                      <CheckCircle className="w-4 h-4" style={{ color: '#10b981' }} />
+
+                    {/* Agent Context Viewer (for debugging) */}
+                    {section.context && (
+                      <AgentContextViewer context={section.context} />
                     )}
-                  </div>
 
-                  {/* Stream Items (Interleaved Thinking, Tools, Output) */}
-                  <div className="space-y-2">
-                    {section.items.map((item) => {
-                      // Thinking & Output
-                      if (item.type === 'thinking' || item.type === 'output') {
-                        if (!item.content && !item.rawContent) return null;
+                    {/* Stream Items (Interleaved Thinking, Tools, Output) */}
+                    <div className="space-y-2">
+                      {section.items.map((item) => {
+                        // Thinking & Output
+                        if (item.type === 'thinking' || item.type === 'output') {
+                          if (!item.content && !item.rawContent) return null;
 
-                        const base = item.content || '';
-                        const result = renderTextWithLimit(base, charIndex);
-                        charIndex += result.charsUsed;
-                        if (!result.rendered) return null;
+                          const base = item.content || '';
+                          const result = renderTextWithLimit(base, charIndex);
+                          charIndex += result.charsUsed;
+                          if (!result.rendered) return null;
 
-                        // Always render markdown - modern browsers handle re-parsing well
-                        // This gives a much better live preview experience
-                        return (
-                          <div
-                            key={item.id}
-                            className="prose prose-slate max-w-none"
-                            style={{
-                              color: 'var(--color-text-primary)',
-                              fontFamily: 'var(--font-family-sans)'
-                            }}
-                          >
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                code: ({ node, inline, className, children, ...props }: any) => {
-                                  const match = /language-(\w+)/.exec(className || '');
-                                  const language = match ? match[1] : 'text';
-                                  if (!inline && match) {
-                                    return <CodeBlock language={language}>{String(children).replace(/\n$/, '')}</CodeBlock>;
-                                  }
-                                  return (
-                                    <code className="px-1.5 py-0.5 rounded text-sm font-mono" style={{
-                                      backgroundColor: 'var(--color-background-light)',
-                                      color: 'var(--color-primary)'
-                                    }} {...props}>
-                                      {children}
-                                    </code>
-                                  );
-                                },
-                                h1: ({ children }: any) => (
-                                  <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
-                                    {children}
-                                  </h1>
-                                ),
-                                h2: ({ children }: any) => (
-                                  <h2 className="text-2xl font-bold mt-6 mb-3" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </h2>
-                                ),
-                                h3: ({ children }: any) => (
-                                  <h3 className="text-xl font-bold mt-4 mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </h3>
-                                ),
-                                p: ({ children }: any) => (
-                                  <p className="mb-4 leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </p>
-                                ),
-                                ul: ({ children }: any) => (
-                                  <ul className="list-disc mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </ul>
-                                ),
-                                ol: ({ children }: any) => (
-                                  <ol className="list-decimal mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </ol>
-                                ),
-                                li: ({ children }: any) => (
-                                  <li className="pl-1" style={{ color: 'var(--color-text-primary)' }}>
-                                    {children}
-                                  </li>
-                                ),
-                                blockquote: ({ children }: any) => (
-                                  <blockquote className="border-l-4 pl-4 py-2 my-4 italic" style={{
-                                    borderColor: 'var(--color-primary)',
-                                    backgroundColor: 'var(--color-panel-dark)',
-                                    color: 'var(--color-text-primary)'
-                                  }}>
-                                    {children}
-                                  </blockquote>
-                                ),
+                          // Always render markdown - modern browsers handle re-parsing well
+                          // This gives a much better live preview experience
+                          return (
+                            <div
+                              key={item.id}
+                              className="prose prose-slate max-w-none"
+                              style={{
+                                color: 'var(--color-text-primary)',
+                                fontFamily: 'var(--font-family-sans)'
                               }}
                             >
-                              {result.rendered}
-                            </ReactMarkdown>
-                          </div>
-                        );
-                      }
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  code: ({ node, inline, className, children, ...props }: any) => {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const language = match ? match[1] : 'text';
+                                    if (!inline && match) {
+                                      return <CodeBlock language={language}>{String(children).replace(/\n$/, '')}</CodeBlock>;
+                                    }
+                                    return (
+                                      <code className="px-1.5 py-0.5 rounded text-sm font-mono" style={{
+                                        backgroundColor: 'var(--color-background-light)',
+                                        color: 'var(--color-primary)'
+                                      }} {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  },
+                                  h1: ({ children }: any) => (
+                                    <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+                                      {children}
+                                    </h1>
+                                  ),
+                                  h2: ({ children }: any) => (
+                                    <h2 className="text-2xl font-bold mt-6 mb-3" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </h2>
+                                  ),
+                                  h3: ({ children }: any) => (
+                                    <h3 className="text-xl font-bold mt-4 mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </h3>
+                                  ),
+                                  p: ({ children }: any) => (
+                                    <p className="mb-4 leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </p>
+                                  ),
+                                  ul: ({ children }: any) => (
+                                    <ul className="list-disc mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </ul>
+                                  ),
+                                  ol: ({ children }: any) => (
+                                    <ol className="list-decimal mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </ol>
+                                  ),
+                                  li: ({ children }: any) => (
+                                    <li className="pl-1" style={{ color: 'var(--color-text-primary)' }}>
+                                      {children}
+                                    </li>
+                                  ),
+                                  blockquote: ({ children }: any) => (
+                                    <blockquote className="border-l-4 pl-4 py-2 my-4 italic" style={{
+                                      borderColor: 'var(--color-primary)',
+                                      backgroundColor: 'var(--color-panel-dark)',
+                                      color: 'var(--color-text-primary)'
+                                    }}>
+                                      {children}
+                                    </blockquote>
+                                  ),
+                                }}
+                              >
+                                {result.rendered}
+                              </ReactMarkdown>
+                            </div>
+                          );
+                        }
 
-                      // Tool Calls
-                      if (item.type === 'tool_call' && item.tool) {
-                        // Check if tool matches filter/search
-                        const matches = !searchQuery ||
-                          item.tool.toolName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (item.tool.input || '').toLowerCase().includes(searchQuery.toLowerCase());
+                        // Tool Calls
+                        if (item.type === 'tool_call' && item.tool) {
+                          // Check if tool matches filter/search
+                          const matches = !searchQuery ||
+                            item.tool.toolName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (item.tool.input || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-                        if (!matches) return null;
+                          if (!matches) return null;
 
-                        const renderedHeader = renderTextWithLimit(item.tool.toolName, charIndex).rendered;
-                        charIndex += item.tool.toolName.length;
+                          const renderedHeader = renderTextWithLimit(item.tool.toolName, charIndex).rendered;
+                          charIndex += item.tool.toolName.length;
 
-                        const renderedInput = renderTextWithLimit(item.tool.input, charIndex).rendered;
-                        charIndex += item.tool.input.length;
+                          const renderedInput = renderTextWithLimit(item.tool.input, charIndex).rendered;
+                          charIndex += item.tool.input.length;
 
-                        const renderedResult = item.tool.result ? renderTextWithLimit(item.tool.result, charIndex).rendered : '';
-                        if (item.tool.result) charIndex += item.tool.result.length;
+                          const renderedResult = item.tool.result ? renderTextWithLimit(item.tool.result, charIndex).rendered : '';
+                          if (item.tool.result) charIndex += item.tool.result.length;
 
-                        return (
-                          <ToolCallItem
-                            key={item.id}
-                            status={item.tool.status}
-                            toolName={item.tool.toolName}
-                            renderedHeader={renderedHeader}
-                            renderedInput={renderedInput}
-                            renderedResult={renderedResult}
-                            contentBlocks={item.tool.contentBlocks}
-                            artifacts={item.tool.artifacts}
-                            hasMultimodal={item.tool.hasMultimodal}
-                            progressMessage={item.tool.progressMessage}
-                            progressPercent={item.tool.progressPercent}
-                            progressStep={item.tool.progressStep}
-                            progressTotal={item.tool.progressTotal}
-                          />
-                        );
-                      }
+                          return (
+                            <ToolCallItem
+                              key={item.id}
+                              status={item.tool.status}
+                              toolName={item.tool.toolName}
+                              renderedHeader={renderedHeader}
+                              renderedInput={renderedInput}
+                              renderedResult={renderedResult}
+                              contentBlocks={item.tool.contentBlocks}
+                              artifacts={item.tool.artifacts}
+                              hasMultimodal={item.tool.hasMultimodal}
+                              progressMessage={item.tool.progressMessage}
+                              progressPercent={item.tool.progressPercent}
+                              progressStep={item.tool.progressStep}
+                              progressTotal={item.tool.progressTotal}
+                            />
+                          );
+                        }
 
-                      return null;
-                    })}
+                        return null;
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
             </>
           )
         }
@@ -1686,21 +1729,23 @@ export default function RealtimeExecutionPanel({
       }
 
       {/* Subagent Panels - Slide out from right when subagents are active */}
-      {activeSubagents.length > 0 && (
-        <div
-          className="fixed top-0 h-full z-40 transition-all duration-300 ease-out"
-          style={{
-            left: isFullScreen ? '66.666%' : '850px',
-            width: isFullScreen ? '33.333%' : '400px',
-            backgroundColor: 'transparent'
-          }}
-        >
-          <SubAgentPanelStack
-            subagents={activeSubagents}
-            isVisible={true}
-          />
-        </div>
-      )}
+      {
+        activeSubagents.length > 0 && (
+          <div
+            className="fixed top-0 h-full z-40 transition-all duration-300 ease-out"
+            style={{
+              left: isFullScreen ? '66.666%' : '850px',
+              width: isFullScreen ? '33.333%' : '400px',
+              backgroundColor: 'transparent'
+            }}
+          >
+            <SubAgentPanelStack
+              subagents={activeSubagents}
+              isVisible={true}
+            />
+          </div>
+        )
+      }
     </div >
 
   );

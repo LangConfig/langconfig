@@ -39,6 +39,14 @@ interface UseExecutionHandlersOptions {
   checkpointerEnabled: boolean;
   globalRecursionLimit: number;
   contextDocuments: number[];
+  workflowAttachments: Array<{
+    id: string;
+    type: 'image' | 'video' | 'document';
+    name: string;
+    data: string;
+    mimeType: string;
+    size: number;
+  }>;
   activeProjectId: number | null;
   setCurrentWorkflowId: (id: number | null) => void;
   setCurrentTaskId: (id: number | null) => void;
@@ -73,6 +81,7 @@ export function useExecutionHandlers({
   checkpointerEnabled,
   globalRecursionLimit,
   contextDocuments,
+  workflowAttachments,
   activeProjectId,
   setCurrentWorkflowId,
   setCurrentTaskId,
@@ -251,6 +260,14 @@ export function useExecutionHandlers({
           timeout_seconds: executionConfig.timeout_seconds || 600  // Default: 10 minutes
         },
         context_documents: contextDocuments,
+        // Include file attachments (images, documents) for agent context
+        attachments: workflowAttachments.map(att => ({
+          type: att.type,
+          name: att.name,
+          mime_type: att.mimeType,
+          data: att.data,  // base64 encoded
+          size: att.size,
+        })),
       });
 
       // Save task ID for monitoring and persist to localStorage
@@ -306,6 +323,7 @@ export function useExecutionHandlers({
     checkpointerEnabled,
     globalRecursionLimit,
     contextDocuments,
+    workflowAttachments,
     activeProjectId,
     setCurrentWorkflowId,
     setCurrentTaskId,

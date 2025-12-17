@@ -77,6 +77,8 @@ class WorkflowExecuteRequest(BaseModel):
     project_id: Optional[int] = None  # Optional - for standalone workflow execution
     input_data: Dict[str, Any]
     context_documents: Optional[list[int]] = None
+    # File attachments (images, documents) as base64
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 
 class WorkflowExecuteResponse(BaseModel):
@@ -136,7 +138,8 @@ async def execute_workflow(
         project_id=request.project_id,
         workflow_id=request.workflow_id,
         input_data=request.input_data,
-        context_documents=request.context_documents
+        context_documents=request.context_documents,
+        attachments=request.attachments
     )
 
     return WorkflowExecuteResponse(
@@ -151,7 +154,8 @@ async def execute_workflow_background(
     project_id: int,
     workflow_id: int,
     input_data: Dict[str, Any],
-    context_documents: Optional[list[int]] = None
+    context_documents: Optional[list[int]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ):
     """
     Background task to execute a user-created workflow.
@@ -222,6 +226,11 @@ async def execute_workflow_background(
                 logger.error(f"Failed to retrieve RAG context: {e}")
                 # Continue execution without RAG context
                 input_data["rag_context"] = {"error": str(e)}
+
+        # Include attachments in input_data for agents to access
+        if attachments:
+            input_data["attachments"] = attachments
+            logger.info(f"Including {len(attachments)} attachments in workflow context")
 
         # Execute the workflow
         logger.info(f"Executing workflow '{workflow.name}' (id={workflow_id}) for task {task_id}")

@@ -9,11 +9,13 @@
  * ImageBlock Component
  *
  * Renders an image content block from MCP tool results.
- * Supports base64-encoded images with click-to-fullscreen functionality.
+ * Supports base64-encoded images with click-to-fullscreen and download functionality.
  */
 
 import React from 'react';
+import { Download } from 'lucide-react';
 import { ImageContentBlock, contentBlockToDataUri } from '@/types/content-blocks';
+import { useDownloadContext, sanitizeFilename } from '@/contexts/DownloadContext';
 
 interface ImageBlockProps {
   block: ImageContentBlock;
@@ -23,6 +25,27 @@ interface ImageBlockProps {
 
 export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onImageClick, className = '' }) => {
   const src = contentBlockToDataUri(block);
+  const { workflowName, getNextNumber } = useDownloadContext();
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering fullscreen
+    if (!src) return;
+
+    // Create a link element and trigger download
+    const link = document.createElement('a');
+    link.href = src;
+
+    // Use workflow name + number for filename
+    const mimeType = block.mimeType || 'image/png';
+    const extension = mimeType.split('/')[1] || 'png';
+    const safeName = sanitizeFilename(workflowName);
+    const number = getNextNumber();
+    link.download = `${safeName}_${number}.${extension}`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (!src) {
     return (
@@ -48,11 +71,20 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onImageClick, cla
             {block.alt_text}
           </p>
         )}
+        {/* Hover overlay with actions */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/10 rounded-lg pointer-events-none">
           <span className="text-white bg-black/60 px-3 py-1 rounded-md text-sm font-medium">
             Click to view full size
           </span>
         </div>
+        {/* Download button */}
+        <button
+          onClick={handleDownload}
+          className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          title="Download image"
+        >
+          <Download className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

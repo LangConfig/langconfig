@@ -98,6 +98,126 @@ def clear_execution_context() -> None:
     _execution_context_var.set(None)
 
 
+async def emit_agent_context(
+    agent_label: str,
+    node_id: str,
+    system_prompt: str = "",
+    tools: list = None,
+    attachments: list = None,
+    input_messages: list = None,
+    model_config: dict = None,
+    metadata: dict = None
+) -> None:
+    """
+    Emit an agent context event for debugging purposes.
+
+    This sends information about what the agent has access to,
+    which helps users debug issues like missing images or documents.
+
+    Args:
+        agent_label: The agent's display label
+        node_id: The node ID in the workflow
+        system_prompt: The agent's system prompt
+        tools: List of tool names available to the agent
+        attachments: List of attachments (with type/mimeType info, not full data)
+        input_messages: Summary of input messages (with truncation for large content)
+        model_config: Model configuration (model name, temperature, etc.)
+        metadata: Additional metadata
+    """
+    try:
+        exec_ctx = get_execution_context()
+        if not exec_ctx:
+            logger.debug(f"No execution context for agent_context event: {agent_label}")
+            return
+
+        workflow_id = exec_ctx.get('workflow_id')
+        if not workflow_id:
+            return
+
+        from services.event_bus import get_event_bus
+        event_bus = get_event_bus()
+        channel = f"workflow:{workflow_id}"
+
+        # Summarize attachments (don't send full base64 data)
+        attachment_summary = []
+        if attachments:
+            for att in attachments:
+                summary = {
+                    "name": att.get("name", "attachment"),
+                    "mimeType": att.get("mimeType", "unknown"),
+                    "hasData": bool(att.get("data") or att.get("url")),
+                }
+                # Add size info if available
+                if att.get("data"):
+                    summary["dataSize"] = len(att.get("data", ""))
+                attachment_summary.append(summary)
+
+        # Summarize messages (truncate long content)
+        message_summary = []
+        if input_messages:
+            for msg in input_messages[:10]:  # Limit to first 10 messages
+                msg_type = getattr(msg, "type", type(msg).__name__)
+                content = getattr(msg, "content", str(msg))
+
+                # Handle different content types
+                if isinstance(content, list):
+                    # Multimodal content
+                    content_parts = []
+                    for part in content:
+                        if isinstance(part, dict):
+                            if part.get("type") == "text":
+                                text = part.get("text", "")
+                                content_parts.append({
+                                    "type": "text",
+                                    "preview": text[:500] + "..." if len(text) > 500 else text,
+                                    "length": len(text)
+                                })
+                            elif part.get("type") == "image_url":
+                                content_parts.append({
+                                    "type": "image",
+                                    "hasUrl": bool(part.get("image_url", {}).get("url"))
+                                })
+                        else:
+                            content_parts.append({"type": "unknown"})
+                    content = content_parts
+                elif isinstance(content, str):
+                    content = {
+                        "type": "text",
+                        "preview": content[:500] + "..." if len(content) > 500 else content,
+                        "length": len(content)
+                    }
+
+                message_summary.append({
+                    "type": msg_type,
+                    "content": content
+                })
+
+        context_event = {
+            "type": "agent_context",
+            "data": {
+                "agent_label": agent_label,
+                "node_id": node_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "system_prompt": {
+                    "preview": system_prompt[:1000] + "..." if len(system_prompt) > 1000 else system_prompt,
+                    "length": len(system_prompt)
+                },
+                "tools": tools or [],
+                "attachments": attachment_summary,
+                "messages": message_summary,
+                "model_config": model_config or {},
+                "metadata": metadata or {},
+                "task_id": exec_ctx.get('task_id'),
+            }
+        }
+
+        await event_bus.publish(channel, context_event)
+        logger.debug(f"Emitted agent_context for {agent_label}")
+
+    except Exception as e:
+        logger.warning(f"Failed to emit agent_context for {agent_label}: {e}")
+
+
 async def emit_tool_progress(
     tool_name: str,
     message: str,

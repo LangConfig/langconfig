@@ -171,7 +171,7 @@ const DEFAULT_AGENT_TOOLS = [...FILESYSTEM_TOOLS, 'web_search'];
 const DEFAULT_CONFIG: DeepAgentConfig = {
   model: 'claude-sonnet-4-5-20250929',
   temperature: 0.7,
-  system_prompt: 'You are a helpful AI assistant with planning and research capabilities.',
+  system_prompt: 'You are a helpful AI assistant with planning, research, and task delegation capabilities. When facing complex multi-step tasks, use the `task` tool to delegate specialized work to subagents.',
   tools: [],
   native_tools: DEFAULT_AGENT_TOOLS,  // Filesystem + web_search for research
   cli_tools: [],
@@ -238,6 +238,8 @@ const NATIVE_TOOLS = [
   { id: 'memory_recall', name: 'Recall Memory', description: 'Retrieve previously stored information from memory by key. Access saved data across different conversation sessions.' },
   // Reasoning tools
   { id: 'reasoning_chain', name: 'Reasoning Chain', description: 'Break down complex tasks into logical reasoning steps. Provides structured framework for multi-step problem solving and analysis.' },
+  // Subagent delegation tools
+  { id: 'task', name: 'Task Delegation', description: 'Delegate work to specialized subagents. Enables parallel processing and specialization for complex workflows.' },
 ];
 
 const BACKEND_TYPES = [

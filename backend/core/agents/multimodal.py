@@ -106,42 +106,115 @@ def attachment_to_content_block(attachment: Dict[str, Any]) -> Optional[Dict[str
     Returns:
         LangChain content block dict or None if invalid
     """
+    import base64
+
     attachment_type = attachment.get("type", "image")
     url = attachment.get("url")
     data = attachment.get("data")
-    mime_type = attachment.get("mime_type")
+    mime_type = attachment.get("mime_type", "")
     name = attachment.get("name", "attachment")
     description = attachment.get("description", "")
 
-    # Get MIME type
+    logger.info(f"Processing attachment: type={attachment_type}, name={name}, mime_type={mime_type}, has_url={bool(url)}, has_data={bool(data)}")
+
+    # Get MIME type from name if not provided
     if not mime_type and url:
         mime_type = get_mime_type(url)
+    elif not mime_type and name:
+        mime_type = get_mime_type(name)
     elif not mime_type:
         mime_type = "application/octet-stream"
 
-    # Handle different input formats
+    # Determine if this is a text document that should be decoded and included as text
+    text_mime_types = [
+        "text/plain", "text/markdown", "text/html", "text/css", "text/csv",
+        "application/json", "application/xml", "text/xml"
+    ]
+    is_text_document = (
+        attachment_type == "document" or
+        mime_type in text_mime_types or
+        any(name.lower().endswith(ext) for ext in ['.md', '.txt', '.json', '.xml', '.csv', '.html', '.css', '.py', '.js', '.ts'])
+    )
+
+    # Determine if this is an image that can use image_url
+    image_mime_types = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]
+    is_image = mime_type in image_mime_types or mime_type.startswith("image/")
+
+    logger.info(f"Attachment {name}: is_text_document={is_text_document}, is_image={is_image}, mime_type={mime_type}")
+
+    # Handle text documents - decode base64 and return as text content
+    if is_text_document and data:
+        try:
+            # Decode base64 to get the text content
+            clean_data = str(data).strip()
+            # Remove potential quotes
+            while clean_data.startswith("'") or clean_data.startswith('"'):
+                clean_data = clean_data[1:]
+            while clean_data.endswith("'") or clean_data.endswith('"'):
+                clean_data = clean_data[:-1]
+
+            decoded_text = base64.b64decode(clean_data).decode('utf-8')
+            logger.info(f"Attachment {name}: Decoded text document ({len(decoded_text)} chars)")
+
+            # Return as text content block with document context
+            return {
+                "type": "text",
+                "text": f"--- Document: {name} ---\n{decoded_text}\n--- End of {name} ---"
+            }
+        except Exception as e:
+            logger.warning(f"Attachment {name}: Failed to decode as text: {e}")
+            # Fall through to try other handling
+
+    # Handle URLs (for images)
     if url:
+        if not is_image:
+            logger.warning(f"Attachment {name}: URL provided for non-image type {mime_type}, skipping")
+            return None
+
         if url.startswith("data:"):
-            # Already a data URI
+            logger.debug(f"Attachment {name}: Using existing data URI")
+            return {
+                "type": "image_url",
+                "image_url": {"url": url}
+            }
+        elif url.startswith("http://") or url.startswith("https://"):
+            logger.debug(f"Attachment {name}: Using HTTP URL")
             return {
                 "type": "image_url",
                 "image_url": {"url": url}
             }
         else:
-            # Regular URL - return as image_url for LangChain
+            logger.warning(f"Attachment {name}: Invalid URL format: {url[:50]}...")
+            return None
+
+    # Handle base64 data for images
+    elif data and is_image:
+        # Clean the data
+        clean_data = str(data).strip()
+        while clean_data.startswith("'") or clean_data.startswith('"'):
+            clean_data = clean_data[1:]
+        while clean_data.endswith("'") or clean_data.endswith('"'):
+            clean_data = clean_data[:-1]
+        clean_data = clean_data.strip()
+
+        # Check if data is already a complete data URI
+        if clean_data.startswith("data:"):
+            logger.debug(f"Attachment {name}: Data already contains data: prefix")
             return {
                 "type": "image_url",
-                "image_url": {"url": url}
+                "image_url": {"url": clean_data}
             }
-    elif data:
-        # Base64 data - construct data URI
-        data_uri = f"data:{mime_type};base64,{data}"
+
+        # Build the data URI
+        data_uri = f"data:{mime_type};base64,{clean_data}"
+        logger.info(f"Attachment {name}: Created image data URI, data_length={len(clean_data)}")
+
         return {
             "type": "image_url",
             "image_url": {"url": data_uri}
         }
 
-    logger.warning(f"Attachment missing both url and data: {attachment}")
+    logger.warning(f"Attachment {name}: Could not process (type={attachment_type}, mime={mime_type})")
     return None
 
 

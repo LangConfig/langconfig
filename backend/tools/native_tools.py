@@ -635,47 +635,40 @@ def _write_file_error_handler(error: Exception) -> str:
     # For other errors, return the original error message
     return f"write_file error: {error_str}"
 
-# Create the tool with custom error handling
+# Create the tool with custom error handling and explicit args schema
 from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field as PydanticField
+
+class WriteFileArgs(BaseModel):
+    """Arguments for write_file tool - BOTH are REQUIRED"""
+    file_path: str = PydanticField(
+        ...,  # ... means required in Pydantic
+        description="REQUIRED: The filename to create (e.g., 'report.md', 'data.json'). Directory path is ignored."
+    )
+    content: str = PydanticField(
+        ...,  # ... means required in Pydantic
+        description="REQUIRED: The COMPLETE text content to write to the file. You MUST provide this parameter."
+    )
 
 write_file = StructuredTool.from_function(
     func=_write_file_impl,
     name="write_file",
-    description="""Create a new file with the provided content.
+    args_schema=WriteFileArgs,
+    description="""Write content to a file. REQUIRES 2 PARAMETERS: file_path AND content.
 
-Creates the file if it doesn't exist, overwrites if it does.
+MANDATORY PARAMETERS (you MUST provide BOTH):
+1. file_path (str): Filename like 'report.md' (directory ignored for security)
+2. content (str): The COMPLETE file content - DO NOT omit this parameter!
+
+WRONG: write_file(file_path='test.md')  ← MISSING content, will ERROR
+CORRECT: write_file(file_path='test.md', content='# My Report\\nContent here...')
+
 Files are saved to the workflow's organized output directory.
+Users can view, preview, and download files from the 'Files' tab.
 
-FILE LOCATION: Files you create are automatically saved to an organized workspace:
-- outputs/project_{id}/workflow_{id}/task_{id}/ - for workflow executions
-- outputs/default/ - for standalone/chat executions
-Users can view, preview, download, and manage these files from the "Files" tab.
+Best practice filenames: .md (reports), .json (data), .csv (tables), .py (code)
 
-CRITICAL: Both parameters are REQUIRED and MUST be provided:
-- file_path (str): The filename to create (directory path is ignored for security)
-- content (str): The complete content to write to the file
-
-You MUST provide both file_path AND content when calling this tool.
-Do NOT call this tool without the content parameter.
-If you don't have the content ready, wait until you do before calling write_file.
-
-Best practices for filenames:
-- Use descriptive names (e.g., "quarterly_report.md" not "output.txt")
-- Common formats: .md (reports), .json (data), .csv (tables), .py (code)
-- The user will see these files in the UI with preview and download options
-
-Args:
-    file_path: Filename to create (directory path is ignored for security)
-    content: Complete text content to write to the file
-
-Returns:
-    Success message with file path and character count
-
-Example:
-    >>> write_file(
-    ...     file_path="research_report.md",
-    ...     content="# Research Report\\n\\nThis is the full content..."
-    ... )""",
+If you don't have content ready yet, DO NOT call this tool until you do.""",
     handle_tool_error=_write_file_error_handler
 )
 
@@ -1011,6 +1004,62 @@ Note: This is a reasoning framework. The agent should fill in the actual analysi
 
 
 # =============================================================================
+# Subagent Delegation Tools
+# =============================================================================
+
+@tool
+def task(
+    description: str,
+    subagent_type: str = "general",
+    context: str = "",
+    expected_output: str = ""
+) -> str:
+    """
+    Delegate a task to a specialized subagent for execution.
+
+    Use this tool to spawn work to configured subagents. The subagent will
+    execute the task and return the result. This enables parallel processing
+    and specialization.
+
+    Args:
+        description: Clear description of the task to perform
+        subagent_type: Type of subagent to use (e.g., "research", "code", "writer", "general")
+        context: Additional context or information for the subagent
+        expected_output: Description of expected output format/content
+
+    Returns:
+        Result from the subagent execution
+
+    Example:
+        >>> task(
+        ...     description="Research the latest trends in AI image generation",
+        ...     subagent_type="research",
+        ...     context="Focus on diffusion models released in 2024",
+        ...     expected_output="A summary with key findings and links"
+        ... )
+    """
+    logger.info(f"[TASK DELEGATION] Spawning subagent task: {description[:100]}...")
+    logger.info(f"  subagent_type: {subagent_type}")
+    logger.info(f"  context: {context[:100] if context else 'None'}...")
+
+    # This is a placeholder - actual subagent execution is handled by the DeepAgents framework
+    # The framework intercepts this tool call and routes it to the appropriate subagent
+    # based on the subagent configurations in the DeepAgentConfig
+
+    # For now, return a message indicating the tool was called
+    # The actual implementation is in the DeepAgents middleware
+    return f"""[SUBAGENT TASK QUEUED]
+Task: {description}
+Type: {subagent_type}
+Context: {context if context else 'None'}
+Expected Output: {expected_output if expected_output else 'Any relevant output'}
+
+Note: This task has been queued for subagent execution. The DeepAgents framework
+will route this to the appropriate configured subagent. If no subagents are
+configured, this task will be executed by the main agent."""
+
+
+# =============================================================================
 # Tool Loading Functions
 # =============================================================================
 
@@ -1058,6 +1107,9 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
         "memory_recall": memory_recall,
         # Reasoning tools
         "reasoning_chain": reasoning_chain,
+        # Subagent delegation tools
+        "task": task,
+        "delegate": task,  # Alias for task
         # Note: Playwright tools are loaded separately via get_playwright_tools()
         # because they require async initialization
     }
@@ -1121,6 +1173,8 @@ def get_available_tool_names() -> List[str]:
         "memory_recall",
         # Reasoning tools
         "reasoning_chain",
+        # Subagent delegation tools
+        "task",
     ]
 
 
