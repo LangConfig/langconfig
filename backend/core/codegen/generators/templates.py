@@ -26,7 +26,8 @@ class TemplateGenerators:
         nodes: List[Dict],
         edges: List[Dict],
         include_ui: bool,
-        sanitize_name_func
+        sanitize_name_func,
+        include_api: bool = True
     ) -> str:
         """Generate README.md with setup instructions."""
         ui_section = ""
@@ -40,15 +41,41 @@ class TemplateGenerators:
             ```
 
             This opens a browser with:
-            - **API Key Configuration** - Enter your keys directly in the sidebar
-            - Query input field
-            - Real-time execution status
-            - Streaming agent responses
-            - Tool call visualization
-            - Final result display
+            - **Agent Thinking Display** - Watch agents reason in real-time
+            - **Tool Call Cards** - See tool execution with status indicators
+            - **Structured Output** - Clean markdown rendering of results
+            - **API Key Configuration** - Enter keys directly in the sidebar
+            - **Execution History** - Track previous runs
+            """
 
-            The Streamlit UI will show which API keys are required based on the models
-            used in your workflow, and you can enter them directly without editing files.
+        api_section = ""
+        if include_api:
+            api_section = """
+            ## Run as API Server
+
+            For programmatic access via REST API:
+            ```bash
+            python api_server.py
+            ```
+
+            Or with auto-reload for development:
+            ```bash
+            uvicorn api_server:app --reload --port 8000
+            ```
+
+            **Available Endpoints:**
+            - `POST /run` - Execute workflow with JSON body `{"query": "your prompt"}`
+            - `POST /run/stream` - Execute with SSE streaming for real-time updates
+            - `GET /health` - Health check endpoint
+            - `GET /info` - Get workflow metadata
+            - Interactive docs at `http://localhost:8000/docs`
+
+            **Example curl:**
+            ```bash
+            curl -X POST http://localhost:8000/run \
+              -H "Content-Type: application/json" \
+              -d '{"query": "Your prompt here"}'
+            ```
             """
 
         return dedent(f'''
@@ -80,6 +107,7 @@ class TemplateGenerators:
                python main.py
                ```
             {ui_section}
+            {api_section}
             ## Workflow Details
 
             - **Name**: {workflow_name}
@@ -123,7 +151,8 @@ class TemplateGenerators:
         used_models: Set[str],
         used_native_tools: Set[str],
         has_deepagents: bool,
-        include_ui: bool
+        include_ui: bool,
+        include_api: bool = True
     ) -> str:
         """Generate requirements.txt based on workflow features."""
         requirements = [
@@ -144,6 +173,15 @@ class TemplateGenerators:
             requirements.extend([
                 "# Streamlit UI",
                 "streamlit>=1.28.0",
+                "",
+            ])
+
+        # FastAPI Server
+        if include_api:
+            requirements.extend([
+                "# API Server",
+                "fastapi>=0.104.0",
+                "uvicorn>=0.24.0",
                 "",
             ])
 

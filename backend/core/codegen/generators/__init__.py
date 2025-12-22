@@ -16,6 +16,7 @@ from .custom_tools import CustomToolGenerators
 from .routing import RoutingGenerators
 from .templates import TemplateGenerators
 from .streamlit_app import StreamlitAppGenerator
+from .api_server import ApiServerGenerator
 
 __all__ = [
     "NodeGenerators",
@@ -24,4 +25,5 @@ __all__ = [
     "RoutingGenerators",
     "TemplateGenerators",
     "StreamlitAppGenerator",
+    "ApiServerGenerator",
 ]
