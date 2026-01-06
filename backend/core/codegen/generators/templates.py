@@ -204,7 +204,7 @@ class TemplateGenerators:
         # DeepAgents
         if has_deepagents:
             requirements.append("# DeepAgents")
-            requirements.append("deepagents")
+            requirements.append("deepagents>=0.3.0")
             requirements.append("")
 
         # Tool-specific dependencies
@@ -426,6 +426,9 @@ class TemplateGenerators:
                 loop_route: Optional[str] = None
                 loop_iterations: Dict[str, int] = {}
 
+                # Runtime configuration (API keys, model overrides, etc.)
+                runtime_config: Optional[Dict[str, Any]] = None
+
                 # HITL
                 approval_status: Optional[str] = None
                 approval_route: Optional[str] = None
@@ -612,7 +615,7 @@ class TemplateGenerators:
                 system_prompt: str = "You are a helpful assistant."
             ):
                 """
-                Create a LangChain agent for a workflow node.
+                Create a LangGraph agent for a workflow node.
 
                 Args:
                     llm: Language model instance
@@ -638,7 +641,7 @@ class TemplateGenerators:
                 Create a DeepAgent for complex autonomous tasks.
 
                 Args:
-                    model: Model name to use
+                    model: Model name to use (string like "gpt-4o" or "claude-sonnet-4-20250514")
                     system_prompt: System prompt for the agent
                     **kwargs: Additional configuration
 
@@ -646,14 +649,19 @@ class TemplateGenerators:
                     Configured DeepAgent
                 """
                 try:
-                    from deepagents import DeepAgent
-                    return DeepAgent(
-                        model=model,
+                    from langchain.chat_models import init_chat_model
+                    from deepagents import create_deep_agent
+
+                    # Create model instance from string
+                    model_instance = init_chat_model(model)
+
+                    return create_deep_agent(
+                        model=model_instance,
                         system_prompt=system_prompt,
                         **kwargs
                     )
-                except ImportError:
-                    logger.warning("DeepAgents not installed. Install with: pip install deepagents")
+                except ImportError as e:
+                    logger.warning(f"DeepAgents import error: {e}. Install with: pip install deepagents")
                     raise
         ''').strip()
 

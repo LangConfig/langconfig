@@ -623,14 +623,36 @@ def _write_file_error_handler(error: Exception) -> str:
 
     # Check if this is a Pydantic validation error for missing content
     if "ValidationError" in str(type(error)) and "content" in error_str and "Field required" in error_str:
-        return (
-            "ERROR: write_file requires BOTH file_path AND content parameters. "
-            "You called write_file with only file_path='...' but DID NOT provide the content parameter. "
-            "This is wrong. You MUST call write_file with BOTH parameters like this: "
-            "write_file(file_path='your_file.md', content='your complete file content here'). "
-            "Do NOT call write_file until you have the full content ready to write. "
-            "Generate the full content first, then call write_file with both parameters."
-        )
+        # Check if this looks like a truncated tool call (max_tokens reached)
+        # Pattern: only file_path present, no content (common when LLM runs out of tokens)
+        if "input_value={" in error_str and "'file_path':" in error_str:
+            return (
+                "⚠️ TOKEN LIMIT REACHED - YOUR RESPONSE WAS CUT OFF!\n\n"
+                "You tried to write a very long file but ran out of output tokens. "
+                "The content parameter was truncated before it could be sent.\n\n"
+                "TO FIX THIS, you must split your content into smaller pieces:\n"
+                "1. Write Part 1 with write_file() (keep under 3000 chars)\n"
+                "2. Then use edit_file() to append Part 2, 3, etc.\n\n"
+                "Example:\n"
+                "  write_file(file_path='doc.md', content='# My Doc\\n[PART 1 HERE - max 3000 chars]\\n<!-- MORE -->')\n"
+                "  edit_file(file_path='doc.md', old_string='<!-- MORE -->', new_string='[PART 2 CONTENT...]')"
+            )
+        else:
+            return (
+                "CRITICAL ERROR - STOP AND READ THIS CAREFULLY:\n\n"
+                "You called write_file() with ONLY file_path but FORGOT the content parameter.\n\n"
+                "WRONG (what you did):   write_file(file_path='report.md')\n"
+                "CORRECT (what to do):   write_file(file_path='report.md', content='Your full content here')\n\n"
+                "BEFORE your next tool call:\n"
+                "1. STOP - Do NOT immediately retry write_file\n"
+                "2. First, compose your complete file content as a string\n"
+                "3. THEN call write_file with BOTH file_path AND content parameters\n\n"
+                "Example of correct usage:\n"
+                "write_file(\n"
+                "    file_path='analysis.md',\n"
+                "    content='# Analysis Report\\n\\nHere is the full content...'\n"
+                ")"
+            )
 
     # For other errors, return the original error message
     return f"write_file error: {error_str}"

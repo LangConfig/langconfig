@@ -129,7 +129,7 @@ class AgentConfigV2(BaseModel):
         description="Generation temperature"
     )
     max_tokens: Optional[int] = Field(
-        default=8192,
+        default=30000,
         ge=1,
         le=500000,
         description="Maximum tokens to generate"

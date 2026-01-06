@@ -10,10 +10,12 @@ import { useEffect, useRef } from 'react';
 interface UseWorkflowCompletionOptions {
   workflowEvents: any[];
   setExecutionStatus: (updater: (prev: any) => any) => void;
-  fetchTaskHistory: () => void;
+  fetchTaskHistory: (force?: boolean) => Promise<void>;
   onComplete?: () => void;
   /** Clear any selected task so the latest task is shown after completion */
   clearSelectedTask?: () => void;
+  /** Expand the history panel to show the new task */
+  expandHistory?: () => void;
 }
 
 /**
@@ -25,6 +27,7 @@ export function useWorkflowCompletion({
   fetchTaskHistory,
   onComplete,
   clearSelectedTask,
+  expandHistory,
 }: UseWorkflowCompletionOptions): void {
   // Track if we've already handled completion to prevent duplicate calls
   const hasHandledCompleteRef = useRef(false);
@@ -54,8 +57,15 @@ export function useWorkflowCompletion({
           // Clear any previous task selection so the new task is shown
           clearSelectedTask?.();
 
-          // Refresh task history to get the new result - wait for it to complete
-          await fetchTaskHistory();
+          // Refresh task history to get the new result - force fetch to bypass guard
+          await fetchTaskHistory(true);
+
+          // Expand history panel to show the new task
+          expandHistory?.();
+
+          // Small delay to allow React state to propagate before switching tabs
+          // This ensures taskHistory[0] shows the new task, not the previous one
+          await new Promise(resolve => setTimeout(resolve, 100));
 
           // Trigger completion callback (e.g., switch to results tab)
           // Now we can call immediately since history is loaded

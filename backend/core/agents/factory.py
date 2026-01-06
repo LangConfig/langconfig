@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # Default Configuration Constants
 DEFAULT_MODEL = "claude-haiku-4-5-20251015"
 DEFAULT_TEMPERATURE = 0.5
-DEFAULT_MAX_TOKENS = 8192
+DEFAULT_MAX_TOKENS = 30000
 
 # Validation Bounds Constants
 MIN_TEMPERATURE = 0.0
@@ -83,33 +83,40 @@ SUPPORTED_MODELS = {
     "gemini-2.5-flash",
 }
 
-REASONING_FRAMEWORK = """
-# AGENT EXECUTION FRAMEWORK (ReAct)
-You are an autonomous agent. Follow this process meticulously:
+# =============================================================================
+# AGENT GUARDRAILS FRAMEWORK
+# =============================================================================
+# This prompt is prepended to every agent's system prompt to enforce:
+# 1. Stopping criteria - prevents infinite loops and over-exploration
+# 2. Tool usage guidelines - ensures tools are called with correct parameters
+#
+# NOTE: The reasoning loop (Reason → Act → Observe) is handled internally by
+# LangChain's create_agent(). These guardrails add production-safety rules.
+#
+# This can be customized per-agent via the "reasoning_framework" config field.
+# =============================================================================
 
-1. **Analyze:** Understand the goal, conversation history, and context.
-2. **Reason & Plan:** Determine the next necessary action. Decide if a tool is required.
-3. **Act:** If a tool is needed, invoke it with precise parameters. You MUST use tools for external interactions (Files, APIs).
-4. **Observe:** Analyze the tool output. If the goal is not met or an error occurs, adjust the plan and return to Step 2.
-5. **Conclude:** Once the goal is achieved, synthesize the findings into a comprehensive final response.
+DEFAULT_AGENT_GUARDRAILS = """
+# AGENT EXECUTION GUARDRAILS
 
-## CRITICAL STOPPING CRITERIA:
-- **STOP AFTER 2-3 TOOL CALLS** if you have sufficient information to answer the question
+## STOPPING CRITERIA
+- **STOP AFTER 2-3 TOOL CALLS** if you have sufficient information
 - **For searches**: One or two searches should provide enough context - do NOT search the same topic repeatedly
-- **Quality over quantity**: It's better to provide a good answer with 2-3 sources than to keep searching indefinitely
-- **When you have relevant information, STOP and provide your answer** - do not keep gathering more data
-- **If a tool call succeeds and returns useful information, move to the Conclude step** - do not call the same tool again
+- **Quality over quantity**: Provide a good answer with 2-3 sources rather than searching indefinitely
+- **When you have relevant information, STOP and provide your answer**
+- **Do NOT repeat the same tool call** - if it succeeded, use the results and move on
 
-## CRITICAL TOOL USAGE GUIDELINES:
+## TOOL USAGE RULES
 - **ALWAYS verify you have ALL required parameters** before calling a tool
 - **For write_file**: You MUST provide both `file_path` AND `content` parameters
   - Do NOT call write_file with only file_path
-  - Wait until you have the complete content ready before writing files
-- **Do NOT call tools with partial or missing arguments** - this will cause validation errors
-- **If you don't have required information**, gather it first or ask for clarification
+  - Wait until you have complete content ready before writing
+- **Do NOT call tools with partial or missing arguments** - this causes validation errors
 - **Read tool descriptions carefully** - they specify which parameters are required
-- **Do NOT repeat the same tool call** - if web_search returns useful results, use them and move on
 """
+
+# Legacy alias for backward compatibility
+REASONING_FRAMEWORK = DEFAULT_AGENT_GUARDRAILS
 
 class AgentFactory:
     """
@@ -538,7 +545,12 @@ class AgentFactory:
         # 6. Create Optimized Prompt (Context Engineering)
         # v1.0: create_agent accepts string for system_prompt, handles messages automatically
         system_prompt_str = AgentFactory._construct_system_prompt_string(
-            base_system_prompt, augmented_context, enable_memory, long_term_memory, tools
+            base_system_prompt,
+            augmented_context,
+            enable_memory,
+            long_term_memory,
+            tools,
+            custom_guardrails=agent_config.get("guardrails")  # Per-agent customization
         )
 
         # 6a. Inject Skills (if enabled)
@@ -705,21 +717,37 @@ class AgentFactory:
     # =============================================================================
 
     @staticmethod
-    def _construct_system_prompt_string(base_prompt: str, context: str, enable_memory: bool, long_term_memory: bool = False, tools: List[BaseTool] = None) -> str:
+    def _construct_system_prompt_string(
+        base_prompt: str,
+        context: str,
+        enable_memory: bool,
+        long_term_memory: bool = False,
+        tools: List[BaseTool] = None,
+        custom_guardrails: str = None
+    ) -> str:
         """
         Constructs the system prompt string using Context Engineering principles.
-        Structure: Reasoning -> Role/Goal -> Context
+        Structure: Guardrails -> Role/Goal -> Context
 
-        Note: In LangChain v1.0, create_agent handles message history automatically.
-        We only need to provide the system prompt string.
+        Args:
+            base_prompt: The agent's role/goal (user-defined system prompt)
+            context: Current task context
+            enable_memory: Whether memory tools are enabled
+            long_term_memory: Whether workflow-scoped Store memory is enabled
+            tools: List of tools available to the agent
+            custom_guardrails: Optional custom guardrails (per-agent override)
+                              If None, uses DEFAULT_AGENT_GUARDRAILS
+
+        Note: In LangChain v1.0, create_agent handles the reasoning loop internally.
+        These guardrails add production-safety rules (stopping criteria, tool usage).
         """
-        # Dynamically inject memory instructions if enabled
-        reasoning = REASONING_FRAMEWORK
+        # Use custom guardrails if provided, otherwise use default
+        guardrails = custom_guardrails if custom_guardrails is not None else DEFAULT_AGENT_GUARDRAILS
         if enable_memory:
-            reasoning += "\n# MEMORY USAGE\nYou have access to long-term memory tools (e.g., 'memory_recall', 'memory_store'). Use them to access and record knowledge relevant to this project."
+            guardrails += "\n# MEMORY USAGE\nYou have access to long-term memory tools (e.g., 'memory_recall', 'memory_store'). Use them to access and record knowledge relevant to this project."
 
         if long_term_memory:
-            reasoning += "\n# WORKFLOW-SCOPED LONG-TERM MEMORY\nYou have access to workflow-scoped persistent memory via the LangGraph Store API (runtime.store). Use this to remember important information across workflow executions. Store data using workflow-specific namespaces."
+            guardrails += "\n# WORKFLOW-SCOPED LONG-TERM MEMORY\nYou have access to workflow-scoped persistent memory via the LangGraph Store API (runtime.store). Use this to remember important information across workflow executions. Store data using workflow-specific namespaces."
 
         # CRITICAL: Add explicit tool enforcement if tools are available
         tool_enforcement = ""
@@ -741,7 +769,7 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 **If you fail to use your tools when required, your output will be considered incomplete.**
 """
 
-        system_message_content = f"""{reasoning}
+        system_message_content = f"""{guardrails}
 {tool_enforcement}
 # YOUR SPECIFIC ROLE AND GOAL
 {base_prompt}
@@ -1138,7 +1166,7 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 
             return ChatAnthropic(
                 model=model_name, temperature=temperature,
-                max_tokens=max_tokens or 8192, # Updated for Claude 4.x models with larger context
+                max_tokens=max_tokens or DEFAULT_MAX_TOKENS,  # Use default constant for consistency
                 api_key=settings.ANTHROPIC_API_KEY,
                 streaming=streaming,
             )
@@ -1305,8 +1333,8 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 
         for tool in tools:
             if tool.name == "write_file":
-                # Get the original implementation function
-                from tools.native_tools import _write_file_impl, _write_file_error_handler
+                # Get the original implementation function AND args schema
+                from tools.native_tools import _write_file_impl, _write_file_error_handler, WriteFileArgs
 
                 # Create a new function with context pre-bound
                 def create_bound_write_file(ws_ctx, ag_ctx):
@@ -1322,10 +1350,12 @@ You have been equipped with the following tools: {', '.join(tool_names)}
                 bound_func = create_bound_write_file(workspace_context, agent_context)
 
                 # Create new StructuredTool with the bound function
+                # CRITICAL: Include args_schema to enforce both parameters are required!
                 wrapped_tool = StructuredTool.from_function(
                     func=bound_func,
                     name="write_file",
                     description=tool.description,
+                    args_schema=WriteFileArgs,  # CRITICAL: Enforces file_path AND content are required
                     handle_tool_error=_write_file_error_handler
                 )
 

@@ -13,13 +13,14 @@
  */
 
 import { useState, useMemo, useCallback } from 'react';
-import { Image, FileText, Music, File, Download, Maximize2, X, Calendar, Bot, CheckSquare, Square, Package } from 'lucide-react';
+import { Image, FileText, Music, File, Download, Maximize2, X, Calendar, Bot, CheckSquare, Square, Package, Presentation } from 'lucide-react';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import type { ContentBlock, ImageContentBlock } from '@/types/content-blocks';
 import { isImageBlock } from '@/types/content-blocks';
 import JSZip from 'jszip';
+import { useSelectionOptional, createArtifactSelectionItem } from '../context/SelectionContext';
 
-interface ArtifactEntry {
+export interface ArtifactEntry {
   id: string;
   taskId: number;
   agentLabel?: string;
@@ -30,6 +31,7 @@ interface ArtifactEntry {
 interface ArtifactsTabProps {
   artifacts: ArtifactEntry[];
   loading?: boolean;
+  onCreatePresentation?: () => void;
 }
 
 // Get icon for content block type
@@ -87,22 +89,39 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   return new Blob([byteArray], { type: mimeType });
 };
 
-export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) {
+export default function ArtifactsTab({ artifacts, loading, onCreatePresentation }: ArtifactsTabProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactEntry | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'gallery' | 'list'>('gallery');
   const [filterType, setFilterType] = useState<string>('all');
 
-  // Multi-select state
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const [isSelecting, setIsSelecting] = useState(false);
+  // Get unified selection context if available
+  const selectionContext = useSelectionOptional();
+
+  // Local multi-select state (fallback when context not available)
+  const [localSelectedItems, setLocalSelectedItems] = useState<Set<string>>(new Set());
+  const [localIsSelecting, setLocalIsSelecting] = useState(false);
+
+  // Use context if available, otherwise use local state
+  const isSelecting = selectionContext?.isSelecting ?? localIsSelecting;
+  const setIsSelecting = selectionContext?.setIsSelecting ?? setLocalIsSelecting;
+
+  // Track which items are selected (for rendering)
+  const isItemSelected = useCallback((key: string) => {
+    if (selectionContext) {
+      // Context uses artifact-{taskId}-{blockIndex} format
+      return selectionContext.isSelected(key);
+    }
+    return localSelectedItems.has(key);
+  }, [selectionContext, localSelectedItems]);
 
   // Flatten all blocks for filtering/counting
   const allBlocks = useMemo(() => {
     const blocks: { artifact: ArtifactEntry; block: ContentBlock; index: number; key: string }[] = [];
     artifacts.forEach(artifact => {
       artifact.blocks.forEach((block, index) => {
-        const key = `${artifact.id}-${index}`;
+        // Use consistent key format: artifact-{taskId}-{blockIndex}
+        const key = `artifact-${artifact.taskId}-${index}`;
         blocks.push({ artifact, block, index, key });
       });
     });
@@ -137,32 +156,62 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
   }, [filteredBlocks]);
 
   // Toggle item selection
-  const toggleSelection = useCallback((key: string, e: React.MouseEvent) => {
+  const toggleSelection = useCallback((key: string, artifact: ArtifactEntry, block: ContentBlock, index: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
+    if (selectionContext) {
+      // Use unified context
+      const selectionItem = createArtifactSelectionItem(
+        artifact.taskId,
+        index,
+        block,
+        artifact.agentLabel
+      );
+      selectionContext.toggleSelection(selectionItem);
+    } else {
+      // Fallback to local state
+      setLocalSelectedItems(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+        return next;
+      });
+    }
+  }, [selectionContext]);
+
+  // Count selected items (works with both context and local state)
+  const selectedCount = useMemo(() => {
+    if (selectionContext) {
+      // Count only artifacts from this context
+      return selectionContext.getSelectedByType('artifact').length;
+    }
+    return localSelectedItems.size;
+  }, [selectionContext, localSelectedItems]);
 
   // Select/deselect all visible images
   const toggleSelectAll = useCallback(() => {
-    if (selectedItems.size === downloadableImages.length) {
-      setSelectedItems(new Set());
+    if (selectionContext) {
+      // Use context's selectAll with SelectionItem objects
+      const selectionItems = downloadableImages.map(({ artifact, block, index }) =>
+        createArtifactSelectionItem(artifact.taskId, index, block, artifact.agentLabel)
+      );
+      selectionContext.selectAll(selectionItems);
     } else {
-      setSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+      // Fallback to local state
+      if (localSelectedItems.size === downloadableImages.length) {
+        setLocalSelectedItems(new Set());
+      } else {
+        setLocalSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+      }
     }
-  }, [downloadableImages, selectedItems.size]);
+  }, [selectionContext, downloadableImages, localSelectedItems.size]);
 
   // Download selected images as zip
   const downloadSelectedAsZip = useCallback(async () => {
     const selected = allBlocks.filter(({ key, block }) =>
-      selectedItems.has(key) && isImageBlock(block)
+      isItemSelected(key) && isImageBlock(block)
     );
 
     if (selected.length === 0) return;
@@ -189,9 +238,13 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
     URL.revokeObjectURL(url);
 
     // Clear selection after download
-    setSelectedItems(new Set());
-    setIsSelecting(false);
-  }, [allBlocks, selectedItems]);
+    if (selectionContext) {
+      selectionContext.clearSelection();
+    } else {
+      setLocalSelectedItems(new Set());
+      setLocalIsSelecting(false);
+    }
+  }, [allBlocks, isItemSelected, selectionContext]);
 
   // Download single image
   const downloadSingleImage = useCallback((block: ContentBlock, artifact: ArtifactEntry, index: number) => {
@@ -261,21 +314,21 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
                     onClick={toggleSelectAll}
                     className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg border transition-colors hover:bg-white/5"
                     style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}
-                    title={selectedItems.size === downloadableImages.length ? "Deselect All" : "Select All"}
+                    title={selectedCount === downloadableImages.length ? "Deselect All" : "Select All"}
                   >
-                    {selectedItems.size === downloadableImages.length ? (
+                    {selectedCount === downloadableImages.length ? (
                       <CheckSquare className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
                     ) : (
                       <Square className="w-4 h-4" />
                     )}
-                    {selectedItems.size > 0 ? `${selectedItems.size} selected` : 'Select All'}
+                    {selectedCount > 0 ? `${selectedCount} selected` : 'Select All'}
                   </button>
 
                   {/* Download Selected */}
                   <button
                     onClick={downloadSelectedAsZip}
-                    disabled={selectedItems.size === 0}
-                    className={`px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg transition-colors ${selectedItems.size > 0
+                    disabled={selectedCount === 0}
+                    className={`px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg transition-colors ${selectedCount > 0
                       ? 'bg-primary hover:bg-primary/90'
                       : 'bg-gray-600 cursor-not-allowed'
                       }`}
@@ -286,11 +339,28 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
                     Download ZIP
                   </button>
 
+                  {/* Create Presentation */}
+                  {selectedCount > 0 && onCreatePresentation && (
+                    <button
+                      onClick={onCreatePresentation}
+                      className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg transition-colors bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600"
+                      style={{ color: 'white' }}
+                      title="Create presentation from selected items"
+                    >
+                      <Presentation className="w-4 h-4" />
+                      Create Presentation
+                    </button>
+                  )}
+
                   {/* Cancel selection */}
                   <button
                     onClick={() => {
-                      setIsSelecting(false);
-                      setSelectedItems(new Set());
+                      if (selectionContext) {
+                        selectionContext.clearSelection();
+                      } else {
+                        setLocalIsSelecting(false);
+                        setLocalSelectedItems(new Set());
+                      }
                     }}
                     className="px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-lg border transition-colors hover:bg-white/5"
                     style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}
@@ -316,7 +386,15 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
                   {/* Quick download all images */}
                   <button
                     onClick={() => {
-                      setSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+                      // Select all and download immediately
+                      if (selectionContext) {
+                        const selectionItems = downloadableImages.map(({ artifact, block, index }) =>
+                          createArtifactSelectionItem(artifact.taskId, index, block, artifact.agentLabel)
+                        );
+                        selectionItems.forEach(item => selectionContext.toggleSelection(item));
+                      } else {
+                        setLocalSelectedItems(new Set(downloadableImages.map(({ key }) => key)));
+                      }
                       // Immediate trigger
                       setTimeout(downloadSelectedAsZip, 100);
                     }}
@@ -373,25 +451,25 @@ export default function ArtifactsTab({ artifacts, loading }: ArtifactsTabProps) 
             {filteredBlocks.map(({ artifact, block, index, key }) => (
               <div
                 key={key}
-                className={`group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${selectedItems.has(key) ? 'ring-2 ring-primary' : ''
+                className={`group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${isItemSelected(key) ? 'ring-2 ring-primary' : ''
                   }`}
                 style={{
                   backgroundColor: 'var(--color-panel-dark)',
-                  borderColor: selectedItems.has(key) ? 'var(--color-primary)' : 'var(--color-border-dark)'
+                  borderColor: isItemSelected(key) ? 'var(--color-primary)' : 'var(--color-border-dark)'
                 }}
-                onClick={() => isSelecting && isImageBlock(block) ? toggleSelection(key, { stopPropagation: () => { } } as React.MouseEvent) : setSelectedArtifact(artifact)}
+                onClick={() => isSelecting && isImageBlock(block) ? toggleSelection(key, artifact, block, index, { stopPropagation: () => { } } as React.MouseEvent) : setSelectedArtifact(artifact)}
               >
                 {/* Selection checkbox (when in selection mode) */}
                 {isSelecting && isImageBlock(block) && (
                   <div
                     className="absolute top-2 left-2 z-10"
-                    onClick={(e) => toggleSelection(key, e)}
+                    onClick={(e) => toggleSelection(key, artifact, block, index, e)}
                   >
-                    <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${selectedItems.has(key)
+                    <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${isItemSelected(key)
                       ? 'bg-primary'
                       : 'bg-black/40 hover:bg-black/60'
                       }`}>
-                      {selectedItems.has(key) ? (
+                      {isItemSelected(key) ? (
                         <CheckSquare className="w-4 h-4 text-white" />
                       ) : (
                         <Square className="w-4 h-4 text-white" />

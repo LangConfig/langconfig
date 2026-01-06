@@ -5,8 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { FileContent } from '@/features/workflows/execution/InlineFilePreview';
+
+// Module-level cache for file content - persists across component re-mounts
+const fileContentCache = new Map<string, FileContent>();
+const MAX_CACHE_SIZE = 30;
 
 /**
  * File entry from workspace
@@ -93,14 +97,32 @@ export function useFileHandling({
     window.open(url, '_blank');
   }, [files]);
 
-  // Fetch file content for preview
+  // Fetch file content for preview (with caching)
   const fetchFileContent = useCallback(async (file: TaskFile) => {
+    const cacheKey = file.path;
+
+    // Check cache first - instant return if cached
+    if (fileContentCache.has(cacheKey)) {
+      setFilePreviewContent(fileContentCache.get(cacheKey)!);
+      setFilePreviewLoading(false);
+      return;
+    }
+
     setFilePreviewLoading(true);
     try {
       const url = `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch content');
       const data = await response.json();
+
+      // Add to cache (with size limit)
+      if (fileContentCache.size >= MAX_CACHE_SIZE) {
+        // Remove oldest entry (first key)
+        const firstKey = fileContentCache.keys().next().value;
+        if (firstKey) fileContentCache.delete(firstKey);
+      }
+      fileContentCache.set(cacheKey, data);
+
       setFilePreviewContent(data);
     } catch (error) {
       console.error('Error fetching file content:', error);

@@ -107,12 +107,33 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
   const [expandedSubagents, setExpandedSubagents] = useState<Set<number>>(new Set());
   const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ id: number, name: string, description?: string }>>([]);
 
+  // Agent Guardrails (per-agent customization)
+  const [customGuardrails, setCustomGuardrails] = useState<string | null>(agent.config?.guardrails || null);
+  const [defaultGuardrails, setDefaultGuardrails] = useState<string>('');
+  const [guardrailsDescription, setGuardrailsDescription] = useState<string>('');
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+
   // Update config when agent changes
   useEffect(() => {
     setConfig(agent.config || {});
     setAgentName(agent.name);
     setAgentDescription(agent.description);
+    setCustomGuardrails(agent.config?.guardrails || null);
   }, [agent]);
+
+  // Fetch default guardrails
+  useEffect(() => {
+    const fetchDefaultGuardrails = async () => {
+      try {
+        const response = await apiClient.apiFetch(`${apiClient.baseURL}/api/settings/default-guardrails`);
+        setDefaultGuardrails(response?.guardrails || '');
+        setGuardrailsDescription(response?.description || '');
+      } catch (error) {
+        console.error('Failed to fetch default guardrails:', error);
+      }
+    };
+    fetchDefaultGuardrails();
+  }, []);
 
   // Fetch custom tools
   useEffect(() => {
@@ -282,6 +303,7 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
         ...config,
         name: agentName,
         description: agentDescription,
+        guardrails: customGuardrails || null,
       });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -1112,6 +1134,67 @@ print(result)
             </div>
           )}
         </div>
+      </div>
+
+      {/* Advanced Settings - Agent Guardrails */}
+      <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border-dark)' }}>
+        <button
+          type="button"
+          onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+          className="flex items-center gap-2 text-sm font-semibold w-full text-left mb-2"
+          style={{ color: 'var(--color-text-primary)' }}
+        >
+          <span className="material-symbols-outlined text-base">{showAdvancedSettings ? 'expand_less' : 'expand_more'}</span>
+          <Settings size={14} />
+          Advanced Settings
+        </button>
+
+        {showAdvancedSettings && (
+          <div className="mt-3 space-y-3 pl-4">
+            {/* Agent Guardrails */}
+            <div>
+              <label className="block text-xs font-medium mb-1 flex items-center gap-1" style={{ color: 'var(--color-text-primary)' }}>
+                Agent Execution Guardrails
+                <span className="text-amber-500 text-[10px]">(Advanced)</span>
+              </label>
+              <p className="text-[10px] mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                {guardrailsDescription || 'Production-safety rules prepended to agent prompts. Controls stopping criteria and tool usage.'}
+              </p>
+              <div className="p-2 rounded-lg mb-2" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                  ⚠️ Modifying guardrails may cause unexpected agent behavior. Most users should leave this unchanged.
+                </p>
+              </div>
+              <textarea
+                value={customGuardrails ?? defaultGuardrails}
+                onChange={(e) => setCustomGuardrails(e.target.value)}
+                rows={8}
+                placeholder="Agent guardrails..."
+                className="w-full px-3 py-2 text-xs rounded-lg border font-mono"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  borderColor: customGuardrails ? 'var(--color-accent)' : 'var(--color-border-dark)',
+                  color: 'var(--color-text-primary)'
+                }}
+              />
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-[10px]" style={{ color: customGuardrails ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
+                  {customGuardrails ? '✓ Using custom guardrails' : 'Using default guardrails'}
+                </span>
+                {customGuardrails && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomGuardrails(null)}
+                    className="text-[10px] px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Reset to Default
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Code Modal */}

@@ -89,15 +89,15 @@ class ModelRouter:
         ModelTier.STANDARD: {
             'model': 'gpt-4o',
             'temperature': 0.7,
-            'max_tokens': 8192,
+            'max_tokens': 16384,
             'timeout': 60,
             'cost_per_1k_tokens': 0.0025  # $2.50 per 1M tokens
         },
         ModelTier.POWERFUL: {
             'model': 'claude-sonnet-4-5',
             'temperature': 0.7,
-            'max_tokens': 8192,
-            'timeout': 60,
+            'max_tokens': 30000,
+            'timeout': 90,
             'cost_per_1k_tokens': 0.003  # $3.00 per 1M tokens
         },
         ModelTier.REASONING: {

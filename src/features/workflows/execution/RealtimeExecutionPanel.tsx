@@ -827,17 +827,24 @@ export default function RealtimeExecutionPanel({
             const toolRunId = event.data?.run_id; // Unique ID for this tool call
 
             // Check if we have a "preparing" entry to update
+            // Match by tool_name AND "Preparing..." input (since preparing events don't have the same run_id)
             const existingToolIdx = section.items.findIndex(
-              item => item.type === 'tool_call' && item.tool?.runId === toolRunId && item.tool?.input === 'Preparing...'
+              item => item.type === 'tool_call' &&
+                item.tool?.toolName === toolName &&
+                item.tool?.input === 'Preparing...' &&
+                item.tool?.status === 'running'
             );
 
             if (existingToolIdx >= 0) {
-              // Update the existing preparing entry with full info
+              // Update the existing preparing entry with full info AND the actual tool run_id
               const existingTool = section.items[existingToolIdx];
               if (existingTool.tool) {
                 existingTool.tool.toolName = toolName;
                 existingTool.tool.input = formatToolInput(toolName, rawInput);
+                existingTool.tool.runId = toolRunId; // CRITICAL: Set the actual run_id so on_tool_end can find it
               }
+              // Also update the id for proper tracking
+              existingTool.id = `tool-${toolRunId || section.items.length}`;
             } else {
               // No preparing entry, create new one
               section.items.push({

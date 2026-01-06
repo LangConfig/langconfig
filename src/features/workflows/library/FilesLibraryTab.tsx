@@ -12,12 +12,14 @@
  * Supports tree view and list view with search, filter, and file actions.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Download, Trash2, Search, FolderOpen, ChevronRight, ChevronDown, List, TreeDeciduous, Eye, RefreshCw, Tag, Database, Link2, Copy, MoreVertical } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Download, Trash2, Search, FolderOpen, ChevronRight, ChevronDown, List, TreeDeciduous, Eye, RefreshCw, Tag, Database, Link2, Copy, MoreVertical, Code, Maximize2, Minimize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useProject } from '@/contexts/ProjectContext';
+import { supportsPreviewMode, isHtmlFile, isCsvFile, isJsonFile, isSvgFile } from '@/features/workflows/utils/fileHelpers';
+import { CsvPreview, JsonPreview, SvgPreview } from '@/features/workflows/components/FilePreviewRenderers';
 
 // Context menu types
 interface ContextMenuState {
@@ -148,6 +150,12 @@ export default function FilesLibraryTab() {
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewViewMode, setPreviewViewMode] = useState<'code' | 'preview'>('preview');
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+
+  // File content cache - persists across file switches for instant re-access
+  const contentCacheRef = useRef<Map<string, FileContent>>(new Map());
+  const MAX_CACHE_SIZE = 20; // Limit cache to prevent memory bloat
 
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<FileWithContext | null>(null);
@@ -485,8 +493,18 @@ export default function FilesLibraryTab() {
     }
   };
 
-  // Fetch file content for preview
-  const fetchFileContent = async (file: FileWithContext) => {
+  // Fetch file content for preview (with caching)
+  const fetchFileContent = useCallback(async (file: FileWithContext) => {
+    const cache = contentCacheRef.current;
+    const cacheKey = file.path;
+
+    // Check cache first - instant return if cached
+    if (cache.has(cacheKey)) {
+      setFileContent(cache.get(cacheKey)!);
+      setContentLoading(false);
+      return;
+    }
+
     setContentLoading(true);
     try {
       // Use path-based endpoint - works for all file locations
@@ -495,6 +513,15 @@ export default function FilesLibraryTab() {
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch content');
       const data = await response.json();
+
+      // Add to cache (with size limit)
+      if (cache.size >= MAX_CACHE_SIZE) {
+        // Remove oldest entry (first key)
+        const firstKey = cache.keys().next().value;
+        if (firstKey) cache.delete(firstKey);
+      }
+      cache.set(cacheKey, data);
+
       setFileContent(data);
     } catch (error) {
       console.error('Error fetching file content:', error);
@@ -502,7 +529,7 @@ export default function FilesLibraryTab() {
     } finally {
       setContentLoading(false);
     }
-  };
+  }, []);
 
   // Handle file preview
   const handlePreview = (file: FileWithContext) => {
@@ -1031,7 +1058,7 @@ export default function FilesLibraryTab() {
         {/* Preview Panel - overlays file list */}
         {previewOpen && selectedFile && (
           <div
-            className="absolute right-0 top-0 bottom-0 w-1/2 flex flex-col overflow-hidden shadow-xl z-10"
+            className={`absolute right-0 top-0 bottom-0 ${previewExpanded ? 'w-full' : 'w-1/2'} flex flex-col overflow-hidden shadow-xl z-10 transition-all duration-200`}
             style={{
               backgroundColor: 'var(--color-background-light)',
               borderLeft: '1px solid var(--color-border-dark)'
@@ -1050,6 +1077,51 @@ export default function FilesLibraryTab() {
                 <h3 className="font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>{selectedFile.filename}</h3>
               </div>
               <div className="flex items-center gap-2">
+                {/* Code/Preview Toggle for supported file types */}
+                {supportsPreviewMode(selectedFile.extension) && (
+                  <div className="flex items-center bg-gray-200 dark:bg-black/30 rounded-lg p-0.5 mr-2">
+                    <button
+                      onClick={() => setPreviewViewMode('code')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        previewViewMode === 'code'
+                          ? 'bg-white dark:bg-panel-dark text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                      title="View source code"
+                    >
+                      <Code className="w-3.5 h-3.5" />
+                      Code
+                    </button>
+                    <button
+                      onClick={() => setPreviewViewMode('preview')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        previewViewMode === 'preview'
+                          ? 'bg-white dark:bg-panel-dark text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                      title="Preview rendered content"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Preview
+                    </button>
+                  </div>
+                )}
+
+                {/* Expand/Collapse button for preview mode */}
+                {supportsPreviewMode(selectedFile.extension) && previewViewMode === 'preview' && (
+                  <button
+                    onClick={() => setPreviewExpanded(!previewExpanded)}
+                    className="p-1.5 rounded hover:opacity-70 transition-opacity"
+                    title={previewExpanded ? 'Exit fullscreen' : 'Fullscreen preview'}
+                  >
+                    {previewExpanded ? (
+                      <Minimize2 className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                    ) : (
+                      <Maximize2 className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                    )}
+                  </button>
+                )}
+
                 <button
                   onClick={() => handleDownload(selectedFile)}
                   className="p-1.5 rounded hover:opacity-70 transition-opacity"
@@ -1058,7 +1130,7 @@ export default function FilesLibraryTab() {
                   <Download className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
                 </button>
                 <button
-                  onClick={() => { setPreviewOpen(false); setSelectedFile(null); setFileContent(null); }}
+                  onClick={() => { setPreviewOpen(false); setSelectedFile(null); setFileContent(null); setPreviewExpanded(false); }}
                   className="p-1.5 rounded hover:opacity-70 transition-opacity"
                   title="Close preview"
                 >
@@ -1068,13 +1140,13 @@ export default function FilesLibraryTab() {
             </div>
 
             {/* Preview Content */}
-            <div className="flex-1 overflow-auto p-4" style={{ backgroundColor: 'var(--color-background-light)' }}>
+            <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: 'var(--color-background-light)' }}>
               {contentLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--color-primary)' }}></div>
                 </div>
               ) : fileContent?.is_binary ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="flex flex-col items-center justify-center h-full text-center p-4">
                   <span className="text-4xl mb-3">{getFileIcon(selectedFile.extension)}</span>
                   <p style={{ color: 'var(--color-text-muted)' }}>Binary file - preview not available</p>
                   <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{selectedFile.size_human}</p>
@@ -1088,30 +1160,63 @@ export default function FilesLibraryTab() {
                   </button>
                 </div>
               ) : fileContent?.content ? (
-                <div>
-                  {selectedFile.extension === '.md' ? (
-                    <div className="prose prose-sm max-w-none" style={{ color: 'var(--color-text-primary)' }}>
-                      <ReactMarkdown>{fileContent.content}</ReactMarkdown>
-                    </div>
-                  ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
-                    <SyntaxHighlighter
-                      language={getLanguage(selectedFile.extension)}
-                      style={oneDark}
-                      customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.8rem' }}
-                      showLineNumbers
+                <div className="h-full relative">
+                  {/* Preview Mode - always rendered for instant switching */}
+                  {supportsPreviewMode(selectedFile.extension) && (
+                    <div
+                      className={`absolute inset-0 transition-opacity duration-150 ${
+                        previewViewMode === 'preview' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                      }`}
                     >
-                      {fileContent.content}
-                    </SyntaxHighlighter>
-                  ) : (
-                    <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: 'var(--color-text-primary)' }}>
-                      {fileContent.content}
-                    </pre>
-                  )}
-                  {fileContent.truncated && (
-                    <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded text-sm text-yellow-800 dark:text-yellow-200">
-                      File content truncated. Download to see full content.
+                      {isHtmlFile(selectedFile.extension) ? (
+                        <iframe
+                          srcDoc={fileContent.content}
+                          className="w-full h-full border-0 bg-white"
+                          title={`Preview of ${selectedFile.filename}`}
+                          sandbox="allow-scripts allow-same-origin"
+                        />
+                      ) : isCsvFile(selectedFile.extension) ? (
+                        <CsvPreview content={fileContent.content} />
+                      ) : isJsonFile(selectedFile.extension) ? (
+                        <JsonPreview content={fileContent.content} />
+                      ) : isSvgFile(selectedFile.extension) ? (
+                        <SvgPreview content={fileContent.content} />
+                      ) : null}
                     </div>
                   )}
+
+                  {/* Code/Text View */}
+                  <div
+                    className={`p-4 h-full overflow-auto ${
+                      supportsPreviewMode(selectedFile.extension)
+                        ? `transition-opacity duration-150 ${previewViewMode === 'code' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`
+                        : ''
+                    }`}
+                  >
+                    {selectedFile.extension === '.md' ? (
+                      <div className="prose prose-sm max-w-none" style={{ color: 'var(--color-text-primary)' }}>
+                        <ReactMarkdown>{fileContent.content}</ReactMarkdown>
+                      </div>
+                    ) : ['json', 'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'sql', 'yaml', 'yml', 'xml', 'sh', 'bash', 'csv', 'svg'].includes(selectedFile.extension.replace('.', '').toLowerCase()) ? (
+                      <SyntaxHighlighter
+                        language={getLanguage(selectedFile.extension)}
+                        style={oneDark}
+                        customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.8rem' }}
+                        showLineNumbers
+                      >
+                        {fileContent.content}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <pre className="text-sm whitespace-pre-wrap break-words font-mono" style={{ color: 'var(--color-text-primary)' }}>
+                        {fileContent.content}
+                      </pre>
+                    )}
+                    {fileContent.truncated && (
+                      <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                        File content truncated. Download to see full content.
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-full" style={{ color: 'var(--color-text-muted)' }}>

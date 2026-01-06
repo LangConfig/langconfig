@@ -1747,7 +1747,7 @@ async def export_execution_to_word(
 
         # Get the workflow
         workflow = db.query(WorkflowProfile).filter(WorkflowProfile.id == task.workflow_profile_id).first()
-        
+
         # Log task data for debugging
         logger.info(f"Exporting task {execution_id} with status: {task.status}")
         logger.info(f"Task result type: {type(task.result)}")
@@ -1824,7 +1824,7 @@ async def export_execution_to_word(
 
         if not content:
             content = 'No output available'
-            
+
         # Ensure content is a string
         if not isinstance(content, str):
             logger.warning(f"Content is not a string, converting: {type(content)}")
@@ -1917,6 +1917,7 @@ class WorkflowExportOptions(BaseModel):
 @router.post("/{workflow_id}/export/package")
 async def export_workflow_package(
     workflow_id: int,
+    export_mode: str = "standard",
     db: Session = Depends(get_db)
 ):
     """
@@ -1926,6 +1927,10 @@ async def export_workflow_package(
     and dependencies to run the workflow standalone.
 
     Uses LangChain v1.1 / LangGraph v1.x / DeepAgents v2.x patterns.
+
+    Args:
+        workflow_id: ID of the workflow to export
+        export_mode: Export mode - 'standard' (fixed config) or 'configurable' (runtime config UI)
     """
     from core.codegen.workflow_exporter import ExecutableWorkflowExporter
 
@@ -1951,16 +1956,18 @@ async def export_workflow_package(
     config = workflow.configuration or {}
     nodes = config.get("nodes", [])
     logger.info(f"[EXPORT DEBUG] Workflow {workflow_id} has {len(nodes)} nodes in configuration")
+    logger.info(f"[EXPORT DEBUG] Export mode: {export_mode}")
     for i, node in enumerate(nodes[:3]):  # First 3 nodes
         node_config = node.get("config", {})
         logger.info(f"[EXPORT DEBUG] Node {i} ({node.get('id')}): config.model={node_config.get('model')}")
         logger.info(f"[EXPORT DEBUG] Node {i} ({node.get('id')}): config.system_prompt={node_config.get('system_prompt', '')[:50]}...")
 
     try:
-        # Generate export
+        # Generate export with specified mode
         exporter = ExecutableWorkflowExporter(
             workflow=workflow_dict,
-            project_id=workflow.project_id or 0
+            project_id=workflow.project_id or 0,
+            export_mode=export_mode
         )
 
         zip_bytes = await exporter.export_to_zip()

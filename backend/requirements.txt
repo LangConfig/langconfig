@@ -65,6 +65,12 @@ aiofiles==24.1.0
 python-json-logger
 deepdiff>=7.0.0  # Phase 2: Deep comparison for workflow version diffs
 
+# Presentation Generation
+google-api-python-client>=2.100.0  # Google Slides API
+google-auth>=2.23.0  # Google OAuth
+google-auth-oauthlib>=1.0.0  # OAuth flow helpers
+python-pptx>=0.6.21  # PowerPoint/PDF generation
+
 # Testing
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
