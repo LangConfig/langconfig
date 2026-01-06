@@ -52,12 +52,12 @@ export default function WorkflowDetailedView({
     };
   }, [showExportMenu]);
 
-  const handleExportPackage = async () => {
+  const handleExportPackage = async (exportMode: 'standard' | 'configurable' = 'standard') => {
     setExportLoading(true);
     setShowExportMenu(false);
 
     try {
-      const response = await fetch(`/api/workflows/${workflow.id}/export/package`, {
+      const response = await fetch(`/api/workflows/${workflow.id}/export/package?export_mode=${exportMode}`, {
         method: 'POST',
       });
 
@@ -69,7 +69,8 @@ export default function WorkflowDetailedView({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `workflow_${workflow.name.replace(/\s+/g, '_')}_${workflow.id}.zip`;
+      const modeLabel = exportMode === 'configurable' ? '_configurable' : '';
+      a.download = `workflow_${workflow.name.replace(/\s+/g, '_')}${modeLabel}_${workflow.id}.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -226,16 +227,30 @@ export default function WorkflowDetailedView({
                 <div className="absolute right-0 mt-1 w-64 rounded-lg border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark shadow-xl z-50">
                   <div className="p-1">
                     <button
-                      onClick={handleExportPackage}
+                      onClick={() => handleExportPackage('standard')}
                       className="w-full px-3 py-2.5 text-left text-sm rounded-md hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-start gap-3"
                     >
                       <span className="material-symbols-outlined text-primary text-lg mt-0.5">folder_zip</span>
                       <div>
                         <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                          Python Package
+                          Standard Package
                         </p>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                          Standalone executable code with requirements.txt
+                          Fixed configuration, ready to run
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleExportPackage('configurable')}
+                      className="w-full px-3 py-2.5 text-left text-sm rounded-md hover:bg-gray-100 dark:hover:bg-white/10 transition-colors flex items-start gap-3"
+                    >
+                      <span className="material-symbols-outlined text-primary text-lg mt-0.5">tune</span>
+                      <div>
+                        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                          Configurable Package
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                          Chat/Task modes, model selector, runtime config
                         </p>
                       </div>
                     </button>

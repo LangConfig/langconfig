@@ -901,15 +901,37 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Enhanced error messaging for common tool validation errors
         # This helps the LLM understand what went wrong and how to fix it
         # Support both new (write_file) and legacy (file_write) tool names
-        if error_type == "ValidationError" and ("write_file" in error_message or "file_write" in error_message):
+        if error_type == "ValidationError" and ("write_file" in error_message or "file_write" in error_message or "WriteFileArgs" in error_message):
             if "content" in error_message and "Field required" in error_message:
-                error_message = (
-                    "write_file tool validation error: You must provide BOTH file_path AND content parameters. "
-                    "You called write_file with only file_path but forgot to include the content parameter. "
-                    "Please call write_file again with BOTH parameters: "
-                    "write_file(file_path='...', content='your full file content here'). "
-                    "Wait until you have the complete content ready before calling write_file."
-                )
+                # Check if this might be an incomplete tool call (common with max_tokens truncation)
+                # The input only has file_path suggests the response was truncated
+                if "input_value={" in error_message and "'file_path':" in error_message:
+                    error_message = (
+                        "⚠️ TOKEN LIMIT REACHED - YOUR RESPONSE WAS CUT OFF!\n\n"
+                        "You tried to write a very long file but ran out of output tokens. "
+                        "The content parameter was truncated before it could be sent.\n\n"
+                        "TO FIX THIS, you must split your content into smaller pieces:\n"
+                        "1. First, write Part 1 of the file with write_file()\n"
+                        "2. Then use edit_file() or write_file() to append Part 2, 3, etc.\n"
+                        "3. Each part should be 2000-3000 characters MAX\n\n"
+                        "Example approach:\n"
+                        "  write_file(file_path='doc.md', content='# Part 1\\n...(first 2000 chars)...')\n"
+                        "  edit_file(file_path='doc.md', old_string='END_OF_PART1', new_string='REST OF CONTENT...')\n\n"
+                        "OR break into multiple files:\n"
+                        "  write_file(file_path='doc_part1.md', content='...')\n"
+                        "  write_file(file_path='doc_part2.md', content='...')"
+                    )
+                else:
+                    error_message = (
+                        "CRITICAL ERROR - STOP AND READ THIS:\n\n"
+                        "You called write_file() with ONLY file_path but FORGOT the content parameter.\n\n"
+                        "WRONG:   write_file(file_path='report.md')\n"
+                        "CORRECT: write_file(file_path='report.md', content='Your full content here')\n\n"
+                        "BEFORE retrying:\n"
+                        "1. STOP - Do NOT immediately retry write_file\n"
+                        "2. First, compose your complete file content\n"
+                        "3. THEN call write_file with BOTH file_path AND content parameters"
+                    )
 
         logger.error(f"[TOOL ERROR] {error_type}: {error_message} (run_id={run_id})")
 

@@ -244,6 +244,8 @@ from api.workspace import routes as workspace
 from api.presets import actions as action_presets
 from api.skills import routes as skills
 from api import schemas
+from api.auth import google_router as google_auth
+from api.presentations import router as presentations
 
 # Health check endpoints
 app.include_router(health.router)
@@ -272,6 +274,8 @@ app.include_router(agent_generator.router)  # AI-powered agent generation
 app.include_router(debug.router)  # Debug endpoints for development
 
 app.include_router(schemas.router)  # Structured output schemas
+app.include_router(google_auth)  # Google OAuth for presentations
+app.include_router(presentations)  # Presentation generation
 
 if __name__ == "__main__":
     import sys

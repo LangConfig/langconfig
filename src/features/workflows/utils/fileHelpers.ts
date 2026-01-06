@@ -67,3 +67,32 @@ export const isMarkdownFile = (extension: string): boolean => {
   const ext = extension.toLowerCase().replace('.', '');
   return ext === 'md';
 };
+
+// Check if file is HTML (supports live preview)
+export const isHtmlFile = (extension: string): boolean => {
+  const ext = extension.toLowerCase().replace('.', '');
+  return ext === 'html' || ext === 'htm';
+};
+
+// Check if file is CSV/TSV (supports table preview)
+export const isCsvFile = (extension: string): boolean => {
+  const ext = extension.toLowerCase().replace('.', '');
+  return ext === 'csv' || ext === 'tsv';
+};
+
+// Check if file is JSON (supports tree view)
+export const isJsonFile = (extension: string): boolean => {
+  const ext = extension.toLowerCase().replace('.', '');
+  return ext === 'json';
+};
+
+// Check if file is SVG (supports image preview)
+export const isSvgFile = (extension: string): boolean => {
+  const ext = extension.toLowerCase().replace('.', '');
+  return ext === 'svg';
+};
+
+// Check if file supports preview mode (Code/Preview toggle)
+export const supportsPreviewMode = (extension: string): boolean => {
+  return isHtmlFile(extension) || isCsvFile(extension) || isJsonFile(extension) || isSvgFile(extension);
+};

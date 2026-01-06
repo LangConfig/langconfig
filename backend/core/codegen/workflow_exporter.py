@@ -24,7 +24,11 @@ from .generators import (
     RoutingGenerators,
     TemplateGenerators,
     StreamlitAppGenerator,
+    ApiServerGenerator,
+    ConfigurableStreamlitGenerator,
+    CONFIGURABLE_AVAILABLE,
 )
+from .generators.nodes_configurable import ConfigurableNodeGenerators
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ class ExecutableWorkflowExporter:
     ├── .env.example
     ├── main.py
     ├── streamlit_app.py        # Optional Streamlit UI
+    ├── api_server.py           # Optional FastAPI server
     ├── workflow/
     │   ├── __init__.py
     │   ├── graph.py
@@ -57,7 +62,14 @@ class ExecutableWorkflowExporter:
         └── settings.py
     """
 
-    def __init__(self, workflow: Dict[str, Any], project_id: int, include_ui: bool = True):
+    def __init__(
+        self,
+        workflow: Dict[str, Any],
+        project_id: int,
+        include_ui: bool = True,
+        include_api: bool = True,
+        export_mode: str = "standard"
+    ):
         """
         Initialize the exporter.
 
@@ -65,10 +77,14 @@ class ExecutableWorkflowExporter:
             workflow: Workflow data including configuration, blueprint, nodes, edges
             project_id: Project ID for fetching custom tools
             include_ui: Whether to include Streamlit UI (default: True)
+            include_api: Whether to include FastAPI server (default: True)
+            export_mode: Export mode - 'standard' (fixed config) or 'configurable' (runtime config UI)
         """
         self.workflow = workflow
         self.project_id = project_id
         self.include_ui = include_ui
+        self.include_api = include_api
+        self.export_mode = export_mode
         self.workflow_id = workflow.get("id", 0)
         self.workflow_name = workflow.get("name", "Exported Workflow")
 
@@ -162,13 +178,15 @@ class ExecutableWorkflowExporter:
                     self.nodes,
                     self.edges,
                     self.include_ui,
-                    self._sanitize_name
+                    self._sanitize_name,
+                    self.include_api
                 ),
                 "requirements.txt": TemplateGenerators.generate_requirements(
                     self._used_models,
                     self._used_native_tools,
                     self._has_deepagents,
-                    self.include_ui
+                    self.include_ui,
+                    self.include_api
                 ),
                 ".env.example": TemplateGenerators.generate_env_example(
                     self._used_models,
@@ -184,10 +202,17 @@ class ExecutableWorkflowExporter:
                     self._sanitize_name
                 ),
                 "workflow/state.py": TemplateGenerators.generate_state_module(),
-                "workflow/nodes.py": NodeGenerators.generate_nodes_module(
-                    self.nodes,
-                    self._used_models,
-                    self._sanitize_name
+                "workflow/nodes.py": (
+                    ConfigurableNodeGenerators.generate_nodes_module(
+                        self.nodes,
+                        self._used_models,
+                        self._sanitize_name
+                    ) if self.export_mode == "configurable" else
+                    NodeGenerators.generate_nodes_module(
+                        self.nodes,
+                        self._used_models,
+                        self._sanitize_name
+                    )
                 ),
                 "workflow/routing.py": RoutingGenerators.generate_routing_module(
                     self.nodes,
@@ -209,7 +234,30 @@ class ExecutableWorkflowExporter:
 
             # Add Streamlit UI if enabled
             if self.include_ui:
-                files["streamlit_app.py"] = StreamlitAppGenerator.generate_streamlit_app(
+                if self.export_mode == "configurable" and CONFIGURABLE_AVAILABLE:
+                    files["streamlit_app.py"] = ConfigurableStreamlitGenerator.generate(
+                        self.workflow_name,
+                        self.nodes,
+                        self.edges
+                    )
+                elif self.export_mode == "configurable":
+                    # Fallback if configurable not available
+                    logger.warning("ConfigurableStreamlitGenerator not available, using standard")
+                    files["streamlit_app.py"] = StreamlitAppGenerator.generate_streamlit_app(
+                        self.workflow_name,
+                        self.nodes,
+                        self.edges
+                    )
+                else:
+                    files["streamlit_app.py"] = StreamlitAppGenerator.generate_streamlit_app(
+                        self.workflow_name,
+                        self.nodes,
+                        self.edges
+                    )
+
+            # Add FastAPI server if enabled
+            if self.include_api:
+                files["api_server.py"] = ApiServerGenerator.generate_api_server(
                     self.workflow_name,
                     self.nodes,
                     self.edges

@@ -465,6 +465,8 @@ class SimpleWorkflowExecutor:
                         content = chunk.content
 
                         if model_provider == "anthropic":
+                            # DEBUG: Log full content structure for Anthropic
+                            logger.debug(f"[ANTHROPIC DEBUG] content type: {type(content)}, content: {repr(content)[:500]}")
                             # Claude/Anthropic: content = [{'text': 'token', 'type': 'text', 'index': 0}]
                             if isinstance(content, list) and len(content) > 0:
                                 text_parts = []

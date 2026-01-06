@@ -46,6 +46,36 @@ npm run build                      # Frontend build check
   - `POST /api/agents/{id}/chat` - Chat with agent (SSE)
   - `POST /api/knowledge/documents` - Upload RAG document
 
+## Shell Commands (Important!)
+
+This is a **Windows** environment but the shell uses **bash syntax** (Git Bash/WSL), NOT CMD or PowerShell.
+
+```bash
+# CORRECT (bash syntax)
+test -f backend/.env && echo "exists" || echo "missing"
+ls -la backend/.env 2>/dev/null
+grep "PATTERN" file.txt
+cat file.txt | head -20
+
+# WRONG (Windows CMD syntax - will fail)
+if exist backend\.env (echo exists)
+dir backend\.env
+findstr "PATTERN" file.txt
+type file.txt
+```
+
+**Python commands:** Always use the full Python 3.12 path for consistency:
+```bash
+cd backend && "C:\Users\Cade\AppData\Local\Programs\Python\Python312\python.exe" -m pip install package
+cd backend && "C:\Users\Cade\AppData\Local\Programs\Python\Python312\python.exe" -c "import module"
+```
+
+**Environment files:** There are TWO `.env` files:
+- `/.env` - Root (used by frontend/docker)
+- `/backend/.env` - Backend specific (loaded by FastAPI)
+
+Backend Python loads from `backend/.env`, so backend-specific secrets must be there.
+
 ## Detailed Docs
 
 See `.claude/docs/` for task-specific guidance:

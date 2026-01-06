@@ -5,13 +5,24 @@
  * with syntax highlighting and markdown rendering.
  */
 
-import { X, Download, ClipboardCopy, Check } from 'lucide-react';
+import { X, Download, ClipboardCopy, Check, Code, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { getFileIcon, getLanguage, isCodeFile, isMarkdownFile } from '@/features/workflows/utils/fileHelpers';
+import {
+  getFileIcon,
+  getLanguage,
+  isCodeFile,
+  isMarkdownFile,
+  isHtmlFile,
+  isCsvFile,
+  isJsonFile,
+  isSvgFile,
+  supportsPreviewMode
+} from '@/features/workflows/utils/fileHelpers';
+import { CsvPreview, JsonPreview, SvgPreview } from '@/features/workflows/components/FilePreviewRenderers';
 
 export interface TaskFile {
   filename: string;
@@ -51,6 +62,11 @@ export default function InlineFilePreview({
   onDownload,
 }: InlineFilePreviewProps) {
   const [pathCopied, setPathCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<'code' | 'preview'>('preview');
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Check if this file supports preview mode (HTML, CSV, JSON, SVG)
+  const supportsPreview = supportsPreviewMode(file.extension);
 
   const handleCopyPath = async () => {
     await navigator.clipboard.writeText(file.path);
@@ -195,7 +211,7 @@ export default function InlineFilePreview({
   }, [content?.content]);
 
   return (
-    <div className="w-1/2 flex flex-col border-l border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark animate-in slide-in-from-right duration-200">
+    <div className={`${isExpanded ? 'w-full absolute inset-0 z-50' : 'w-1/2'} flex flex-col border-l border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark animate-in slide-in-from-right duration-200`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-border-dark bg-gray-50 dark:bg-black/20">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -211,6 +227,51 @@ export default function InlineFilePreview({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Code/Preview Toggle for HTML files */}
+          {supportsPreview && (
+            <div className="flex items-center bg-gray-200 dark:bg-black/30 rounded-lg p-0.5 mr-2">
+              <button
+                onClick={() => setViewMode('code')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'code'
+                    ? 'bg-white dark:bg-panel-dark text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
+                }`}
+                title="View source code"
+              >
+                <Code className="w-3.5 h-3.5" />
+                Code
+              </button>
+              <button
+                onClick={() => setViewMode('preview')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'preview'
+                    ? 'bg-white dark:bg-panel-dark text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
+                }`}
+                title="Preview rendered HTML"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Preview
+              </button>
+            </div>
+          )}
+
+          {/* Expand/Collapse button for preview mode */}
+          {supportsPreview && viewMode === 'preview' && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+              title={isExpanded ? 'Exit fullscreen' : 'Fullscreen preview'}
+            >
+              {isExpanded ? (
+                <Minimize2 className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+              ) : (
+                <Maximize2 className="w-4 h-4 text-gray-600 dark:text-text-muted" />
+              )}
+            </button>
+          )}
+
           <button
             onClick={handleCopyPath}
             className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
@@ -262,37 +323,70 @@ export default function InlineFilePreview({
             </button>
           </div>
         ) : content?.content ? (
-          <div className="p-4">
-            {isMarkdownFile(file.extension) || contentLooksLikeMarkdown ? (
-              // Render as markdown - includes .md files and text files that look like markdown
-              <div className="prose prose-lg dark:prose-invert max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={markdownComponents}
+          <div className="h-full relative">
+            {/* Preview Mode - always rendered for instant switching, hidden via CSS */}
+            {supportsPreview && (
+              <div
+                className={`absolute inset-0 transition-opacity duration-150 ${
+                  viewMode === 'preview' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                }`}
+              >
+                {isHtmlFile(file.extension) ? (
+                  <iframe
+                    srcDoc={content.content}
+                    className="w-full h-full border-0 bg-white"
+                    title={`Preview of ${file.filename}`}
+                    sandbox="allow-scripts allow-same-origin"
+                  />
+                ) : isCsvFile(file.extension) ? (
+                  <CsvPreview content={content.content} />
+                ) : isJsonFile(file.extension) ? (
+                  <JsonPreview content={content.content} />
+                ) : isSvgFile(file.extension) ? (
+                  <SvgPreview content={content.content} />
+                ) : null}
+              </div>
+            )}
+
+            {/* Code/Text View - always rendered for HTML files, hidden via CSS when in preview */}
+            <div
+              className={`p-4 h-full overflow-auto ${
+                supportsPreview
+                  ? `transition-opacity duration-150 ${viewMode === 'code' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`
+                  : ''
+              }`}
+            >
+              {isMarkdownFile(file.extension) || contentLooksLikeMarkdown ? (
+                // Render as markdown - includes .md files and text files that look like markdown
+                <div className="prose prose-lg dark:prose-invert max-w-none">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={markdownComponents}
+                  >
+                    {content.content}
+                  </ReactMarkdown>
+                </div>
+              ) : isCodeFile(file.extension) ? (
+                <SyntaxHighlighter
+                  language={getLanguage(file.extension)}
+                  style={oneDark}
+                  customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.875rem' }}
+                  showLineNumbers
                 >
                   {content.content}
-                </ReactMarkdown>
-              </div>
-            ) : isCodeFile(file.extension) ? (
-              <SyntaxHighlighter
-                language={getLanguage(file.extension)}
-                style={oneDark}
-                customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.875rem' }}
-                showLineNumbers
-              >
-                {content.content}
-              </SyntaxHighlighter>
-            ) : (
-              // Plain text fallback with proper colors
-              <pre className="text-base whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-primary)' }}>
-                {content.content}
-              </pre>
-            )}
-            {content.truncated && (
-              <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded text-sm text-yellow-800 dark:text-yellow-200">
-                File content truncated. Download to see full content.
-              </div>
-            )}
+                </SyntaxHighlighter>
+              ) : (
+                // Plain text fallback with proper colors
+                <pre className="text-base whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-primary)' }}>
+                  {content.content}
+                </pre>
+              )}
+              {content.truncated && (
+                <div className="mt-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                  File content truncated. Download to see full content.
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500 dark:text-text-muted">

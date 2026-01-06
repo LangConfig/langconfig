@@ -49,8 +49,15 @@ class NodeGenerators:
                     # Get tools for this node
                     tools = get_tools_for_node({tools_str})
 
-                    # Create LLM instance
-                    llm = {llm_class}(model="{model}")
+                    # Get API key from runtime config if available
+                    runtime_config = state.get("runtime_config") or {{}}
+                    api_key = runtime_config.get("api_key")
+
+                    # Create LLM instance with optional API key
+                    if api_key:
+                        llm = {llm_class}(model="{model}", api_key=api_key)
+                    else:
+                        llm = {llm_class}(model="{model}")
 
                     # Build messages from state
                     messages = state.get("messages", [])
@@ -107,15 +114,36 @@ class NodeGenerators:
         native_tools: List[str], custom_tools: List[str]
     ) -> str:
         """Generate a DeepAgent node function."""
+        # Build tools string for this node
+        all_tools = native_tools + custom_tools
+        tools_str = repr(all_tools)
+
         return dedent(f'''
             async def execute_{safe_id}(state: WorkflowState) -> Dict[str, Any]:
                 """Execute {label} DeepAgent node."""
                 logger.info(f"[{label}] Starting DeepAgent execution...")
 
                 try:
-                    # Create DeepAgent using deepagents v2.x pattern
-                    agent = create_deepagent(
-                        model="{model}",
+                    from langchain.chat_models import init_chat_model
+                    from deepagents import create_deep_agent
+
+                    # Get tools for this node
+                    tools = get_tools_for_node({tools_str})
+
+                    # Get API key from runtime config if available
+                    runtime_config = state.get("runtime_config") or {{}}
+                    api_key = runtime_config.get("api_key")
+
+                    # Create model instance from string with API key
+                    if api_key:
+                        model_instance = init_chat_model("{model}", api_key=api_key)
+                    else:
+                        model_instance = init_chat_model("{model}")
+
+                    # Create DeepAgent using deepagents API with tools
+                    agent = create_deep_agent(
+                        model=model_instance,
+                        tools=tools if tools else [],
                         system_prompt="""{system_prompt}"""
                     )
 
@@ -132,8 +160,19 @@ class NodeGenerators:
 
                     logger.info(f"[{label}] DeepAgent completed successfully")
 
+                    # Handle both dict and Overwrite object returns from deepagents
+                    if isinstance(result, dict):
+                        result_messages = result.get("messages", [])
+                    else:
+                        # deepagents may return Overwrite object - extract value
+                        from langgraph.graph.state import Overwrite
+                        if isinstance(result, Overwrite):
+                            result_messages = result.value if hasattr(result, 'value') else []
+                        else:
+                            result_messages = getattr(result, 'messages', [])
+
                     return {{
-                        "messages": result.get("messages", []),
+                        "messages": result_messages,
                         "current_node": "{safe_id}",
                         "last_agent_type": "deepagent",
                         "step_history": [{{
@@ -392,6 +431,7 @@ class NodeGenerators:
             sanitize_name_func: Function to sanitize node names
         """
         node_functions = []
+        has_deepagent_nodes = False
 
         for node in nodes:
             node_id = node.get("id", "unknown")
@@ -450,6 +490,7 @@ class NodeGenerators:
             elif agent_type in ("tool", "tool_node"):
                 func = NodeGenerators.generate_tool_node(safe_id, label, node_config)
             elif use_deepagents or agent_type == "deepagent":
+                has_deepagent_nodes = True
                 func = NodeGenerators.generate_deepagent_node(
                     safe_id, label, model, system_prompt_escaped, native_tools, custom_tools
                 )
@@ -478,6 +519,11 @@ class NodeGenerators:
 
         llm_imports_str = "\n".join(sorted(llm_imports))
 
+        # Add deepagent import if needed
+        deepagent_import = ""
+        if has_deepagent_nodes:
+            deepagent_import = "from agents import create_deepagent\n"
+
         header = f'''"""Node implementations for the workflow."""
 
 import logging
@@ -490,7 +536,7 @@ from langchain.agents import create_agent
 
 from .state import WorkflowState
 from tools import get_tools_for_node
-
+{deepagent_import}
 logger = logging.getLogger(__name__)
 
 

@@ -42,8 +42,11 @@ import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
 import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
 import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
 import ChatWarningModal from './dialogs/ChatWarningModal';
+import PresentationDialog from './dialogs/PresentationDialog';
 import WorkflowResults from './results/WorkflowResults';
 import ArtifactsTab from './results/ArtifactsTab';
+import FilesTab from './results/FilesTab';
+import { SelectionProvider, useSelectionOptional } from './context/SelectionContext';
 import WorkflowToolbar from './toolbar/WorkflowToolbar';
 import NodeContextMenu from './menus/NodeContextMenu';
 import TaskContextMenu from './menus/TaskContextMenu';
@@ -443,6 +446,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   const [availableWorkflows, setAvailableWorkflows] = useState<any[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveWorkflowName, setSaveWorkflowName] = useState('');
+  const [showPresentationDialog, setShowPresentationDialog] = useState(false);
 
   // Use extracted hook for workflow persistence (save, conflict resolution)
   const {
@@ -859,6 +863,7 @@ if __name__ == "__main__":
     fetchTaskHistory,
     onComplete: () => handleTabChange('results'),
     clearSelectedTask: () => setSelectedHistoryTask(null),
+    expandHistory: () => setIsHistoryCollapsed(false),
   });
 
   // Fetch available documents for context
@@ -1662,8 +1667,9 @@ if __name__ == "__main__":
   }, [newWorkflowName, setNodes, setEdges, showSuccess, showWarning]);
 
   return (
-    <WorkflowCanvasContext.Provider value={{ updateNodeConfig, openNodeContextMenu }}>
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <SelectionProvider>
+      <WorkflowCanvasContext.Provider value={{ updateNodeConfig, openNodeContextMenu }}>
+        <div className="flex-1 flex flex-col overflow-hidden">
         {/* Workflow Toolbar - Always visible so users can select workflows even with empty canvas */}
         <WorkflowToolbar
           workflowName={workflowName}
@@ -1910,114 +1916,21 @@ if __name__ == "__main__":
                   </h2>
                 </div>
 
-                {/* Files Content */}
-                <div className="flex-1 overflow-hidden flex">
-                  <div className={`${selectedPreviewFile ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 transition-all duration-200`}>
-                    {filesLoading ? (
-                      <div className="flex items-center justify-center py-16">
-                        <div className="text-center">
-                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" style={{ borderColor: 'var(--color-primary)' }}></div>
-                          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Loading files...</p>
-                        </div>
-                      </div>
-                    ) : filesError ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <span className="material-symbols-outlined text-6xl text-red-300 dark:text-red-900/30 mb-4">
-                          error
-                        </span>
-                        <p className="text-lg font-medium text-red-600 dark:text-red-400">
-                          Failed to load files
-                        </p>
-                        <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                          {filesError}
-                        </p>
-                        <button
-                          onClick={fetchFiles}
-                          className="mt-4 px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors text-sm font-medium"
-                          style={{ color: 'var(--color-primary)' }}
-                        >
-                          Retry
-                        </button>
-                      </div>
-                    ) : files.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <span className="material-symbols-outlined text-6xl mb-4" style={{ color: 'var(--color-text-muted)', opacity: 0.3 }}>
-                          folder_open
-                        </span>
-                        <p className="text-lg font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                          No files generated
-                        </p>
-                        <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}>
-                          This workflow hasn't created any output files yet.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="mb-4">
-                          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                            Click a file to preview. {files.length} file{files.length !== 1 ? 's' : ''} generated.
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          {files.map((file, index) => (
-                            <div
-                              key={index}
-                              onClick={() => handleFileSelect(file)}
-                              className={`flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all ${selectedPreviewFile?.path === file.path
-                                ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
-                                : 'hover:bg-gray-50 dark:hover:bg-white/5'
-                                }`}
-                              style={{ borderColor: selectedPreviewFile?.path === file.path ? undefined : 'var(--color-border-dark)' }}
-                            >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <span className="text-2xl flex-shrink-0">{getFileIcon(file.extension)}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-                                    {file.filename}
-                                  </p>
-                                  <div className="flex items-center gap-3 text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                                    <span>{file.size_human}</span>
-                                    <span>•</span>
-                                    <span>{new Date(file.modified_at).toLocaleDateString()}</span>
-                                    {file.extension && (
-                                      <>
-                                        <span>•</span>
-                                        <span className="uppercase">{file.extension.replace('.', '')}</span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDownloadFile(file.filename);
-                                }}
-                                className="ml-4 px-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors flex items-center gap-2 text-sm font-medium"
-                                style={{ color: 'var(--color-text-muted)' }}
-                                title="Download file"
-                              >
-                                <span className="material-symbols-outlined text-base">download</span>
-                                {!selectedPreviewFile && 'Download'}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Preview Panel */}
-                  {selectedPreviewFile && (
-                    <InlineFilePreview
-                      file={selectedPreviewFile}
-                      content={filePreviewContent}
-                      loading={filePreviewLoading}
-                      onClose={closeFilePreview}
-                      onDownload={handleDownloadFile}
-                    />
-                  )}
-                </div>
+                {/* Files Content with Selection Support */}
+                <FilesTab
+                  files={files}
+                  filesLoading={filesLoading}
+                  filesError={filesError}
+                  selectedPreviewFile={selectedPreviewFile}
+                  filePreviewContent={filePreviewContent}
+                  filePreviewLoading={filePreviewLoading}
+                  currentTaskId={selectedHistoryTask?.id ?? currentTaskId}
+                  fetchFiles={fetchFiles}
+                  handleDownloadFile={handleDownloadFile}
+                  handleFileSelect={handleFileSelect}
+                  closeFilePreview={closeFilePreview}
+                  onCreatePresentation={() => setShowPresentationDialog(true)}
+                />
               </div>
             </div>
           )}
@@ -2025,7 +1938,11 @@ if __name__ == "__main__":
           {/* Artifacts Tab */}
           {activeTab === 'artifacts' && (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <ArtifactsTab artifacts={artifacts} loading={loadingHistory} />
+              <ArtifactsTab
+                artifacts={artifacts}
+                loading={loadingHistory}
+                onCreatePresentation={() => setShowPresentationDialog(true)}
+              />
             </div>
           )}
 
@@ -2073,6 +1990,14 @@ if __name__ == "__main__":
           <ChatWarningModal
             isOpen={showChatWarningModal}
             onClose={() => setShowChatWarningModal(false)}
+          />
+
+          {/* Presentation Dialog */}
+          <PresentationDialog
+            isOpen={showPresentationDialog}
+            onClose={() => setShowPresentationDialog(false)}
+            workflowId={currentWorkflowId ?? undefined}
+            taskId={currentTaskId ?? undefined}
           />
 
           {/* Save Version Modal */}
@@ -2149,8 +2074,9 @@ if __name__ == "__main__":
             onClose={() => handleConflictResolve('cancel')}
           />
         )}
-      </div>
-    </WorkflowCanvasContext.Provider>
+        </div>
+      </WorkflowCanvasContext.Provider>
+    </SelectionProvider>
   );
 });
 

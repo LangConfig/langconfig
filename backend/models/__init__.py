@@ -37,6 +37,8 @@ from .background_task import BackgroundTask
 from .audit_log import AuditLog, AuditAction
 from .workspace_file import WorkspaceFile
 from .custom_schema import CustomOutputSchema, OutputSchemaRegistry
+from .oauth_token import OAuthToken
+from .presentation_job import PresentationJob, PresentationJobStatus, PresentationFormat, PresentationTheme
 
 __all__ = [
     "Project",
@@ -70,5 +72,10 @@ __all__ = [
     "AuditAction",
     "WorkspaceFile",
     "CustomOutputSchema",
-    "OutputSchemaRegistry"
+    "OutputSchemaRegistry",
+    "OAuthToken",
+    "PresentationJob",
+    "PresentationJobStatus",
+    "PresentationFormat",
+    "PresentationTheme"
 ]

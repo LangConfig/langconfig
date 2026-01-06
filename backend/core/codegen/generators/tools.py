@@ -75,33 +75,56 @@ class ToolGenerators:
                 """
                 import re
                 import httpx
+                import traceback
 
                 try:
+                    # Try DuckDuckGo HTML endpoint
                     url = "https://html.duckduckgo.com/html/"
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.5",
                     }
 
-                    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
-                        response = await client.post(url, data={"q": query})
+                    async with httpx.AsyncClient(timeout=30, headers=headers, follow_redirects=True) as client:
+                        response = await client.post(url, data={"q": query, "b": ""})
                         response.raise_for_status()
 
                         html = response.text
                         results = []
 
-                        # Extract snippets
-                        snippet_pattern = r'class="result__snippet"[^>]*>([^<]+(?:<b>[^<]+</b>[^<]*)*)</'
-                        matches = re.findall(snippet_pattern, html, re.IGNORECASE)
+                        # Try multiple patterns for extracting results
+                        patterns = [
+                            r'class="result__snippet"[^>]*>(.+?)</a>',
+                            r'class="result__snippet"[^>]*>([^<]+)',
+                            r'<a class="result__a"[^>]*>([^<]+)</a>',
+                            r'class="links_main[^"]*"[^>]*>.*?<a[^>]*>([^<]+)</a>',
+                        ]
 
-                        for match in matches[:max_results]:
-                            snippet = re.sub(r'<[^>]+>', '', match)
-                            snippet = snippet.replace('&quot;', '"').replace('&amp;', '&')
-                            snippet = snippet.strip()
-                            if snippet and len(snippet) > 10:
-                                results.append(snippet)
+                        for pattern in patterns:
+                            matches = re.findall(pattern, html, re.IGNORECASE | re.DOTALL)
+                            if matches:
+                                for match in matches[:max_results]:
+                                    snippet = re.sub(r'<[^>]+>', '', match)
+                                    snippet = snippet.replace('&quot;', '"').replace('&amp;', '&')
+                                    snippet = snippet.replace('&#x27;', "'").replace('&lt;', '<').replace('&gt;', '>')
+                                    snippet = ' '.join(snippet.split())  # Normalize whitespace
+                                    if snippet and len(snippet) > 20:
+                                        results.append(snippet)
+                                if results:
+                                    break
 
                         if not results:
-                            return f"No results found for: {query}"
+                            # Fallback: try to extract any text that looks like results
+                            text_pattern = r'<td[^>]*class="[^"]*result[^"]*"[^>]*>([^<]+)'
+                            matches = re.findall(text_pattern, html, re.IGNORECASE)
+                            for match in matches[:max_results]:
+                                snippet = match.strip()
+                                if snippet and len(snippet) > 20:
+                                    results.append(snippet)
+
+                        if not results:
+                            return f"No search results found for: {query}. DuckDuckGo may be rate limiting or blocking requests."
 
                         result_text = f"Search results for '{query}':\\n\\n"
                         for i, snippet in enumerate(results, 1):
@@ -109,8 +132,13 @@ class ToolGenerators:
 
                         return result_text
 
+                except httpx.HTTPStatusError as e:
+                    return f"HTTP error during search: {e.response.status_code} - {str(e)}"
+                except httpx.TimeoutException:
+                    return f"Search timed out for query: {query}"
                 except Exception as e:
-                    return f"Search error: {str(e)}"
+                    traceback.print_exc()
+                    return f"Search error: {type(e).__name__}: {str(e)}"
         ''').strip()
 
     @staticmethod
@@ -188,12 +216,26 @@ class ToolGenerators:
                 """
                 Create a new file with the specified content.
 
+                CRITICAL: This function REQUIRES BOTH parameters:
+                - file_path: The filename to create (e.g., 'report.md', 'data.json')
+                - content: The COMPLETE text content to write to the file
+
+                WRONG (will ERROR): write_file(file_path='report.md')
+                CORRECT: write_file(file_path='report.md', content='# My Report\\nContent here...')
+
+                If you don't have the content ready yet, DO NOT call this function.
+                First, compose your complete content, then call write_file with BOTH parameters.
+
                 Args:
-                    file_path: Path to write to
-                    content: Content to write
+                    file_path: Filename to create (e.g., 'report.md'). Directory path is ignored.
+                    content: The COMPLETE file content - you MUST provide this parameter!
 
                 Returns:
-                    Success message
+                    Success message confirming write
+
+                Example:
+                    >>> write_file(file_path='analysis.md', content='# Analysis\\n\\nHere is my analysis...')
+                    'Wrote 35 chars to analysis.md'
                 """
                 try:
                     path = Path(file_path)
@@ -529,6 +571,18 @@ class ToolGenerators:
                     return f"Memory recall error: {str(e)}"
         ''').strip()
 
+    # Set of all implemented native tools
+    IMPLEMENTED_TOOLS = {
+        "web_search", "web_fetch",
+        "read_file", "file_read",
+        "write_file", "file_write",
+        "ls", "file_list",
+        "edit_file",
+        "glob", "grep",
+        "reasoning_chain",
+        "memory_store", "memory_recall"
+    }
+
     @staticmethod
     def generate_native_tools_module(used_native_tools: Set[str]) -> str:
         """
@@ -537,50 +591,58 @@ class ToolGenerators:
         Args:
             used_native_tools: Set of native tool names used in the workflow
         """
+        # Filter to only include implemented tools
+        valid_tools = used_native_tools & ToolGenerators.IMPLEMENTED_TOOLS
+        unknown_tools = used_native_tools - ToolGenerators.IMPLEMENTED_TOOLS
+
+        if unknown_tools:
+            logger.warning(f"Unknown native tools will be skipped: {unknown_tools}")
+
         tool_implementations = []
 
-        if "web_search" in used_native_tools:
+        if "web_search" in valid_tools:
             tool_implementations.append(ToolGenerators.get_web_search_impl())
 
-        if "web_fetch" in used_native_tools:
+        if "web_fetch" in valid_tools:
             tool_implementations.append(ToolGenerators.get_web_fetch_impl())
 
         # Filesystem tools (DeepAgents standard naming)
-        if "read_file" in used_native_tools or "file_read" in used_native_tools:
+        if "read_file" in valid_tools or "file_read" in valid_tools:
             tool_implementations.append(ToolGenerators.get_read_file_impl())
 
-        if "write_file" in used_native_tools or "file_write" in used_native_tools:
+        if "write_file" in valid_tools or "file_write" in valid_tools:
             tool_implementations.append(ToolGenerators.get_write_file_impl())
 
-        if "ls" in used_native_tools or "file_list" in used_native_tools:
+        if "ls" in valid_tools or "file_list" in valid_tools:
             tool_implementations.append(ToolGenerators.get_ls_impl())
 
-        if "edit_file" in used_native_tools:
+        if "edit_file" in valid_tools:
             tool_implementations.append(ToolGenerators.get_edit_file_impl())
 
-        if "glob" in used_native_tools:
+        if "glob" in valid_tools:
             tool_implementations.append(ToolGenerators.get_glob_impl())
 
-        if "grep" in used_native_tools:
+        if "grep" in valid_tools:
             tool_implementations.append(ToolGenerators.get_grep_impl())
 
-        if "reasoning_chain" in used_native_tools:
+        if "reasoning_chain" in valid_tools:
             tool_implementations.append(ToolGenerators.get_reasoning_chain_impl())
 
         # Memory tools share helper functions, so include them together
-        if "memory_store" in used_native_tools or "memory_recall" in used_native_tools:
+        if "memory_store" in valid_tools or "memory_recall" in valid_tools:
             tool_implementations.append(ToolGenerators.get_memory_tools_impl())
 
         tools_code = "\n\n\n".join(tool_implementations) if tool_implementations else "# No native tools used"
 
         # Build registry - map LangConfig aliases to actual function names
+        # Only include tools that have implementations
         tool_name_mapping = {
             "file_read": "read_file",
             "file_write": "write_file",
             "file_list": "ls",
         }
         registry_entries = []
-        for tool in used_native_tools:
+        for tool in valid_tools:
             # Map alias to actual function name, or use tool name as-is
             func_name = tool_name_mapping.get(tool, tool)
             registry_entries.append(f'    "{tool}": {func_name},')

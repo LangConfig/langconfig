@@ -3,8 +3,12 @@ node_modules/
 __pycache__/
 *.pyc
 
-# Environment
+# Environment (CRITICAL - contains API keys and secrets)
 .env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
 *.log
 
 # Build artifacts
@@ -87,10 +91,26 @@ src-tauri/bundle/
 *.cert
 *.cer
 *.provisionprofile
-/backend/outputs/
 
-# Internal documentation (keep docs/ folder but ignore contents)
+# OAuth and encryption (CRITICAL - never commit!)
+backend/encryption.key
+backend/*.key
+oauth_tokens.json
+credentials.json
+token.json
+client_secret*.json
+
+# Backend outputs
+/backend/outputs/
+/backend/workspace/
+
+# Internal documentation (keep docs/ folder but ignore contents except setup guides)
 docs/*
 !docs/.gitkeep
+!docs/GOOGLE_OAUTH_SETUP.md
+!docs/SETUP.md
 langconfig/
+
+# Private/unreleased features (uncomment before pushing to public)
+# backend/core/codegen/generators/streamlit_configurable.py
 langconfig/

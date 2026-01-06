@@ -518,3 +518,36 @@ async def update_model_defaults_settings(model_defaults: ModelDefaultsSettings, 
         monthly_token_limit=settings.monthly_token_limit,
         alert_threshold=settings.alert_threshold
     )
+
+
+# Agent Guardrails Endpoint
+class AgentGuardrailsResponse(BaseModel):
+    guardrails: str
+    description: str
+
+
+@router.get("/default-guardrails", response_model=AgentGuardrailsResponse)
+async def get_default_guardrails():
+    """
+    Get the default agent guardrails prompt.
+
+    This prompt is prepended to every agent's system prompt to enforce:
+    1. Stopping criteria - prevents infinite loops and over-exploration
+    2. Tool usage guidelines - ensures tools are called with correct parameters
+
+    The agent's reasoning loop (Reason → Act → Observe) is handled internally
+    by LangChain's create_agent(). These guardrails add production-safety rules.
+
+    Can be customized per-agent via the 'guardrails' field in agent config.
+    """
+    from core.agents.factory import DEFAULT_AGENT_GUARDRAILS
+
+    return AgentGuardrailsResponse(
+        guardrails=DEFAULT_AGENT_GUARDRAILS,
+        description=(
+            "Agent Guardrails are production-safety rules prepended to every agent's prompt. "
+            "They enforce: (1) Stopping criteria to prevent infinite loops, "
+            "(2) Tool usage rules to ensure correct parameter usage. "
+            "The reasoning loop is handled internally by LangChain - these add extra safety."
+        )
+    )

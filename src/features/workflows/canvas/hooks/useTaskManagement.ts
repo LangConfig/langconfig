@@ -60,14 +60,14 @@ export function useTaskManagement({
   }, [isHistoryCollapsed]);
 
   // Fetch task history for current workflow
-  const fetchTaskHistory = useCallback(async () => {
+  const fetchTaskHistory = useCallback(async (force: boolean = false) => {
     if (!currentWorkflowId) {
       setTaskHistory([]);
       return;
     }
 
-    // Prevent duplicate/loop fetches
-    if (isFetchingRef.current) {
+    // Prevent duplicate/loop fetches (unless forced)
+    if (isFetchingRef.current && !force) {
       return;
     }
 

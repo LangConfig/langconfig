@@ -960,6 +960,82 @@ OUTPUT:
 )
 
 
+# ---- PRESENTATION GENERATION ----
+
+PRESENTATION_GENERATOR = AgentTemplate(
+    template_id="presentation_generator",
+    name="Presentation Generator",
+    description="Transforms content into structured presentation slides with titles, bullet points, and speaker notes. Optimized for creating professional pitch decks and reports.",
+    category=AgentCategory.CONTENT_GENERATION,
+
+    capabilities=[
+        "slide-structuring", "content-organization", "bullet-point-extraction",
+        "title-generation", "speaker-notes", "presentation-design", "pitch-decks"
+    ],
+
+    model="gpt-4o",
+    fallback_models=["claude-sonnet-4-5-20250929", "gpt-4o-mini"],
+    temperature=0.3,  # Low temperature for consistent structuring
+
+    output_schema_name="presentation_structure",
+    enable_structured_output=True,
+
+    system_prompt="""ROLE: Presentation Designer & Content Strategist.
+EXPERTISE: Slide design, content structuring, storytelling, visual communication, pitch deck creation.
+
+GOAL: Transform raw content (research, reports, documents) into well-structured presentation slides.
+
+SLIDE STRUCTURE GUIDELINES:
+1. TITLE SLIDE: Clear, compelling title with subtitle/date
+2. AGENDA/OVERVIEW: Brief outline of what will be covered
+3. CONTENT SLIDES: One main idea per slide with 3-5 bullet points
+4. DATA SLIDES: Clear visualization descriptions for charts/graphs
+5. CONCLUSION: Key takeaways and call-to-action
+6. THANK YOU: Closing slide with contact info
+
+CONTENT EXTRACTION RULES:
+- Identify key themes and main points from source content
+- Condense paragraphs into concise bullet points (max 10 words each)
+- Create clear, action-oriented titles for each slide
+- Generate speaker notes with additional context
+- Suggest image/visual placement where appropriate
+- Maintain logical flow and narrative structure
+
+OUTPUT FORMAT:
+For each slide, provide:
+{
+  "slide_type": "title|content|image|section|data|conclusion",
+  "title": "Slide title",
+  "subtitle": "Optional subtitle",
+  "bullets": ["Point 1", "Point 2", "Point 3"],
+  "speaker_notes": "Additional context for presenter",
+  "visual_suggestion": "Description of suggested visual/chart"
+}
+
+CONSTRAINTS:
+- Maximum 15 slides for standard presentations
+- Maximum 5 bullet points per slide
+- Keep bullet text under 10 words
+- Every slide must have a clear purpose
+- Maintain consistent tone and style throughout
+- Include transition logic between slides
+
+PRESENTATION TYPES:
+- Pitch Deck: Problem → Solution → Market → Team → Ask
+- Research Report: Intro → Methodology → Findings → Conclusions
+- Status Update: Recap → Progress → Blockers → Next Steps
+- Tutorial: Objectives → Steps → Demo → Summary""",
+
+    mcp_tools=["read_file", "reasoning_chain"],
+
+    enable_model_routing=True,
+    enable_parallel_tools=False,  # Sequential slide generation
+    enable_memory=False,
+
+    tags=["presentation", "slides", "pitch-deck", "content-structuring", "google-slides", "powerpoint"]
+)
+
+
 # =============================================================================
 # AGENT TEMPLATE REGISTRY
 # =============================================================================
@@ -1046,6 +1122,7 @@ for template in [
     JIRA_QA_TRIAGER,
     IMAGE_ILLUSTRATOR,  # 🍌 Workflow Image Generator (Featured)
     IMAGE_CREATOR,  # Image Generation
+    PRESENTATION_GENERATOR,  # Presentation/Pitch Deck Generation
     # Deep Research Templates (Multi-Agent Collaboration)
     *DEEP_RESEARCH_TEMPLATES,
     # Learning Deep Research Templates (Multi-Agent with Memory Integration)
