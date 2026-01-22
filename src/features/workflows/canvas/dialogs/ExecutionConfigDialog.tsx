@@ -330,21 +330,21 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
                   <div>
                     <label className="text-xs font-medium text-gray-500 mb-1 block">Max Events</label>
                     <input
-                      type="number" min="1000" max="100000" step="1000"
+                      type="number" min="1000" max="500000" step="10000"
                       className="w-full px-2 py-1.5 border rounded text-sm text-gray-800 focus:outline-none focus:border-primary"
                       style={{ borderColor: '#e5e7eb' }}
-                      value={executionConfig.max_events || 10000}
-                      onChange={(e) => setExecutionConfig({ ...executionConfig, max_events: parseInt(e.target.value) || 10000 })}
+                      value={executionConfig.max_events || 100000}
+                      onChange={(e) => setExecutionConfig({ ...executionConfig, max_events: parseInt(e.target.value) || 100000 })}
                     />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-gray-500 mb-1 block">Timeout (min)</label>
                     <input
-                      type="number" min="1" max="60"
+                      type="number" min="1" max="120"
                       className="w-full px-2 py-1.5 border rounded text-sm text-gray-800 focus:outline-none focus:border-primary"
                       style={{ borderColor: '#e5e7eb' }}
-                      value={Math.round((executionConfig.timeout_seconds || 600) / 60)}
-                      onChange={(e) => setExecutionConfig({ ...executionConfig, timeout_seconds: (parseInt(e.target.value) || 10) * 60 })}
+                      value={Math.round((executionConfig.timeout_seconds || 1200) / 60)}
+                      onChange={(e) => setExecutionConfig({ ...executionConfig, timeout_seconds: (parseInt(e.target.value) || 20) * 60 })}
                     />
                   </div>
                 </div>

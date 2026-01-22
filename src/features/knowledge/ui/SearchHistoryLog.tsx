@@ -61,7 +61,7 @@ export default function SearchHistoryLog({ projectId, onRerun, className = '' }:
       setHistory(response.data);
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load search history:', error);

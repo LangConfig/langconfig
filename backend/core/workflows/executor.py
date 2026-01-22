@@ -227,7 +227,9 @@ class SimpleWorkflowExecutor:
                 "execution_duration_seconds": None,
                 # Multimodal attachments from workflow input
                 "workflow_attachments": input_data.get("attachments"),
-                "agent_attachments": None  # Will be populated per-agent from node configs
+                "agent_attachments": None,  # Will be populated per-agent from node configs
+                # Custom output path for file writes (if configured per-workflow)
+                "custom_output_path": getattr(workflow, 'custom_output_path', None),
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -300,11 +302,14 @@ class SimpleWorkflowExecutor:
 
             # SAFETY: Prevent infinite loops with max events and timeout
             # These can be configured per-execution via input_data (frontend settings)
-            MAX_EVENTS = input_data.get("max_events", 10000)  # Default: 10k events
+            # Note: astream_events() generates many low-level events (including tool call
+            # argument deltas), so the limit needs to be high enough to accommodate
+            # workflows with multiple tool calls. A single tool call can generate 100+ events.
+            MAX_EVENTS = input_data.get("max_events", 100000)  # Default: 100k events
             TIMEOUT_SECONDS = input_data.get("timeout_seconds", 600)  # Default: 10 minutes
 
             # Enforce reasonable bounds to prevent abuse
-            MAX_EVENTS = max(1000, min(MAX_EVENTS, 100000))  # 1k - 100k range
+            MAX_EVENTS = max(1000, min(MAX_EVENTS, 500000))  # 1k - 500k range
             TIMEOUT_SECONDS = max(60, min(TIMEOUT_SECONDS, 3600))  # 1 min - 1 hour range
 
             event_count = 0
@@ -1588,7 +1593,10 @@ class SimpleWorkflowExecutor:
                 logger.info(f"[{display_name}] RAW node_data keys: {list(node_data.keys())}")
                 logger.info(f"[{display_name}] RAW agent_config keys: {list(agent_config.keys())}")
                 logger.info(f"[{display_name}] RAW agent_config.custom_tools: {agent_config.get('custom_tools', 'NOT_FOUND')}")
-                model = agent_config.get("model", "gpt-4o-mini")
+                # Get model with fallback - treat "none" as missing (control nodes use this)
+                model = agent_config.get("model")
+                if not model or model == "none":
+                    model = "gpt-4o-mini"  # Default fallback
                 temperature = agent_config.get("temperature", 0.7)
                 system_prompt = agent_config.get("system_prompt", f"You are a {agent_type} agent.")
 
@@ -1597,6 +1605,24 @@ class SimpleWorkflowExecutor:
 
                 # Get the user's query
                 query = state.get("query", "")
+
+                # Check if we're in a loop iteration (LOOP_NODE sets these in state)
+                loop_iteration = state.get("loop_iteration", 0)
+                is_loop_continuation = loop_iteration > 0 and messages
+
+                # If continuing a loop, inject continuation prompt so agent knows to pick up where it left off
+                if is_loop_continuation:
+                    continuation_msg = HumanMessage(content=f"""[LOOP ITERATION {loop_iteration + 1}]
+
+Continue working on the original task. Here's what you need to know:
+- Original request: {query}
+- You have access to the file system and can see changes from previous iterations
+- Review what was accomplished and continue from where you left off
+- If the task is complete, indicate completion in your response
+
+Continue:""")
+                    messages = list(messages) + [continuation_msg]
+                    logger.info(f"[{display_name}] Injected loop continuation message for iteration {loop_iteration + 1}")
 
                 logger.info(f"[{display_name}] ===== NODE START =====")
                 logger.info(f"[{display_name}] Received {len(messages)} messages from previous nodes")
@@ -1673,6 +1699,8 @@ class SimpleWorkflowExecutor:
                     "workflow_id": state.get("workflow_id"),
                     "workflow_name": state.get("workflow_name"),
                     "execution_id": state.get("execution_id"),
+                    # Custom output path for file writes (per-workflow configuration)
+                    "custom_output_path": state.get("custom_output_path"),
                     # Multimodal input configuration
                     "enable_multimodal_input": agent_config.get("enable_multimodal_input", False),
                     "supported_input_types": agent_config.get("supported_input_types", ["image"]),
@@ -1816,7 +1844,8 @@ When your work is complete, deliver the final result and END."""
                         context=context_with_criteria,
                         mcp_manager=mcp_manager,
                         vector_store=vector_store,
-                        workflow_id=state.get("workflow_id")
+                        workflow_id=state.get("workflow_id"),
+                        custom_output_path=state.get("custom_output_path")
                     )
 
                     logger.info(f"[{display_name}] ✓ DeepAgent created with {len(tools)} tools: {[t.name for t in tools]}")

@@ -564,7 +564,8 @@ async def send_message_stream(
                     {"messages": [new_message]},
                     config={
                         "configurable": {"thread_id": session_id},
-                        "callbacks": [event_handler]
+                        "callbacks": [event_handler],
+                        "recursion_limit": 500  # Increased from default 25 for complex tool chains
                     },
                     version="v2"
                 ):
@@ -573,7 +574,8 @@ async def send_message_stream(
                     # Stream tool call events
                     if kind == "on_tool_start":
                         tool_data = event.get("data", {})
-                        tool_name = tool_data.get("input", {}).get("name") if isinstance(tool_data.get("input"), dict) else event.get("name", "unknown")
+                        # Tool name is in event["name"] for astream_events v2
+                        tool_name = event.get("name", "unknown")
                         # Filter out non-serializable objects
                         safe_data = make_json_safe(tool_data)
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name, 'data': safe_data})}\n\n"
@@ -584,6 +586,12 @@ async def send_message_stream(
                         # Filter out non-serializable objects
                         safe_data = make_json_safe(tool_data)
                         yield f"data: {json.dumps({'type': 'tool_end', 'tool_name': tool_name, 'data': safe_data})}\n\n"
+
+                    # Stream custom events (LangGraph-style progress bars, status badges, etc.)
+                    elif kind == "on_custom_event" or (kind == "custom_event"):
+                        custom_data = event.get("data", {})
+                        safe_data = make_json_safe(custom_data)
+                        yield f"data: {json.dumps({'type': 'custom_event', 'data': safe_data})}\n\n"
 
                     # Stream LLM tokens as they're generated
                     elif kind == "on_chat_model_stream":
@@ -844,9 +852,10 @@ async def end_chat_session(
 async def list_chat_sessions(
     agent_id: Optional[int] = None,
     active_only: bool = False,
+    limit: int = 50,  # Default to 50 most recent conversations
     db: Session = Depends(get_db)
 ):
-    """List all chat sessions."""
+    """List all chat sessions, ordered by most recently updated first."""
     query = db.query(ChatSession).join(
         DeepAgentTemplate,
         ChatSession.agent_id == DeepAgentTemplate.id
@@ -858,7 +867,8 @@ async def list_chat_sessions(
     if active_only:
         query = query.filter(ChatSession.is_active == True)
 
-    sessions = query.order_by(ChatSession.created_at.desc()).all()
+    # Order by updated_at so most recently used conversations appear first
+    sessions = query.order_by(ChatSession.updated_at.desc()).limit(limit).all()
 
     result = []
     for session in sessions:

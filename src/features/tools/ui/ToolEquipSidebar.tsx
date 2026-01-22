@@ -44,11 +44,11 @@ const ToolEquipSidebar = ({ slotType, onEquip, onClose }: ToolEquipSidebarProps)
   const loadTools = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const response = await apiClient.listCustomTools({ signal } as any);
+      const response = await apiClient.listCustomTools({ signal });
       setTools(response.data || []);
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load tools:', error);

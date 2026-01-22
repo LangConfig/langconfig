@@ -5,112 +5,294 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { memo } from 'react';
-import { X } from 'lucide-react';
+import { memo, useState, useEffect, useCallback } from 'react';
+import { X, FolderOpen, Check, AlertCircle, Loader2 } from 'lucide-react';
+import FolderBrowserDialog from './FolderBrowserDialog';
+import apiClient from '@/lib/api-client';
+
+interface PathValidation {
+  valid: boolean;
+  resolved_path?: string;
+  error?: string;
+  writable: boolean;
+  exists: boolean;
+}
 
 interface WorkflowSettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  workflowId?: number;
   checkpointerEnabled: boolean;
   onToggleCheckpointer: () => void;
   globalRecursionLimit: number;
   setGlobalRecursionLimit: (limit: number) => void;
+  customOutputPath: string | null;
+  onOutputPathChange: (path: string | null) => void;
 }
 
 /**
- * Modal for configuring workflow settings (checkpointer, recursion limit)
+ * Modal for configuring workflow settings (checkpointer, recursion limit, output path)
  */
 const WorkflowSettingsDialog = memo(function WorkflowSettingsDialog({
   isOpen,
   onClose,
+  workflowId,
   checkpointerEnabled,
   onToggleCheckpointer,
   globalRecursionLimit,
   setGlobalRecursionLimit,
+  customOutputPath,
+  onOutputPathChange,
 }: WorkflowSettingsDialogProps) {
+  const [localPath, setLocalPath] = useState<string>(customOutputPath || '');
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [pathValidation, setPathValidation] = useState<PathValidation | null>(null);
+  const [validating, setValidating] = useState(false);
+
+  // Sync local state with prop
+  useEffect(() => {
+    setLocalPath(customOutputPath || '');
+  }, [customOutputPath]);
+
+  // Debounced path validation
+  const validatePath = useCallback(async (path: string) => {
+    if (!path.trim() || !workflowId) {
+      setPathValidation(null);
+      return;
+    }
+
+    setValidating(true);
+    try {
+      const response = await apiClient.validateOutputPath(workflowId, path);
+      setPathValidation(response.data);
+    } catch (err: any) {
+      setPathValidation({
+        valid: false,
+        error: err?.response?.data?.detail || 'Validation failed',
+        writable: false,
+        exists: false,
+      });
+    } finally {
+      setValidating(false);
+    }
+  }, [workflowId]);
+
+  // Validate on path change (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localPath.trim()) {
+        validatePath(localPath);
+      } else {
+        setPathValidation(null);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [localPath, validatePath]);
+
+  const handlePathChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalPath(e.target.value);
+  };
+
+  const handleFolderSelect = (path: string) => {
+    setLocalPath(path);
+    setShowFolderBrowser(false);
+  };
+
+  const handleClearPath = () => {
+    setLocalPath('');
+    setPathValidation(null);
+    onOutputPathChange(null);
+  };
+
+  const handleApplyPath = () => {
+    if (localPath.trim() && pathValidation?.valid) {
+      onOutputPathChange(pathValidation.resolved_path || localPath);
+    } else if (!localPath.trim()) {
+      onOutputPathChange(null);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div
-        className="w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
-        style={{
-          backgroundColor: 'var(--color-panel-dark)',
-          border: '1px solid var(--color-border-dark)'
-        }}
-      >
-        <div className="px-6 py-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--color-border-dark)' }}>
-          <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            Workflow Settings
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div
+          className="w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
+          style={{
+            backgroundColor: 'var(--color-panel-dark)',
+            border: '1px solid var(--color-border-dark)'
+          }}
+        >
+          <div className="px-6 py-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--color-border-dark)' }}>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Workflow Settings
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-        <div className="p-6 space-y-6">
-          {/* Checkpointer Setting */}
-          <div className="flex items-start gap-3">
-            <div className="flex-1">
+          <div className="p-6 space-y-6">
+            {/* Custom Output Path Setting */}
+            <div>
               <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                Enable Persistence (Checkpointer)
+                Custom Output Directory
               </label>
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-                Saves conversation history between workflow runs. Required for Human-in-the-Loop (HITL) and resuming interrupted workflows.
+              <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
+                Files generated by agents will be saved here. Leave empty to use the default location (backend/outputs).
               </p>
-              {checkpointerEnabled && (
-                <p className="text-xs leading-relaxed mt-2 p-2 rounded-md" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
-                  ⚠️ <strong>Warning:</strong> When enabled, agents will remember previous executions. The same prompt may produce different results as the agent may reference prior context. Use clear, specific instructions to avoid confusion.
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={localPath}
+                  onChange={handlePathChange}
+                  placeholder="e.g., C:\Projects\MyApp\outputs"
+                  className="flex-1 px-3 py-2 rounded-lg text-sm font-mono"
+                  style={{
+                    backgroundColor: 'var(--color-background-dark)',
+                    border: '1px solid var(--color-border-dark)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                />
+                <button
+                  onClick={() => setShowFolderBrowser(true)}
+                  className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-white/10 flex items-center gap-2"
+                  style={{
+                    backgroundColor: 'var(--color-background-dark)',
+                    border: '1px solid var(--color-border-dark)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                >
+                  <FolderOpen size={16} />
+                  Browse
+                </button>
+              </div>
+
+              {/* Validation Status */}
+              {localPath.trim() && (
+                <div className="mt-2 flex items-center gap-2">
+                  {validating ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Validating...</span>
+                    </>
+                  ) : pathValidation?.valid ? (
+                    <>
+                      <Check size={14} style={{ color: '#22c55e' }} />
+                      <span className="text-xs" style={{ color: '#22c55e' }}>
+                        Valid: {pathValidation.resolved_path}
+                      </span>
+                    </>
+                  ) : pathValidation?.error ? (
+                    <>
+                      <AlertCircle size={14} style={{ color: '#ef4444' }} />
+                      <span className="text-xs" style={{ color: '#ef4444' }}>{pathValidation.error}</span>
+                    </>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              {localPath.trim() && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={handleClearPath}
+                    className="px-3 py-1.5 rounded text-xs font-medium transition-colors hover:bg-white/10"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={handleApplyPath}
+                    disabled={validating || (pathValidation !== null && !pathValidation.valid)}
+                    className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+
+              {/* Current configured path indicator */}
+              {customOutputPath && customOutputPath !== localPath && (
+                <p className="text-xs mt-2 p-2 rounded-md" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
+                  Currently configured: {customOutputPath}
                 </p>
               )}
             </div>
-            <div
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${checkpointerEnabled ? 'bg-primary' : 'bg-gray-600'}`}
-              onClick={onToggleCheckpointer}
+
+            {/* Checkpointer Setting */}
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                  Enable Persistence (Checkpointer)
+                </label>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+                  Saves conversation history between workflow runs. Required for Human-in-the-Loop (HITL) and resuming interrupted workflows.
+                </p>
+                {checkpointerEnabled && (
+                  <p className="text-xs leading-relaxed mt-2 p-2 rounded-md" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+                    Warning: When enabled, agents will remember previous executions. The same prompt may produce different results as the agent may reference prior context. Use clear, specific instructions to avoid confusion.
+                  </p>
+                )}
+              </div>
+              <div
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${checkpointerEnabled ? 'bg-primary' : 'bg-gray-600'}`}
+                onClick={onToggleCheckpointer}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checkpointerEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </div>
+            </div>
+
+            {/* Recursion Limit Setting */}
+            <div>
+              <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                Global Recursion Limit
+              </label>
+              <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
+                Maximum number of steps the workflow can execute before stopping. Prevents infinite loops.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="5"
+                  max="500"
+                  step="5"
+                  value={globalRecursionLimit}
+                  onChange={(e) => setGlobalRecursionLimit(parseInt(e.target.value))}
+                  className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-gray-700"
+                />
+                <span className="text-sm font-mono w-12 text-right" style={{ color: 'var(--color-text-primary)' }}>
+                  {globalRecursionLimit}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-background-dark)' }}>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-white hover:bg-primary/90"
             >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checkpointerEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-            </div>
+              Done
+            </button>
           </div>
-
-          {/* Recursion Limit Setting */}
-          <div>
-            <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text-primary)' }}>
-              Global Recursion Limit
-            </label>
-            <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
-              Maximum number of steps the workflow can execute before stopping. Prevents infinite loops.
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="5"
-                max="500"
-                step="5"
-                value={globalRecursionLimit}
-                onChange={(e) => setGlobalRecursionLimit(parseInt(e.target.value))}
-                className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-gray-700"
-              />
-              <span className="text-sm font-mono w-12 text-right" style={{ color: 'var(--color-text-primary)' }}>
-                {globalRecursionLimit}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-background-dark)' }}>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-white hover:bg-primary/90"
-          >
-            Done
-          </button>
         </div>
       </div>
-    </div>
+
+      {/* Folder Browser Dialog */}
+      <FolderBrowserDialog
+        isOpen={showFolderBrowser}
+        onClose={() => setShowFolderBrowser(false)}
+        onSelect={handleFolderSelect}
+        initialPath={localPath || undefined}
+      />
+    </>
   );
 });
 

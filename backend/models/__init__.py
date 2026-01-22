@@ -36,6 +36,7 @@ from .local_model import LocalModel
 from .background_task import BackgroundTask
 from .audit_log import AuditLog, AuditAction
 from .workspace_file import WorkspaceFile
+from .file_version import FileVersion
 from .custom_schema import CustomOutputSchema, OutputSchemaRegistry
 from .oauth_token import OAuthToken
 from .presentation_job import PresentationJob, PresentationJobStatus, PresentationFormat, PresentationTheme
@@ -71,6 +72,7 @@ __all__ = [
     "AuditLog",
     "AuditAction",
     "WorkspaceFile",
+    "FileVersion",
     "CustomOutputSchema",
     "OutputSchemaRegistry",
     "OAuthToken",

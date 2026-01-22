@@ -153,7 +153,7 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
       });
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load tool:', error);
@@ -958,6 +958,9 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
     );
   };
 
+  // Schema editing state - track property names being edited locally
+  const [editingPropNames, setEditingPropNames] = useState<Record<string, string>>({});
+
   const renderSchemaStep = () => {
     const properties = inputSchema.properties || {};
     const required = inputSchema.required || [];
@@ -979,6 +982,10 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
     const removeProperty = (propName: string) => {
       const newProps = { ...properties };
       delete newProps[propName];
+      // Also clean up editing state
+      const newEditingNames = { ...editingPropNames };
+      delete newEditingNames[propName];
+      setEditingPropNames(newEditingNames);
       setInputSchema({
         ...inputSchema,
         properties: newProps,
@@ -986,22 +993,39 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
       });
     };
 
-    const updateProperty = (oldName: string, newName: string, updates: any) => {
-      if (oldName !== newName && properties[newName]) {
+    const updatePropertyName = (oldName: string, newName: string) => {
+      if (oldName === newName) return;
+      if (properties[newName]) {
         alert('Property name already exists');
+        // Reset the editing state to the original name
+        setEditingPropNames(prev => ({ ...prev, [oldName]: oldName }));
         return;
       }
 
       const newProps = { ...properties };
-      if (oldName !== newName) {
-        delete newProps[oldName];
-      }
-      newProps[newName] = { ...newProps[oldName], ...updates };
+      const propData = newProps[oldName];
+      delete newProps[oldName];
+      newProps[newName] = propData;
+
+      // Clean up editing state
+      const newEditingNames = { ...editingPropNames };
+      delete newEditingNames[oldName];
+      setEditingPropNames(newEditingNames);
 
       setInputSchema({
         ...inputSchema,
         properties: newProps,
         required: required.map((r: string) => r === oldName ? newName : r)
+      });
+    };
+
+    const updatePropertyData = (propName: string, updates: any) => {
+      setInputSchema({
+        ...inputSchema,
+        properties: {
+          ...properties,
+          [propName]: { ...properties[propName], ...updates }
+        }
       });
     };
 
@@ -1013,6 +1037,9 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
       setInputSchema({ ...inputSchema, required: newRequired });
     };
 
+    // Get property entries with stable indices
+    const propertyEntries = Object.entries(properties);
+
     return (
       <div className="space-y-4">
         <p className="text-sm mb-4" style={{ color: 'var(--color-text-muted)' }}>
@@ -1020,17 +1047,84 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
         </p>
 
         <div className="space-y-4">
-          {Object.entries(properties).map(([propName, prop]: [string, any]) => (
-            <div key={propName} className="p-4 rounded-lg border" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-panel-dark)' }}>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+          {propertyEntries.map(([propName, prop]: [string, any], index) => {
+            // Use local editing state for the name input, fall back to actual propName
+            const displayName = editingPropNames[propName] ?? propName;
+
+            return (
+              <div key={`prop-${index}`} className="p-4 rounded-lg border" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-panel-dark)' }}>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                      Parameter Name
+                    </label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => {
+                        // Update local editing state only - don't modify schema yet
+                        setEditingPropNames(prev => ({ ...prev, [propName]: e.target.value }));
+                      }}
+                      onBlur={(e) => {
+                        // Commit the name change when input loses focus
+                        const newName = e.target.value.trim();
+                        if (newName && newName !== propName) {
+                          updatePropertyName(propName, newName);
+                        } else if (!newName) {
+                          // Reset to original if empty
+                          setEditingPropNames(prev => {
+                            const next = { ...prev };
+                            delete next[propName];
+                            return next;
+                          });
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        // Also commit on Enter key
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border text-sm"
+                      style={{
+                        backgroundColor: 'var(--color-input-background)',
+                        borderColor: 'var(--color-border-dark)',
+                        color: 'var(--color-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                      Type
+                    </label>
+                    <select
+                      value={prop.type || 'string'}
+                      onChange={(e) => updatePropertyData(propName, { type: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border text-sm"
+                      style={{
+                        backgroundColor: 'var(--color-input-background)',
+                        borderColor: 'var(--color-border-dark)',
+                        color: 'var(--color-text-primary)'
+                      }}
+                    >
+                      <option value="string">String</option>
+                      <option value="integer">Integer</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Boolean</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-3">
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                    Parameter Name
+                    Description
                   </label>
                   <input
                     type="text"
-                    value={propName}
-                    onChange={(e) => updateProperty(propName, e.target.value, prop)}
+                    value={prop.description || ''}
+                    onChange={(e) => updatePropertyData(propName, { description: e.target.value })}
+                    placeholder="What is this parameter for?"
                     className="w-full px-3 py-2 rounded-lg border text-sm"
                     style={{
                       backgroundColor: 'var(--color-input-background)',
@@ -1040,67 +1134,28 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                    Type
+                <div className="mt-3 flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={required.includes(propName)}
+                      onChange={() => toggleRequired(propName)}
+                      className="rounded border-gray-300 focus:ring-2"
+                      style={{ accentColor: 'var(--color-primary)' }}
+                    />
+                    <span style={{ color: 'var(--color-text-primary)' }}>Required parameter</span>
                   </label>
-                  <select
-                    value={prop.type || 'string'}
-                    onChange={(e) => updateProperty(propName, propName, { ...prop, type: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border text-sm"
-                    style={{
-                      backgroundColor: 'var(--color-input-background)',
-                      borderColor: 'var(--color-border-dark)',
-                      color: 'var(--color-text-primary)'
-                    }}
+
+                  <button
+                    onClick={() => removeProperty(propName)}
+                    className="text-red-600 hover:text-red-700 text-sm font-medium"
                   >
-                    <option value="string">String</option>
-                    <option value="integer">Integer</option>
-                    <option value="number">Number</option>
-                    <option value="boolean">Boolean</option>
-                  </select>
+                    Remove
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-3">
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
-                  Description
-                </label>
-                <input
-                  type="text"
-                  value={prop.description || ''}
-                  onChange={(e) => updateProperty(propName, propName, { ...prop, description: e.target.value })}
-                  placeholder="What is this parameter for?"
-                  className="w-full px-3 py-2 rounded-lg border text-sm"
-                  style={{
-                    backgroundColor: 'var(--color-input-background)',
-                    borderColor: 'var(--color-border-dark)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                />
-              </div>
-
-              <div className="mt-3 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={required.includes(propName)}
-                    onChange={() => toggleRequired(propName)}
-                    className="rounded border-gray-300 focus:ring-2"
-                    style={{ accentColor: 'var(--color-primary)' }}
-                  />
-                  <span style={{ color: 'var(--color-text-primary)' }}>Required parameter</span>
-                </label>
-
-                <button
-                  onClick={() => removeProperty(propName)}
-                  className="text-red-600 hover:text-red-700 text-sm font-medium"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           <button
             onClick={addProperty}

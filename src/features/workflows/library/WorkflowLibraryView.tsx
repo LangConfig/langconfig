@@ -65,8 +65,8 @@ export default function WorkflowLibraryView({
 
       // Load projects and workflows in parallel
       const [projectsResponse, workflowsResponse] = await Promise.all([
-        apiClient.listProjects({ signal } as any),
-        apiClient.listWorkflows({ signal } as any)
+        apiClient.listProjects({ signal }),
+        apiClient.listWorkflows({ signal })
       ]);
 
       const loadedProjects = projectsResponse.data.projects || projectsResponse.data || [];
@@ -88,7 +88,7 @@ export default function WorkflowLibraryView({
       }
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load data:', error);

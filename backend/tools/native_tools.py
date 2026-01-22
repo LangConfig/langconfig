@@ -483,10 +483,13 @@ def _write_file_impl(
 
         # If workspace context provided, use it; otherwise use a default workspace
         if _workspace_context:
-            workspace = workspace_mgr.get_task_workspace(
+            # Use custom output path if configured for this workflow
+            custom_output_path = _workspace_context.get('custom_output_path')
+            workspace = workspace_mgr.get_task_workspace_with_override(
                 project_id=_workspace_context.get('project_id'),
                 workflow_id=_workspace_context.get('workflow_id'),
-                task_id=_workspace_context.get('task_id')
+                task_id=_workspace_context.get('task_id'),
+                custom_output_path=custom_output_path
             )
         else:
             # Default to outputs/default/ - use workspace manager's base_dir for consistent path
@@ -522,11 +525,131 @@ def _write_file_impl(
             agent_context=_agent_context
         )
 
+        # Record initial version for diff tracking
+        _record_file_version(
+            file_path=path,
+            operation="create",
+            content=content,
+            workspace_context=_workspace_context,
+            agent_context=_agent_context
+        )
+
         return f"Successfully wrote {len(content)} characters to {path.name}"
 
     except Exception as e:
         logger.error(f"Error writing file {file_path}: {e}")
         return f"Error writing file: {str(e)}"
+
+
+def _record_file_version(
+    file_path: Path,
+    operation: str,
+    content: str = None,
+    old_string: str = None,
+    new_string: str = None,
+    workspace_context: dict = None,
+    agent_context: dict = None
+) -> None:
+    """
+    Record a file version in the database for diff viewing.
+
+    This creates a FileVersion record that tracks changes to files,
+    enabling version history and diff viewing in the UI.
+
+    Args:
+        file_path: Full path to the file
+        operation: "create", "edit", or "replace"
+        content: Full content for create/replace operations
+        old_string: For edit operations, the string that was replaced
+        new_string: For edit operations, the replacement string
+        workspace_context: Context about the workspace (project_id, workflow_id, task_id)
+        agent_context: Context about the agent making the change
+    """
+    try:
+        import hashlib
+        from db.database import SessionLocal
+        from models.workspace_file import WorkspaceFile
+        from models.file_version import FileVersion
+        from services.workspace_manager import get_workspace_manager
+
+        # Compute relative path from outputs/ directory
+        workspace_mgr = get_workspace_manager()
+        outputs_dir = workspace_mgr.base_dir
+        try:
+            relative_path = str(file_path.relative_to(outputs_dir))
+        except ValueError:
+            relative_path = str(file_path)
+
+        db = SessionLocal()
+        try:
+            # Find or create the WorkspaceFile record
+            workspace_file = db.query(WorkspaceFile).filter(
+                WorkspaceFile.file_path == relative_path
+            ).first()
+
+            if not workspace_file:
+                logger.debug(f"No WorkspaceFile record found for {relative_path}, skipping version tracking")
+                return
+
+            # Get the current version number
+            max_version = db.query(FileVersion).filter(
+                FileVersion.workspace_file_id == workspace_file.id
+            ).count()
+            new_version_number = max_version + 1
+
+            # Compute content hash if we have content
+            content_hash = None
+            if content:
+                content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+            # Calculate line changes for edits
+            lines_added = None
+            lines_removed = None
+            change_summary = None
+
+            if operation == "create":
+                lines_added = content.count('\n') + 1 if content else 0
+                lines_removed = 0
+                change_summary = f"Created file with {lines_added} lines"
+            elif operation == "edit" and old_string and new_string:
+                old_lines = old_string.count('\n')
+                new_lines = new_string.count('\n')
+                lines_added = max(0, new_lines - old_lines)
+                lines_removed = max(0, old_lines - new_lines)
+                change_summary = f"Replaced {len(old_string)} chars with {len(new_string)} chars"
+            elif operation == "replace":
+                lines_added = content.count('\n') + 1 if content else 0
+                change_summary = f"Replaced entire file ({lines_added} lines)"
+
+            # Create the version record
+            file_version = FileVersion(
+                workspace_file_id=workspace_file.id,
+                version_number=new_version_number,
+                content_hash=content_hash,
+                content_snapshot=content if operation in ("create", "replace") else None,
+                operation=operation,
+                old_string=old_string,
+                new_string=new_string,
+                agent_label=agent_context.get('agent_label') if agent_context else None,
+                agent_type=agent_context.get('agent_type') if agent_context else None,
+                node_id=agent_context.get('node_id') if agent_context else None,
+                task_id=workspace_context.get('task_id') if workspace_context else None,
+                execution_id=workspace_context.get('execution_id') if workspace_context else None,
+                change_summary=change_summary,
+                lines_added=lines_added,
+                lines_removed=lines_removed,
+            )
+            db.add(file_version)
+            db.commit()
+
+            logger.debug(f"Recorded version {new_version_number} for {relative_path} (operation: {operation})")
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        # Don't fail the file operation if version recording fails
+        logger.warning(f"Could not record file version: {e}")
 
 
 def _record_file_metadata(
@@ -755,10 +878,15 @@ def ls(directory_path: str = ".") -> str:
 file_list = ls
 
 
-@tool
-def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+def _edit_file_impl(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    _workspace_context: dict = None,
+    _agent_context: dict = None
+) -> str:
     """
-    Perform exact string replacement in a file.
+    Implementation of edit_file tool with version tracking.
 
     Finds the old_string in the file and replaces it with new_string.
     The old_string must be unique in the file to avoid ambiguous edits.
@@ -767,12 +895,11 @@ def edit_file(file_path: str, old_string: str, new_string: str) -> str:
         file_path: Path to the file to edit
         old_string: The exact string to find and replace
         new_string: The string to replace it with
+        _workspace_context: Context about the workspace (for version tracking)
+        _agent_context: Context about the agent (for version tracking)
 
     Returns:
         Success message or error if old_string not found/not unique
-
-    Example:
-        >>> edit_file("config.py", "DEBUG = False", "DEBUG = True")
     """
     try:
         path = Path(file_path).resolve()
@@ -797,6 +924,18 @@ def edit_file(file_path: str, old_string: str, new_string: str) -> str:
         path.write_text(new_content, encoding="utf-8")
 
         logger.info(f"Edited file: {file_path}")
+
+        # Record version for diff tracking
+        _record_file_version(
+            file_path=path,
+            operation="edit",
+            content=new_content,  # Store full content after edit
+            old_string=old_string,
+            new_string=new_string,
+            workspace_context=_workspace_context,
+            agent_context=_agent_context
+        )
+
         return f"Successfully replaced string in {path.name}"
 
     except UnicodeDecodeError:
@@ -804,6 +943,36 @@ def edit_file(file_path: str, old_string: str, new_string: str) -> str:
     except Exception as e:
         logger.error(f"Error editing file {file_path}: {e}")
         return f"Error editing file: {str(e)}"
+
+
+class EditFileArgs(BaseModel):
+    """Arguments for edit_file tool"""
+    file_path: str = PydanticField(
+        ...,
+        description="Path to the file to edit"
+    )
+    old_string: str = PydanticField(
+        ...,
+        description="The exact string to find and replace (must be unique in file)"
+    )
+    new_string: str = PydanticField(
+        ...,
+        description="The string to replace it with"
+    )
+
+
+edit_file = StructuredTool.from_function(
+    func=_edit_file_impl,
+    name="edit_file",
+    args_schema=EditFileArgs,
+    description="""Perform exact string replacement in a file.
+
+Finds the old_string in the file and replaces it with new_string.
+The old_string must be unique in the file to avoid ambiguous edits.
+
+Example:
+    edit_file(file_path="config.py", old_string="DEBUG = False", new_string="DEBUG = True")"""
+)
 
 
 @tool

@@ -31,6 +31,8 @@ import { calculateAndFormatCost } from '@/utils/modelPricing';
 import { SubAgentPanelStack } from './SubagentPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import { AgentContextViewer } from './AgentContextViewer';
+import { ProgressCard, StatusBadge, FileOperationCard } from './CustomEventCards';
+import type { ProgressEvent, StatusEvent, FileStatusEvent } from '@/hooks/useCustomEvents';
 import type { ContentBlock } from '@/types/content-blocks';
 
 // Helper component for code blocks with copy button
@@ -351,7 +353,7 @@ export interface RealtimeExecutionPanelProps {
 }
 
 interface SectionItem {
-  type: 'thinking' | 'tool_call' | 'output';
+  type: 'thinking' | 'tool_call' | 'output' | 'custom_event';
   // Clean text used for normal display while streaming
   content?: string;
   // Raw text (includes internal blocks) used in Diagnostics mode
@@ -372,6 +374,12 @@ interface SectionItem {
     progressPercent?: number;
     progressStep?: number;
     progressTotal?: number;
+  };
+  // LangGraph-style custom event data
+  customEvent?: {
+    eventType: 'progress' | 'status' | 'file_status';
+    eventId?: string;
+    data: ProgressEvent | StatusEvent | FileStatusEvent;
   };
   id: string;
 }
@@ -981,6 +989,65 @@ export default function RealtimeExecutionPanel({
                 id: `progress-${progressData.tool_name}-${section.items.length}`
               });
             }
+          }
+          break;
+
+        case 'custom_event':
+          // LangGraph-style custom streaming events (progress bars, status badges, file operations)
+          {
+            const customData = event.data as {
+              event_type: string;
+              event_id?: string;
+              payload: Record<string, any>;
+              tool_name?: string;
+              agent_label?: string;
+              node_id?: string;
+              timestamp: string;
+            };
+
+            const eventId = customData.event_id || `custom-${customData.event_type}-${Date.now()}`;
+
+            // Check if this is a persistent event that should update an existing item
+            if (customData.event_id) {
+              const existingIdx = section.items.findIndex(
+                item => item.type === 'custom_event' && item.customEvent?.eventId === customData.event_id
+              );
+
+              if (existingIdx >= 0) {
+                // Update existing event in-place
+                const existing = section.items[existingIdx];
+                if (existing.customEvent) {
+                  existing.customEvent.data = {
+                    id: eventId,
+                    data: customData.payload,
+                    toolName: customData.tool_name,
+                    agentLabel: customData.agent_label,
+                    nodeId: customData.node_id,
+                    timestamp: customData.timestamp,
+                  } as any;
+                }
+                break;
+              }
+            }
+
+            // Create new custom event item
+            const eventType = customData.event_type as 'progress' | 'status' | 'file_status';
+            section.items.push({
+              type: 'custom_event',
+              customEvent: {
+                eventType,
+                eventId: customData.event_id,
+                data: {
+                  id: eventId,
+                  data: customData.payload,
+                  toolName: customData.tool_name,
+                  agentLabel: customData.agent_label,
+                  nodeId: customData.node_id,
+                  timestamp: customData.timestamp,
+                } as any,
+              },
+              id: `custom-${eventId}-${section.items.length}`,
+            });
           }
           break;
 
@@ -1704,6 +1771,40 @@ export default function RealtimeExecutionPanel({
                               progressTotal={item.tool.progressTotal}
                             />
                           );
+                        }
+
+                        // Custom Events (LangGraph-style progress bars, status badges, file operations)
+                        if (item.type === 'custom_event' && item.customEvent) {
+                          const { eventType, data } = item.customEvent;
+
+                          switch (eventType) {
+                            case 'progress':
+                              return (
+                                <ProgressCard
+                                  key={item.id}
+                                  event={data as ProgressEvent}
+                                  compact={false}
+                                />
+                              );
+                            case 'status':
+                              return (
+                                <StatusBadge
+                                  key={item.id}
+                                  event={data as StatusEvent}
+                                  compact={false}
+                                />
+                              );
+                            case 'file_status':
+                              return (
+                                <FileOperationCard
+                                  key={item.id}
+                                  event={data as FileStatusEvent}
+                                  compact={false}
+                                />
+                              );
+                            default:
+                              return null;
+                          }
                         }
 
                         return null;

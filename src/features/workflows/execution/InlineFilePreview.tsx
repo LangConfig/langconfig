@@ -5,7 +5,7 @@
  * with syntax highlighting and markdown rendering.
  */
 
-import { X, Download, ClipboardCopy, Check, Code, Eye, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Download, ClipboardCopy, Check, Code, Eye, Maximize2, Minimize2, ChevronLeft } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -52,6 +52,8 @@ interface InlineFilePreviewProps {
   loading: boolean;
   onClose: () => void;
   onDownload: (filename: string) => void;
+  /** Hide the header when parent provides its own header */
+  hideHeader?: boolean;
 }
 
 export default function InlineFilePreview({
@@ -60,6 +62,7 @@ export default function InlineFilePreview({
   loading,
   onClose,
   onDownload,
+  hideHeader = false,
 }: InlineFilePreviewProps) {
   const [pathCopied, setPathCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('preview');
@@ -211,10 +214,19 @@ export default function InlineFilePreview({
   }, [content?.content]);
 
   return (
-    <div className={`${isExpanded ? 'w-full absolute inset-0 z-50' : 'w-1/2'} flex flex-col border-l border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark animate-in slide-in-from-right duration-200`}>
-      {/* Header */}
+    <div className={`${isExpanded ? 'absolute inset-0 z-50' : 'h-full'} flex flex-col ${hideHeader ? '' : 'border-l border-gray-200 dark:border-border-dark'} bg-white dark:bg-panel-dark ${hideHeader ? '' : 'animate-in slide-in-from-right duration-200'}`}>
+      {/* Header - hidden when parent provides its own */}
+      {!hideHeader && (
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-border-dark bg-gray-50 dark:bg-black/20">
         <div className="flex items-center gap-2 min-w-0 flex-1">
+          {/* Mobile back button */}
+          <button
+            onClick={onClose}
+            className="md:hidden p-1 -ml-1 mr-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            title="Back to file list"
+          >
+            <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-text-muted" />
+          </button>
           <span className="text-xl flex-shrink-0">{getFileIcon(file.extension)}</span>
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-gray-900 dark:text-white truncate text-sm">
@@ -299,6 +311,7 @@ export default function InlineFilePreview({
           </button>
         </div>
       </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
@@ -323,7 +336,7 @@ export default function InlineFilePreview({
             </button>
           </div>
         ) : content?.content ? (
-          <div className="h-full relative">
+          <div className="relative min-h-full">
             {/* Preview Mode - always rendered for instant switching, hidden via CSS */}
             {supportsPreview && (
               <div
@@ -350,14 +363,14 @@ export default function InlineFilePreview({
 
             {/* Code/Text View - always rendered for HTML files, hidden via CSS when in preview */}
             <div
-              className={`p-4 h-full overflow-auto ${
+              className={`p-4 ${
                 supportsPreview
-                  ? `transition-opacity duration-150 ${viewMode === 'code' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`
+                  ? `transition-opacity duration-150 ${viewMode === 'code' ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0 overflow-auto'}`
                   : ''
               }`}
             >
-              {isMarkdownFile(file.extension) || contentLooksLikeMarkdown ? (
-                // Render as markdown - includes .md files and text files that look like markdown
+              {isMarkdownFile(file.extension) ? (
+                // Render as markdown for .md files
                 <div className="prose prose-lg dark:prose-invert max-w-none">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -367,6 +380,7 @@ export default function InlineFilePreview({
                   </ReactMarkdown>
                 </div>
               ) : isCodeFile(file.extension) ? (
+                // Render with syntax highlighting for code files (Python, JS, etc.)
                 <SyntaxHighlighter
                   language={getLanguage(file.extension)}
                   style={oneDark}
@@ -375,6 +389,16 @@ export default function InlineFilePreview({
                 >
                   {content.content}
                 </SyntaxHighlighter>
+              ) : contentLooksLikeMarkdown ? (
+                // Render as markdown for plain text files that look like markdown
+                <div className="prose prose-lg dark:prose-invert max-w-none">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={markdownComponents}
+                  >
+                    {content.content}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 // Plain text fallback with proper colors
                 <pre className="text-base whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-primary)' }}>

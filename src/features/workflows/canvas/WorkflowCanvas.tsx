@@ -265,8 +265,8 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     classification: 'GENERAL',
     executor_type: 'default',
     max_retries: 3,
-    max_events: 10000,  // Default: 10k events
-    timeout_seconds: 600,  // Default: 10 minutes (600 seconds)
+    max_events: 100000,  // Default: 100k events (backend supports up to 500k)
+    timeout_seconds: 1200,  // Default: 20 minutes (1200 seconds)
   });
   const [contextDocuments, setContextDocuments] = useState<number[]>([]);
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
@@ -335,25 +335,25 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   }, [taskHistory, onTaskHistoryUpdate]);
 
-  // Track if the last selection change came from external source to prevent loops
-  const isExternalSelectionRef = useRef(false);
+  // Track selection source to prevent infinite loops between internal and external changes
+  const selectionSourceRef = useRef<'internal' | 'external' | null>(null);
 
-  // Sync selected task changes to parent (only if change was internal)
-  useEffect(() => {
-    if (onSelectedTaskChange && selectedHistoryTask && !isExternalSelectionRef.current) {
-      onSelectedTaskChange(selectedHistoryTask);
-    }
-    // Reset the flag after processing
-    isExternalSelectionRef.current = false;
-  }, [selectedHistoryTask, onSelectedTaskChange]);
-
-  // Handle external task selection (from left sidebar)
+  // Handle external task selection (from left sidebar) - must come before internal sync
   useEffect(() => {
     if (externalSelectedTask && externalSelectedTask.id !== selectedHistoryTask?.id) {
-      isExternalSelectionRef.current = true; // Mark as external to prevent loop
+      selectionSourceRef.current = 'external';
       setSelectedHistoryTask(externalSelectedTask);
     }
   }, [externalSelectedTask, selectedHistoryTask?.id, setSelectedHistoryTask]);
+
+  // Sync internal changes to parent (only when not triggered by external selection)
+  useEffect(() => {
+    if (selectedHistoryTask && selectionSourceRef.current !== 'external') {
+      onSelectedTaskChange?.(selectedHistoryTask);
+    }
+    // Reset source after processing to allow future updates
+    selectionSourceRef.current = null;
+  }, [selectedHistoryTask, onSelectedTaskChange]);
 
   // Use extracted hook for context menu state management
   const {
@@ -417,7 +417,12 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     isEditingName,
     setIsEditingName,
     handleStartEditingName,
+    customOutputPath,
+    setCustomOutputPath,
   } = useUIToggles();
+
+  // Browse path for Files tab - allows browsing to any folder
+  const [fileBrowsePath, setFileBrowsePath] = useState<string | null>(null);
 
   // Use extracted hook for file handling
   const {
@@ -434,8 +439,12 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   } = useFileHandling({
     // Use selected history task when viewing results, otherwise use current running task
     // Note: API returns task ID as 'id', not 'task_id'
-    currentTaskId: selectedHistoryTask?.id ?? currentTaskId,
+    currentTaskId: fileBrowsePath ? null : (selectedHistoryTask?.id ?? currentTaskId), // Don't use task ID when browsing custom path
     activeTab,
+    // Use browse path if set, otherwise use workflow's custom output path
+    customOutputPath: fileBrowsePath ?? customOutputPath ?? undefined,
+    // Fallback to workflow ID to show all workflow files when no task is selected
+    workflowId: currentWorkflowId,
   });
 
   // Chat with unsaved agent warning modal
@@ -861,7 +870,16 @@ if __name__ == "__main__":
     workflowEvents,
     setExecutionStatus,
     fetchTaskHistory,
-    onComplete: () => handleTabChange('results'),
+    onComplete: (newTask) => {
+      handleTabChange('results');
+      // Directly set the new task from the fetch result instead of relying on stale closure
+      if (newTask) {
+        setSelectedHistoryTask(newTask);
+        if (onSelectedTaskChange) {
+          onSelectedTaskChange(newTask);
+        }
+      }
+    },
     clearSelectedTask: () => setSelectedHistoryTask(null),
     expandHistory: () => setIsHistoryCollapsed(false),
   });
@@ -905,6 +923,24 @@ if __name__ == "__main__":
   }, [showWorkflowDropdown]);
 
   // Workflow details (lock_version, name) are now fetched by useWorkflowPersistence hook
+
+  // Fetch workflow's custom output path when workflow ID is set (e.g., on page load from localStorage)
+  // This ensures the Files tab shows the correct output path even after a page refresh
+  useEffect(() => {
+    const fetchWorkflowOutputPath = async () => {
+      if (currentWorkflowId && customOutputPath === null) {
+        try {
+          const response = await apiClient.getWorkflow(currentWorkflowId);
+          if (response.data?.custom_output_path) {
+            setCustomOutputPath(response.data.custom_output_path);
+          }
+        } catch (error) {
+          console.error('Failed to fetch workflow output path:', error);
+        }
+      }
+    };
+    fetchWorkflowOutputPath();
+  }, [currentWorkflowId, customOutputPath, setCustomOutputPath]);
 
   // Use extracted hook for tool and action extraction
   const toolsAndActions = useToolsAndActions({
@@ -1585,6 +1621,8 @@ if __name__ == "__main__":
       setWorkflowName(workflow.name || 'Untitled Workflow');
       setEditedName(workflow.name || 'Untitled Workflow');
       setCurrentWorkflowId(workflowId);
+      // Load custom output path from workflow
+      setCustomOutputPath(workflow.custom_output_path || null);
       // Clear task ID when switching workflows to get fresh events
       setCurrentTaskId(null);
       localStorage.removeItem('langconfig-current-task-id');
@@ -1595,6 +1633,25 @@ if __name__ == "__main__":
     } catch (error) {
       console.error('Failed to load workflow:', error);
       alert('Failed to switch workflow. Please try again.');
+    }
+  };
+
+  // Handler to update custom output path for the workflow
+  const handleOutputPathChange = async (path: string | null) => {
+    if (!currentWorkflowId) {
+      showWarning('Please save the workflow first before setting a custom output path');
+      return;
+    }
+
+    try {
+      await apiClient.updateWorkflow(currentWorkflowId, {
+        custom_output_path: path || null,
+      });
+      setCustomOutputPath(path);
+      showSuccess(path ? 'Output path updated successfully' : 'Output path cleared');
+    } catch (error: any) {
+      console.error('Failed to update output path:', error);
+      logError('Failed to update output path', error.response?.data?.detail || error.message);
     }
   };
 
@@ -1706,14 +1763,9 @@ if __name__ == "__main__":
             handleTabChange(tab);
             if (tab === 'results') {
               setShowExecutionDialog(false);
-              // Auto-select the latest task to populate results
-              if (taskHistory.length > 0 && !selectedHistoryTask) {
-                const latestTask = taskHistory[0]; // taskHistory is sorted newest first
-                setSelectedHistoryTask(latestTask);
-                if (onSelectedTaskChange) {
-                  onSelectedTaskChange(latestTask);
-                }
-              }
+              // Note: Auto-selection removed - the completion handler now directly sets
+              // the new task when workflows complete. For manual tab switches, the
+              // WorkflowResults component handles displaying results appropriately.
               if (executionStatus.state !== 'running') {
                 setCurrentTaskId(null);
                 localStorage.removeItem('langconfig-current-task-id');
@@ -1807,10 +1859,13 @@ if __name__ == "__main__":
                   <WorkflowSettingsDialog
                     isOpen={showSettingsModal}
                     onClose={handleCloseSettingsModal}
+                    workflowId={currentWorkflowId ?? undefined}
                     checkpointerEnabled={checkpointerEnabled}
                     onToggleCheckpointer={handleToggleCheckpointer}
                     globalRecursionLimit={globalRecursionLimit}
                     setGlobalRecursionLimit={setGlobalRecursionLimit}
+                    customOutputPath={customOutputPath}
+                    onOutputPathChange={handleOutputPathChange}
                   />
 
                   {/* MiniMap with enhanced styling - only show when nodes have valid positions */}
@@ -1930,6 +1985,8 @@ if __name__ == "__main__":
                   handleFileSelect={handleFileSelect}
                   closeFilePreview={closeFilePreview}
                   onCreatePresentation={() => setShowPresentationDialog(true)}
+                  browsePath={fileBrowsePath ?? customOutputPath}
+                  onBrowsePathChange={setFileBrowsePath}
                 />
               </div>
             </div>

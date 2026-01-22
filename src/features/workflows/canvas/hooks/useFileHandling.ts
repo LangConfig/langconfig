@@ -27,6 +27,10 @@ export interface TaskFile {
 interface UseFileHandlingOptions {
   currentTaskId: number | null;
   activeTab: 'studio' | 'results' | 'files' | 'artifacts';
+  /** Custom output path for workflows that have a custom destination configured */
+  customOutputPath?: string | null;
+  /** Workflow ID - used to fetch all files for a workflow when no task is selected */
+  workflowId?: number | null;
 }
 
 interface UseFileHandlingReturn {
@@ -51,6 +55,8 @@ interface UseFileHandlingReturn {
 export function useFileHandling({
   currentTaskId,
   activeTab,
+  customOutputPath,
+  workflowId,
 }: UseFileHandlingOptions): UseFileHandlingReturn {
   // File state
   const [files, setFiles] = useState<TaskFile[]>([]);
@@ -62,28 +68,79 @@ export function useFileHandling({
   const [filePreviewContent, setFilePreviewContent] = useState<FileContent | null>(null);
   const [filePreviewLoading, setFilePreviewLoading] = useState(false);
 
-  // Fetch files for the current task
+  // Fetch files for the current task (or from custom output path if configured)
   const fetchFiles = useCallback(async () => {
-    if (!currentTaskId) return;
+    // If customOutputPath is set, fetch from that directory instead
+    if (customOutputPath) {
+      setFilesLoading(true);
+      setFilesError(null);
 
-    setFilesLoading(true);
-    setFilesError(null);
+      try {
+        const response = await fetch(`/api/workspace/files/from-path?directory=${encodeURIComponent(customOutputPath)}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch files from custom path');
+        }
 
-    try {
-      const response = await fetch(`/api/workspace/tasks/${currentTaskId}/files`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch files');
+        const data = await response.json();
+        if (!data.exists) {
+          // Directory doesn't exist yet - that's okay, just show empty
+          setFiles([]);
+        } else {
+          setFiles(data.files || []);
+        }
+      } catch (error) {
+        console.error('Error fetching files from custom path:', error);
+        setFilesError(error instanceof Error ? error.message : 'Failed to load files');
+      } finally {
+        setFilesLoading(false);
       }
-
-      const data = await response.json();
-      setFiles(data.files || []);
-    } catch (error) {
-      console.error('Error fetching files:', error);
-      setFilesError(error instanceof Error ? error.message : 'Failed to load files');
-    } finally {
-      setFilesLoading(false);
+      return;
     }
-  }, [currentTaskId]);
+
+    // Fetch by task ID if available
+    if (currentTaskId) {
+      setFilesLoading(true);
+      setFilesError(null);
+
+      try {
+        const response = await fetch(`/api/workspace/tasks/${currentTaskId}/files`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch files');
+        }
+
+        const data = await response.json();
+        setFiles(data.files || []);
+      } catch (error) {
+        console.error('Error fetching files:', error);
+        setFilesError(error instanceof Error ? error.message : 'Failed to load files');
+      } finally {
+        setFilesLoading(false);
+      }
+      return;
+    }
+
+    // Fallback: fetch all files for the workflow if no task is selected
+    if (workflowId) {
+      setFilesLoading(true);
+      setFilesError(null);
+
+      try {
+        const response = await fetch(`/api/workspace/workflows/${workflowId}/files`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch workflow files');
+        }
+
+        const data = await response.json();
+        setFiles(data.files || []);
+      } catch (error) {
+        console.error('Error fetching workflow files:', error);
+        setFilesError(error instanceof Error ? error.message : 'Failed to load files');
+      } finally {
+        setFilesLoading(false);
+      }
+      return;
+    }
+  }, [currentTaskId, customOutputPath, workflowId]);
 
   // Download a file from the workspace
   // Uses path-based endpoint to support files in subdirectories
@@ -92,8 +149,14 @@ export function useFileHandling({
     const file = files.find(f => f.filename === filenameOrPath || f.path === filenameOrPath);
     const filePath = file?.path || filenameOrPath;
 
-    // Use path-based download endpoint
-    const url = `/api/workspace/by-path/download?file_path=${encodeURIComponent(filePath)}`;
+    // Determine if path is absolute (custom output path) or relative (default outputs/)
+    const isAbsolutePath = /^[A-Za-z]:/.test(filePath) || filePath.startsWith('/');
+
+    // Use appropriate endpoint based on path type
+    const url = isAbsolutePath
+      ? `/api/workspace/files/from-path/download?file_path=${encodeURIComponent(filePath)}`
+      : `/api/workspace/by-path/download?file_path=${encodeURIComponent(filePath)}`;
+
     window.open(url, '_blank');
   }, [files]);
 
@@ -110,7 +173,15 @@ export function useFileHandling({
 
     setFilePreviewLoading(true);
     try {
-      const url = `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
+      // Determine if path is absolute (custom output path) or relative (default outputs/)
+      // Absolute paths start with drive letter (C:) on Windows or / on Unix
+      const isAbsolutePath = /^[A-Za-z]:/.test(file.path) || file.path.startsWith('/');
+
+      // Use appropriate endpoint based on path type
+      const url = isAbsolutePath
+        ? `/api/workspace/files/from-path/content?file_path=${encodeURIComponent(file.path)}`
+        : `/api/workspace/by-path/content?file_path=${encodeURIComponent(file.path)}`;
+
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch content');
       const data = await response.json();
@@ -144,20 +215,20 @@ export function useFileHandling({
     setFilePreviewContent(null);
   }, []);
 
-  // Fetch files when Files tab is active or when task changes
+  // Fetch files when Files tab is active or when task/customOutputPath/workflowId changes
   // Also pre-fetch when task changes so file count is ready
   useEffect(() => {
-    if (currentTaskId) {
+    if (currentTaskId || customOutputPath || workflowId) {
       fetchFiles();
     }
-  }, [currentTaskId, fetchFiles]);
+  }, [currentTaskId, customOutputPath, workflowId, fetchFiles]);
 
   // Re-fetch when switching to files tab in case files were added
   useEffect(() => {
-    if (activeTab === 'files' && currentTaskId) {
+    if (activeTab === 'files' && (currentTaskId || customOutputPath || workflowId)) {
       fetchFiles();
     }
-  }, [activeTab, currentTaskId, fetchFiles]);
+  }, [activeTab, currentTaskId, customOutputPath, workflowId, fetchFiles]);
 
   return {
     // State

@@ -398,6 +398,7 @@ class AgentFactory:
             "workflow_id": agent_config.get("workflow_id"),
             "workflow_name": agent_config.get("workflow_name"),
             "execution_id": agent_config.get("execution_id"),
+            "custom_output_path": agent_config.get("custom_output_path"),  # Custom output directory
         }
 
         # Load native tools with context for file tracking

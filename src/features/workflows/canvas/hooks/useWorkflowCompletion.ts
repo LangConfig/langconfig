@@ -6,12 +6,14 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { TaskHistoryEntry } from '../types';
 
 interface UseWorkflowCompletionOptions {
   workflowEvents: any[];
   setExecutionStatus: (updater: (prev: any) => any) => void;
-  fetchTaskHistory: (force?: boolean) => Promise<void>;
-  onComplete?: () => void;
+  fetchTaskHistory: (force?: boolean) => Promise<TaskHistoryEntry[]>;
+  /** Callback when workflow completes, receives the new task directly */
+  onComplete?: (newTask?: TaskHistoryEntry) => void;
   /** Clear any selected task so the latest task is shown after completion */
   clearSelectedTask?: () => void;
   /** Expand the history panel to show the new task */
@@ -58,19 +60,17 @@ export function useWorkflowCompletion({
           clearSelectedTask?.();
 
           // Refresh task history to get the new result - force fetch to bypass guard
-          await fetchTaskHistory(true);
+          // This now returns the fetched tasks directly, avoiding stale closure issues
+          const newTasks = await fetchTaskHistory(true);
 
           // Expand history panel to show the new task
           expandHistory?.();
 
-          // Small delay to allow React state to propagate before switching tabs
-          // This ensures taskHistory[0] shows the new task, not the previous one
-          await new Promise(resolve => setTimeout(resolve, 100));
-
-          // Trigger completion callback (e.g., switch to results tab)
-          // Now we can call immediately since history is loaded
+          // Trigger completion callback with the new task directly
+          // No delay needed - we pass the task from the fetch result, not from closure
           if (onComplete) {
-            onComplete();
+            const newTask = newTasks.length > 0 ? newTasks[0] : undefined;
+            onComplete(newTask);
           }
         }
         // Note: Error handling is disabled to let workflow complete naturally

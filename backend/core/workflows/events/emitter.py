@@ -1273,6 +1273,8 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
                 "DEBUG_GRAPH_STATE": "debug_graph_state",
                 # Tool progress events (emitted by tools during long-running operations)
                 "TOOL_PROGRESS": "tool_progress",
+                # Custom streaming events (LangGraph-style arbitrary events from tools)
+                "CUSTOM_EVENT": "custom_event",
             }
 
             # Get SSE-compatible event type
