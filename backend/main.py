@@ -103,12 +103,46 @@ async def lifespan(app: FastAPI):
         logger.error("Long-running operations will not work properly")
         # Don't fail startup - app can still run without background workers
 
+    # Start workflow scheduler service
+    try:
+        from services.scheduler_service import start_scheduler
+        await start_scheduler()
+        logger.info("Workflow scheduler service started")
+    except Exception as e:
+        logger.warning(f"Workflow scheduler failed to start: {e}. Scheduled workflows will not run automatically.")
+
+    # Start file watcher service for file-based triggers
+    try:
+        from services.triggers.file_watcher import start_file_watchers
+        await start_file_watchers()
+        logger.info("File watcher service started")
+    except ImportError:
+        logger.info("File watcher service not started (watchdog package not installed - optional)")
+    except Exception as e:
+        logger.warning(f"File watcher service failed to start: {e}. File triggers will not work.")
+
     logger.info("LangConfig API startup complete")
 
     yield  # Server is running
 
     # Shutdown
     logger.info("Shutting down LangConfig API...")
+
+    # Shutdown file watcher service
+    try:
+        from services.triggers.file_watcher import stop_file_watchers
+        await stop_file_watchers()
+        logger.info("File watcher service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping file watcher service: {e}")
+
+    # Shutdown workflow scheduler service (before task queue)
+    try:
+        from services.scheduler_service import stop_scheduler
+        await stop_scheduler()
+        logger.info("Workflow scheduler service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping workflow scheduler: {e}")
 
     # Shutdown background task queue workers
     try:
@@ -246,6 +280,9 @@ from api.skills import routes as skills
 from api import schemas
 from api.auth import google_router as google_auth
 from api.presentations import router as presentations
+from api.schedules import router as schedules
+from api.triggers import router as triggers
+from api.webhooks import router as webhooks
 
 # Health check endpoints
 app.include_router(health.router)
@@ -276,6 +313,9 @@ app.include_router(debug.router)  # Debug endpoints for development
 app.include_router(schemas.router)  # Structured output schemas
 app.include_router(google_auth)  # Google OAuth for presentations
 app.include_router(presentations)  # Presentation generation
+app.include_router(schedules)  # Workflow cron scheduling
+app.include_router(triggers)  # Workflow event triggers (file watch, etc.)
+app.include_router(webhooks)  # Webhook receiver endpoints
 
 if __name__ == "__main__":
     import sys

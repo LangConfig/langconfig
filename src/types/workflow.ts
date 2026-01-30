@@ -198,3 +198,140 @@ export interface CostMetrics {
   agents: AgentCostMetric[];
   tools: ToolUsageMetric[];
 }
+
+/**
+ * Workflow schedule for cron-based execution
+ */
+export interface WorkflowSchedule {
+  id: number;
+  workflow_id: number;
+  name?: string;
+  cron_expression: string;
+  timezone: string;
+  enabled: boolean;
+  default_input_data: Record<string, unknown>;
+  max_concurrent_runs: number;
+  timeout_minutes: number;
+  idempotency_key_template?: string;
+  last_run_at?: string;
+  next_run_at?: string;
+  last_run_status?: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Request to create a schedule
+ */
+export interface ScheduleCreateRequest {
+  workflow_id: number;
+  name?: string;
+  cron_expression: string;
+  timezone?: string;
+  enabled?: boolean;
+  default_input_data?: Record<string, unknown>;
+  max_concurrent_runs?: number;
+  timeout_minutes?: number;
+  idempotency_key_template?: string;
+}
+
+/**
+ * Request to update a schedule
+ */
+export interface ScheduleUpdateRequest {
+  name?: string;
+  cron_expression?: string;
+  timezone?: string;
+  enabled?: boolean;
+  default_input_data?: Record<string, unknown>;
+  max_concurrent_runs?: number;
+  timeout_minutes?: number;
+  idempotency_key_template?: string;
+}
+
+/**
+ * Scheduled run log entry
+ */
+export interface ScheduledRunLog {
+  id: number;
+  schedule_id: number;
+  scheduled_for: string;
+  started_at?: string;
+  completed_at?: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  task_id?: number;
+  error_message?: string;
+  idempotency_key?: string;
+  duration?: number;
+  created_at?: string;
+}
+
+/**
+ * Cron validation response
+ */
+export interface CronValidationResult {
+  valid: boolean;
+  error?: string;
+  next_runs: string[];
+  human_readable?: string;
+}
+
+/**
+ * Workflow trigger types
+ */
+export type TriggerType = 'webhook' | 'file_watch';
+
+/**
+ * Workflow trigger for event-based execution
+ */
+export interface WorkflowTrigger {
+  id: number;
+  workflow_id: number;
+  trigger_type: TriggerType;
+  name?: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  webhook_secret?: string;
+  webhook_url?: string;
+  last_triggered_at?: string;
+  trigger_count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Request to create a trigger
+ */
+export interface TriggerCreateRequest {
+  workflow_id: number;
+  trigger_type: TriggerType;
+  name?: string;
+  enabled?: boolean;
+  config: Record<string, unknown>;
+}
+
+/**
+ * Request to update a trigger
+ */
+export interface TriggerUpdateRequest {
+  name?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Trigger execution log entry
+ */
+export interface TriggerLog {
+  id: number;
+  trigger_id: number;
+  triggered_at: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  trigger_source?: string;
+  trigger_payload?: Record<string, unknown>;
+  task_id?: number;
+  error_message?: string;
+  completed_at?: string;
+  duration?: number;
+  created_at?: string;
+}

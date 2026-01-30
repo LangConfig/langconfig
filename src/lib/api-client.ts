@@ -898,6 +898,169 @@ class APIClient {
   }) {
     return this.client.patch(`/api/workspace/files/metadata/${fileId}`, data);
   }
+
+  // =============================================================================
+  // Workflow Schedules
+  // =============================================================================
+
+  /**
+   * List schedules for a workflow
+   */
+  async listSchedules(workflowId: number) {
+    return this.client.get(`/api/schedules/workflow/${workflowId}`);
+  }
+
+  /**
+   * Get a specific schedule
+   */
+  async getSchedule(scheduleId: number) {
+    return this.client.get(`/api/schedules/${scheduleId}`);
+  }
+
+  /**
+   * Create a new schedule
+   */
+  async createSchedule(data: {
+    workflow_id: number;
+    name?: string;
+    cron_expression: string;
+    timezone?: string;
+    enabled?: boolean;
+    default_input_data?: Record<string, unknown>;
+    max_concurrent_runs?: number;
+    timeout_minutes?: number;
+    idempotency_key_template?: string;
+  }) {
+    return this.client.post('/api/schedules/', data);
+  }
+
+  /**
+   * Update an existing schedule
+   */
+  async updateSchedule(scheduleId: number, data: {
+    name?: string;
+    cron_expression?: string;
+    timezone?: string;
+    enabled?: boolean;
+    default_input_data?: Record<string, unknown>;
+    max_concurrent_runs?: number;
+    timeout_minutes?: number;
+    idempotency_key_template?: string;
+  }) {
+    return this.client.patch(`/api/schedules/${scheduleId}`, data);
+  }
+
+  /**
+   * Delete a schedule
+   */
+  async deleteSchedule(scheduleId: number) {
+    return this.client.delete(`/api/schedules/${scheduleId}`);
+  }
+
+  /**
+   * Manually trigger a schedule
+   */
+  async triggerScheduleNow(scheduleId: number) {
+    return this.client.post(`/api/schedules/${scheduleId}/trigger`);
+  }
+
+  /**
+   * Get execution history for a schedule
+   */
+  async getScheduleHistory(scheduleId: number, params?: { limit?: number; skip?: number }) {
+    return this.client.get(`/api/schedules/${scheduleId}/history`, { params });
+  }
+
+  /**
+   * Validate a cron expression
+   */
+  async validateCronExpression(cronExpression: string, timezone?: string) {
+    return this.client.post('/api/schedules/validate-cron', {
+      cron_expression: cronExpression,
+      timezone: timezone || 'UTC'
+    });
+  }
+
+  // =============================================================================
+  // Workflow Triggers (Webhooks, File Watch)
+  // =============================================================================
+
+  /**
+   * List triggers for a workflow
+   */
+  async listTriggers(workflowId: number) {
+    return this.client.get(`/api/triggers/workflow/${workflowId}`);
+  }
+
+  /**
+   * Get a specific trigger
+   */
+  async getTrigger(triggerId: number) {
+    return this.client.get(`/api/triggers/${triggerId}`);
+  }
+
+  /**
+   * Create a new trigger
+   */
+  async createTrigger(data: {
+    workflow_id: number;
+    trigger_type: 'webhook' | 'file_watch';
+    name?: string;
+    enabled?: boolean;
+    config: Record<string, unknown>;
+  }) {
+    return this.client.post('/api/triggers/', data);
+  }
+
+  /**
+   * Update an existing trigger
+   */
+  async updateTrigger(triggerId: number, data: {
+    name?: string;
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+  }) {
+    return this.client.patch(`/api/triggers/${triggerId}`, data);
+  }
+
+  /**
+   * Delete a trigger
+   */
+  async deleteTrigger(triggerId: number) {
+    return this.client.delete(`/api/triggers/${triggerId}`);
+  }
+
+  /**
+   * Test-fire a trigger
+   */
+  async testTrigger(triggerId: number, testPayload?: Record<string, unknown>) {
+    return this.client.post(`/api/triggers/${triggerId}/test`, {
+      test_payload: testPayload || {}
+    });
+  }
+
+  /**
+   * Regenerate webhook secret
+   */
+  async regenerateWebhookSecret(triggerId: number) {
+    return this.client.post(`/api/triggers/${triggerId}/regenerate-secret`);
+  }
+
+  /**
+   * Get trigger execution history
+   */
+  async getTriggerHistory(triggerId: number, params?: { limit?: number; skip?: number }) {
+    return this.client.get(`/api/triggers/${triggerId}/history`, { params });
+  }
+
+  /**
+   * Validate a file watch path
+   */
+  async validateWatchPath(path: string) {
+    return this.client.post('/api/triggers/validate-path', null, {
+      params: { path }
+    });
+  }
 }
 
 // Export singleton instance

@@ -40,6 +40,8 @@ from .file_version import FileVersion
 from .custom_schema import CustomOutputSchema, OutputSchemaRegistry
 from .oauth_token import OAuthToken
 from .presentation_job import PresentationJob, PresentationJobStatus, PresentationFormat, PresentationTheme
+from .workflow_schedule import WorkflowSchedule, ScheduledRunLog, ScheduleRunStatus
+from .workflow_trigger import WorkflowTrigger, TriggerLog, TriggerType, TriggerStatus
 
 __all__ = [
     "Project",
@@ -79,5 +81,12 @@ __all__ = [
     "PresentationJob",
     "PresentationJobStatus",
     "PresentationFormat",
-    "PresentationTheme"
+    "PresentationTheme",
+    "WorkflowSchedule",
+    "ScheduledRunLog",
+    "ScheduleRunStatus",
+    "WorkflowTrigger",
+    "TriggerLog",
+    "TriggerType",
+    "TriggerStatus"
 ]
