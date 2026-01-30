@@ -74,7 +74,8 @@ class DeepAgentFactory:
         context: str,
         mcp_manager=None,
         vector_store=None,
-        workflow_id: Optional[int] = None
+        workflow_id: Optional[int] = None,
+        custom_output_path: Optional[str] = None
     ) -> Tuple[CompiledStateGraph, List[BaseTool], List[Any]]:
         """
         Create a DeepAgent with middleware, subagents, and backends.
@@ -87,6 +88,7 @@ class DeepAgentFactory:
             mcp_manager: MCP manager for tool loading
             vector_store: Vector store for RAG
             workflow_id: Workflow ID for file organization
+            custom_output_path: Custom output directory for file writes (overrides default)
 
         Returns:
             Tuple of (agent, tools, callbacks)
@@ -114,9 +116,11 @@ class DeepAgentFactory:
         callbacks = await DeepAgentFactory._setup_callbacks(project_id, task_id)
         callback_handler = callbacks[0] if callbacks else None
 
-        # Load base tools from configuration
+        # Load base tools from configuration (with custom_output_path for file writes)
         base_tools = await DeepAgentFactory._load_base_tools(
-            config, mcp_manager, vector_store, project_id, task_id
+            config, mcp_manager, vector_store, project_id, task_id,
+            workflow_id=workflow_id,
+            custom_output_path=custom_output_path
         )
 
         # Create middleware-specific tools
@@ -131,12 +135,14 @@ class DeepAgentFactory:
         all_tools = base_tools + middleware_tools
         logger.info(f"Total tools: {len(all_tools)} (base={len(base_tools)}, middleware={len(middleware_tools)})")
 
-        # Prepare subagent configurations
+        # Prepare subagent configurations (with workspace context for file-writing tools)
         subagents_config = await DeepAgentFactory._prepare_subagents(
             config.subagents,
             enable_compiled=getattr(config, 'enable_compiled_subagents', True),
             project_id=project_id,
             task_id=task_id,
+            workflow_id=workflow_id,
+            custom_output_path=custom_output_path,
             mcp_manager=mcp_manager,
             vector_store=vector_store
         )
@@ -161,12 +167,13 @@ class DeepAgentFactory:
                 from deepagents.memory.backends import FilesystemBackend
                 from services.workspace_manager import get_workspace_manager
 
-                # Get task workspace for file storage
+                # Get task workspace for file storage (with custom path override if configured)
                 workspace_mgr = get_workspace_manager()
-                workspace_path = workspace_mgr.get_task_workspace(
+                workspace_path = workspace_mgr.get_task_workspace_with_override(
                     project_id=project_id,
                     workflow_id=workflow_id,
-                    task_id=task_id
+                    task_id=task_id,
+                    custom_output_path=custom_output_path
                 )
 
                 # Use FilesystemBackend with task workspace as root (files persist to disk)
@@ -262,9 +269,21 @@ class DeepAgentFactory:
         mcp_manager,
         vector_store,
         project_id: int,
-        task_id: int
+        task_id: int,
+        workflow_id: Optional[int] = None,
+        custom_output_path: Optional[str] = None
     ) -> List[BaseTool]:
-        """Load base tools from configuration (native, CLI, and custom tools)."""
+        """Load base tools from configuration (native, CLI, and custom tools).
+
+        Args:
+            config: DeepAgent configuration
+            mcp_manager: MCP manager for tool loading
+            vector_store: Vector store for RAG
+            project_id: Project ID for context
+            task_id: Task ID for context
+            workflow_id: Workflow ID for file organization
+            custom_output_path: Custom output directory for file writes (overrides default)
+        """
         tools = []
 
         # DEBUG: Log incoming config
@@ -272,14 +291,26 @@ class DeepAgentFactory:
         logger.info(f"  - config.native_tools: {config.native_tools}")
         logger.info(f"  - config.cli_tools: {config.cli_tools}")
         logger.info(f"  - config.custom_tools: {config.custom_tools}")
+        logger.info(f"  - custom_output_path: {custom_output_path}")
+
+        # Build workspace context for file-writing tools (enables custom_output_path)
+        workspace_context = {
+            "project_id": project_id,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "custom_output_path": custom_output_path,
+        }
 
         # Load native tools (file operations, web search, etc.)
         if config.native_tools:
             try:
                 from core.agents.factory import AgentFactory
-                native_tools = await AgentFactory._load_native_tools(config.native_tools)
+                native_tools = await AgentFactory._load_native_tools(
+                    config.native_tools,
+                    workspace_context=workspace_context
+                )
                 tools.extend(native_tools)
-                logger.info(f"Loaded {len(native_tools)} native tools")
+                logger.info(f"Loaded {len(native_tools)} native tools with workspace_context")
             except Exception as e:
                 logger.error(f"Failed to load native tools: {e}")
 
@@ -311,6 +342,8 @@ class DeepAgentFactory:
         enable_compiled: bool = True,
         project_id: int = None,
         task_id: int = None,
+        workflow_id: int = None,
+        custom_output_path: Optional[str] = None,
         mcp_manager=None,
         vector_store=None
     ) -> List[Any]:
@@ -324,6 +357,8 @@ class DeepAgentFactory:
             enable_compiled: Whether to enable CompiledSubAgent support
             project_id: Project ID for workflow loading
             task_id: Task ID for context
+            workflow_id: Workflow ID for file organization
+            custom_output_path: Custom output directory for file writes
             mcp_manager: MCP manager instance
             vector_store: Vector store instance
 
@@ -337,6 +372,14 @@ class DeepAgentFactory:
         subagents = []
         visited_workflows = set()  # For circular dependency detection
 
+        # Build workspace context for file-writing tools in subagents
+        workspace_context = {
+            "project_id": project_id,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "custom_output_path": custom_output_path,
+        } if custom_output_path or workflow_id else None
+
         for sub_config in subagent_configs:
             # Dictionary-based subagent (simple)
             if sub_config.type == SubAgentType.DICTIONARY:
@@ -347,8 +390,11 @@ class DeepAgentFactory:
                 if sub_config.tools:
                     try:
                         from core.agents.factory import AgentFactory
-                        # Load native tools by name
-                        subagent_tools = await AgentFactory._load_native_tools(sub_config.tools)
+                        # Load native tools by name (with workspace context for file writes)
+                        subagent_tools = await AgentFactory._load_native_tools(
+                            sub_config.tools,
+                            workspace_context=workspace_context
+                        )
                         logger.info(f"Loaded {len(subagent_tools)} tools for subagent '{sub_config.name}': {sub_config.tools}")
                     except Exception as e:
                         logger.warning(f"Failed to load tools for subagent '{sub_config.name}': {e}")

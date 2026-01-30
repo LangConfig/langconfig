@@ -81,7 +81,7 @@ export interface DeepAgent {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'complete' | 'error' | 'tool_start' | 'tool_end' | 'tool_artifact';
+  type: 'chunk' | 'complete' | 'error' | 'tool_start' | 'tool_end' | 'tool_artifact' | 'custom_event';
   content?: string;
   message?: string;
   tool_name?: string;
@@ -94,6 +94,27 @@ export interface ChatStreamEvent {
   artifact?: ContentBlock;
   /** Whether the result contains multimodal content */
   has_multimodal?: boolean;
+}
+
+/** Custom event payload types for LangGraph-style streaming events */
+export interface CustomEventPayload {
+  event_type: 'progress' | 'status' | 'file_status' | string;
+  event_id?: string;
+  payload: {
+    label?: string;
+    value?: number;
+    total?: number;
+    status?: 'pending' | 'running' | 'success' | 'error' | 'warning';
+    message?: string;
+    filename?: string;
+    operation?: 'reading' | 'writing' | 'created' | 'modified' | 'deleted' | 'error';
+    size_bytes?: number;
+    [key: string]: any;
+  };
+  tool_name?: string;
+  agent_label?: string;
+  node_id?: string;
+  timestamp?: string;
 }
 
 export interface ChatContextState {

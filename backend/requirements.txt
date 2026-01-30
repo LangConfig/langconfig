@@ -65,6 +65,13 @@ aiofiles==24.1.0
 python-json-logger
 deepdiff>=7.0.0  # Phase 2: Deep comparison for workflow version diffs
 
+# Scheduling
+croniter>=2.0.0  # Cron expression parsing and next run calculation
+pytz>=2024.1  # Timezone support for scheduled workflows
+
+# File System Monitoring (optional - for file watch triggers)
+watchdog>=4.0.0  # Cross-platform file system monitoring
+
 # Presentation Generation
 google-api-python-client>=2.100.0  # Google Slides API
 google-auth>=2.23.0  # Google OAuth

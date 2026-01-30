@@ -43,7 +43,9 @@ export type WorkflowEventType =
   // Debug mode events (detailed tracing)
   | 'debug_state_transition'
   | 'debug_checkpoint'
-  | 'debug_graph_state';
+  | 'debug_graph_state'
+  // LangGraph-style custom streaming events
+  | 'custom_event';
 
 export interface BaseEvent {
   event_id: number;
@@ -259,6 +261,58 @@ export interface AgentContextEvent extends BaseEvent {
   };
 }
 
+// =============================================================================
+// LangGraph-Style Custom Streaming Event Types
+// =============================================================================
+
+// Progress bar event payload
+export interface ProgressEventData {
+  label: string;          // Progress label (e.g., "Downloading", "Processing")
+  value: number;          // Current value (0-100 for percentage, or absolute)
+  total?: number;         // Total value (default 100 for percentage)
+  message?: string;       // Additional status message
+}
+
+// Status badge event payload
+export interface StatusEventData {
+  label: string;          // Status label (e.g., "Analysis", "Validation")
+  status: 'pending' | 'running' | 'success' | 'error' | 'warning';
+  message?: string;       // Status message
+}
+
+// File operation event payload
+export interface FileStatusEventData {
+  filename: string;       // Name of the file
+  operation: 'reading' | 'writing' | 'created' | 'modified' | 'deleted' | 'error';
+  size_bytes?: number;    // File size in bytes
+  line_count?: number;    // Number of lines (for text files)
+  message?: string;       // Additional message
+}
+
+// Custom event payload union
+export type CustomEventPayload =
+  | ProgressEventData
+  | StatusEventData
+  | FileStatusEventData
+  | Record<string, any>;
+
+// Custom streaming event (LangGraph-style)
+export interface CustomEvent extends BaseEvent {
+  type: 'custom_event';
+  data: {
+    event_type: string;             // 'progress', 'status', 'file_status', or custom type
+    event_id?: string;              // For persistent events (can be updated in-place)
+    payload: CustomEventPayload;    // Event-specific data
+    tool_name?: string;             // Tool that emitted the event
+    agent_label?: string;           // Agent context
+    node_id?: string;               // Node context
+    timestamp: string;
+    task_id?: number;
+    project_id?: number;
+    metadata?: Record<string, any>;
+  };
+}
+
 // Generic event for other types
 export interface GenericEvent extends BaseEvent {
   type: Exclude<WorkflowEventType,
@@ -275,6 +329,7 @@ export interface GenericEvent extends BaseEvent {
     | 'debug_state_transition'
     | 'debug_checkpoint'
     | 'debug_graph_state'
+    | 'custom_event'
   >;
   data: any;
 }
@@ -293,4 +348,5 @@ export type WorkflowEvent =
   | DebugCheckpointEvent
   | DebugGraphStateEvent
   | AgentContextEvent
+  | CustomEvent
   | GenericEvent;

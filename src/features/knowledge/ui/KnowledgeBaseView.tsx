@@ -107,11 +107,11 @@ export default function KnowledgeBaseView() {
       if (selectedStatus !== 'all') {
         params.status = selectedStatus;
       }
-      const response = await apiClient.listDocuments({ ...params, signal } as any);
+      const response = await apiClient.listDocuments({ ...params, signal });
       setDocuments(response.data);
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load documents:', error);

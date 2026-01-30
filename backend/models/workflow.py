@@ -85,6 +85,9 @@ class WorkflowProfile(Base, OptimisticLockMixin):
     # Debug mode - when enabled, emits additional state transition events during execution
     debug_mode = Column(Boolean, default=False, nullable=False)
 
+    # Custom output path - when set, files are written to this directory instead of backend/outputs
+    custom_output_path = Column(String(500), nullable=True, default=None)
+
     @validates('name')
     def validate_name(self, key, value):
         """Ensure name is not empty"""

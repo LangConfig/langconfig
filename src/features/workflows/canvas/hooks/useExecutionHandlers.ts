@@ -41,11 +41,11 @@ interface UseExecutionHandlersOptions {
   contextDocuments: number[];
   workflowAttachments: Array<{
     id: string;
-    type: 'image' | 'video' | 'document';
+    type: 'image' | 'video' | 'document' | 'audio';
     name: string;
-    data: string;
+    data?: string;
     mimeType: string;
-    size: number;
+    size?: number;
   }>;
   activeProjectId: number | null;
   setCurrentWorkflowId: (id: number | null) => void;
@@ -256,7 +256,7 @@ export function useExecutionHandlers({
           checkpointer_enabled: checkpointerEnabled,
           recursion_limit: globalRecursionLimit,
           // Configurable execution limits (use defaults if not set, backend enforces bounds)
-          max_events: executionConfig.max_events || 10000,  // Default: 10k events
+          max_events: executionConfig.max_events || 100000,  // Default: 100k events
           timeout_seconds: executionConfig.timeout_seconds || 600  // Default: 10 minutes
         },
         context_documents: contextDocuments,

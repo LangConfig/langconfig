@@ -54,3 +54,4 @@ class WorkspaceFile(Base):
     workflow = relationship("WorkflowProfile", foreign_keys=[workflow_id])
     project = relationship("Project", foreign_keys=[project_id])
     task = relationship("Task", foreign_keys=[task_id])
+    versions = relationship("FileVersion", back_populates="workspace_file", order_by="FileVersion.version_number", cascade="all, delete-orphan")

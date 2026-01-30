@@ -8,12 +8,15 @@
 import { useRef, useEffect, useState } from 'react';
 import { Activity, Copy, CheckCircle, AlertCircle, X, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { ChatMessage, SessionDocument } from '../types/chat';
+import type { ChatMessage, SessionDocument, CustomEventPayload } from '../types/chat';
 import MessageInput from './MessageInput';
 import SessionDocumentsPanel from './SessionDocumentsPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
+import { ProgressCard, StatusBadge, FileOperationCard } from '@/features/workflows/execution/CustomEventCards';
+import type { ProgressEvent, StatusEvent, FileStatusEvent } from '@/hooks/useCustomEvents';
 
 interface MessagesPanelProps {
   messages: ChatMessage[];
@@ -24,6 +27,7 @@ interface MessagesPanelProps {
   disabled?: boolean;
   sessionId?: string | null;
   activeToolCalls?: string[];
+  customEvents?: Map<string, CustomEventPayload>;
 }
 
 export default function MessagesPanel({
@@ -34,7 +38,8 @@ export default function MessagesPanel({
   onClearError,
   disabled = false,
   sessionId = null,
-  activeToolCalls = []
+  activeToolCalls = [],
+  customEvents = new Map()
 }: MessagesPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -175,6 +180,7 @@ export default function MessagesPanel({
                           }}
                         >
                           <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
                             components={{
                               code({ node, inline, className, children, ...props }: any) {
                                 const match = /language-(\w+)/.exec(className || '');
@@ -225,6 +231,69 @@ export default function MessagesPanel({
                               },
                               h3({ children }) {
                                 return <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginTop: '0.75rem', marginBottom: '0.5rem' }}>{children}</h3>;
+                              },
+                              // Table components for GFM tables
+                              table({ children }) {
+                                return (
+                                  <div className="overflow-x-auto my-3">
+                                    <table
+                                      style={{
+                                        width: '100%',
+                                        borderCollapse: 'collapse',
+                                        fontSize: '0.875rem',
+                                        border: '1px solid #e5e7eb',
+                                        borderRadius: '0.5rem',
+                                        overflow: 'hidden',
+                                      }}
+                                    >
+                                      {children}
+                                    </table>
+                                  </div>
+                                );
+                              },
+                              thead({ children }) {
+                                return (
+                                  <thead style={{ backgroundColor: '#f9fafb' }}>
+                                    {children}
+                                  </thead>
+                                );
+                              },
+                              tbody({ children }) {
+                                return <tbody>{children}</tbody>;
+                              },
+                              tr({ children }) {
+                                return (
+                                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                    {children}
+                                  </tr>
+                                );
+                              },
+                              th({ children }) {
+                                return (
+                                  <th
+                                    style={{
+                                      padding: '0.75rem 1rem',
+                                      textAlign: 'left',
+                                      fontWeight: '600',
+                                      color: '#374151',
+                                      borderBottom: '2px solid #e5e7eb',
+                                    }}
+                                  >
+                                    {children}
+                                  </th>
+                                );
+                              },
+                              td({ children }) {
+                                return (
+                                  <td
+                                    style={{
+                                      padding: '0.75rem 1rem',
+                                      color: '#4b5563',
+                                    }}
+                                  >
+                                    {children}
+                                  </td>
+                                );
                               },
                             }}
                           >
@@ -345,6 +414,97 @@ export default function MessagesPanel({
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Custom Events (LangGraph-style progress, status, file operations) */}
+          {customEvents.size > 0 && (
+            <div className="flex gap-4">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+              >
+                <Activity className="w-4 h-4" />
+              </div>
+              <div className="flex-1">
+                <div
+                  className="rounded-2xl rounded-tl-sm px-5 py-3 space-y-2"
+                  style={{
+                    backgroundColor: 'white',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                    borderLeft: '3px solid var(--color-primary)'
+                  }}
+                >
+                  {Array.from(customEvents.values()).map((event, idx) => {
+                    const eventId = event.event_id || `custom-${idx}`;
+
+                    // Convert CustomEventPayload to the component-specific event format
+                    if (event.event_type === 'progress') {
+                      const progressEvent: ProgressEvent = {
+                        id: eventId,
+                        data: {
+                          label: event.payload.label || 'Progress',
+                          value: event.payload.value || 0,
+                          total: event.payload.total,
+                          message: event.payload.message,
+                        },
+                        toolName: event.tool_name,
+                        agentLabel: event.agent_label,
+                        nodeId: event.node_id,
+                        timestamp: event.timestamp || new Date().toISOString(),
+                      };
+                      return <ProgressCard key={eventId} event={progressEvent} compact />;
+                    }
+
+                    if (event.event_type === 'status') {
+                      const statusEvent: StatusEvent = {
+                        id: eventId,
+                        data: {
+                          label: event.payload.label || 'Status',
+                          status: event.payload.status || 'running',
+                          message: event.payload.message,
+                        },
+                        toolName: event.tool_name,
+                        agentLabel: event.agent_label,
+                        nodeId: event.node_id,
+                        timestamp: event.timestamp || new Date().toISOString(),
+                      };
+                      return <StatusBadge key={eventId} event={statusEvent} compact />;
+                    }
+
+                    if (event.event_type === 'file_status') {
+                      const fileEvent: FileStatusEvent = {
+                        id: eventId,
+                        data: {
+                          filename: event.payload.filename || 'file',
+                          operation: event.payload.operation || 'reading',
+                          size_bytes: event.payload.size_bytes,
+                          message: event.payload.message,
+                        },
+                        toolName: event.tool_name,
+                        agentLabel: event.agent_label,
+                        nodeId: event.node_id,
+                        timestamp: event.timestamp || new Date().toISOString(),
+                      };
+                      return <FileOperationCard key={eventId} event={fileEvent} compact />;
+                    }
+
+                    // Generic custom event - show as simple badge
+                    return (
+                      <div
+                        key={eventId}
+                        className="text-xs px-2 py-1 rounded"
+                        style={{
+                          backgroundColor: 'var(--color-background-dark)',
+                          color: 'var(--color-text-primary)'
+                        }}
+                      >
+                        {event.event_type}: {JSON.stringify(event.payload)}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

@@ -31,7 +31,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { WorkflowEvent, WorkflowEventType } from '../types/events';
+import { WorkflowEvent, WorkflowEventType, CustomEvent } from '../types/events';
 import apiClient from '../lib/api-client';
 
 export interface UseWorkflowStreamOptions {
@@ -43,6 +43,8 @@ export interface UseWorkflowStreamOptions {
   onEvent?: (event: WorkflowEvent) => void;
   /** Callback for connection status changes */
   onConnectionChange?: (connected: boolean) => void;
+  /** Callback for LangGraph-style custom events (progress bars, status badges, etc.) */
+  onCustomEvent?: (event: CustomEvent) => void;
   /** Task ID for loading historical events */
   taskId?: number | null;
   /** Auto-load historical events on mount (default: true if taskId provided) */
@@ -85,6 +87,7 @@ export function useWorkflowStream(
     maxEvents = 1000,
     onEvent,
     onConnectionChange,
+    onCustomEvent,
     taskId = null,
     loadHistorical = true,
     tokenBufferMs = 16,
@@ -284,6 +287,8 @@ export function useWorkflowStream(
       'debug_state_transition',
       'debug_checkpoint',
       'debug_graph_state',
+      // LangGraph-style custom streaming events
+      'custom_event',
     ];
 
     eventTypes.forEach((eventType) => {
@@ -354,6 +359,11 @@ export function useWorkflowStream(
             }
             addEvent(event);
 
+            // Call onCustomEvent callback for custom_event type
+            if (eventType === 'custom_event' && onCustomEvent) {
+              onCustomEvent(event as CustomEvent);
+            }
+
             // Track workflow completion to prevent reconnection loop
             if (eventType === 'complete' || eventType === 'error') {
               console.log('[useWorkflowStream] Workflow ended, marking complete to prevent reconnection');
@@ -407,7 +417,7 @@ export function useWorkflowStream(
         }
       }
     };
-  }, [workflowId, addEvent, updateConnectionStatus, tokenBufferMs, flushStreamBuffer]);
+  }, [workflowId, addEvent, updateConnectionStatus, tokenBufferMs, flushStreamBuffer, onCustomEvent]);
 
   /**
    * Disconnect from SSE stream

@@ -219,8 +219,9 @@ class APIClient {
   }
 
   // Workflows
-  async listWorkflows(params?: { project_id?: number; skip?: number; limit?: number }) {
-    return this.client.get('/api/workflows/', { params });
+  async listWorkflows(config?: { project_id?: number; skip?: number; limit?: number; signal?: AbortSignal }) {
+    const { signal, ...params } = config || {};
+    return this.client.get('/api/workflows/', { params: Object.keys(params).length ? params : undefined, signal });
   }
 
   async getWorkflow(id: number) {
@@ -321,6 +322,13 @@ class APIClient {
     project_id: number;
     input_data: object;
     context_documents?: number[];
+    attachments?: Array<{
+      type: string;
+      name: string;
+      mime_type: string;
+      data?: string;
+      size?: number;
+    }>;
   }) {
     return this.client.post('/api/orchestration/execute', data);
   }
@@ -344,8 +352,9 @@ class APIClient {
   }
 
   // Projects
-  async listProjects(params?: { skip?: number; limit?: number; status?: string }) {
-    return this.client.get('/api/projects/', { params });
+  async listProjects(config?: { skip?: number; limit?: number; status?: string; signal?: AbortSignal }) {
+    const { signal, ...params } = config || {};
+    return this.client.get('/api/projects/', { params: Object.keys(params).length ? params : undefined, signal });
   }
 
   async getProject(id: number) {
@@ -440,13 +449,15 @@ class APIClient {
     return this.client.post('/api/rag/upload-bulk', formData);
   }
 
-  async listDocuments(params: {
+  async listDocuments(config: {
     project_id: number;
     skip?: number;
     limit?: number;
     status?: string;
+    signal?: AbortSignal;
   }) {
-    return this.client.get('/api/rag/documents', { params });
+    const { signal, ...params } = config;
+    return this.client.get('/api/rag/documents', { params, signal });
   }
 
   async getDocument(id: number) {
@@ -664,8 +675,9 @@ class APIClient {
     return this.client.post('/api/deepagents/', data);
   }
 
-  async listDeepAgents(params?: { category?: string; public_only?: boolean }) {
-    return this.client.get('/api/deepagents/', { params });
+  async listDeepAgents(config?: { category?: string; public_only?: boolean; signal?: AbortSignal }) {
+    const { signal, ...params } = config || {};
+    return this.client.get('/api/deepagents/', { params: Object.keys(params).length ? params : undefined, signal });
   }
 
   async getDeepAgent(id: number) {
@@ -699,8 +711,9 @@ class APIClient {
   }
 
   // Custom Tools
-  async listCustomTools(params?: { project_id?: number; template_type?: string; tool_type?: string }) {
-    return this.client.get('/api/custom-tools', { params });
+  async listCustomTools(config?: { project_id?: number; template_type?: string; tool_type?: string; signal?: AbortSignal }) {
+    const { signal, ...params } = config || {};
+    return this.client.get('/api/custom-tools', { params: Object.keys(params).length ? params : undefined, signal });
   }
 
   async getCustomTool(toolId: string, config?: { signal?: AbortSignal }) {
@@ -803,6 +816,250 @@ class APIClient {
 
   async getRecommendedActions(agentType: string) {
     return this.client.get(`/api/action-presets/recommended/${agentType}`);
+  }
+
+  // Directory Browser
+  async browseDirectories(path?: string) {
+    return this.client.get('/api/settings/browse-directories', {
+      params: { path: path || '.' }
+    });
+  }
+
+  // Workflow Output Path
+  async validateOutputPath(workflowId: number, path: string) {
+    return this.client.post(`/api/workflows/${workflowId}/validate-output-path`, { path });
+  }
+
+  // =============================================================================
+  // File Viewer - Tree, Versions, and Diff APIs
+  // =============================================================================
+
+  /**
+   * Get hierarchical file tree for folder navigation
+   */
+  async getFileTree(workflowId?: number) {
+    const params = workflowId ? { workflow_id: workflowId } : undefined;
+    return this.client.get('/api/workspace/files/tree', { params });
+  }
+
+  /**
+   * Get files grouped by task for a workflow
+   */
+  async getWorkflowFilesGrouped(workflowId: number) {
+    return this.client.get(`/api/workspace/workflows/${workflowId}/files/grouped`);
+  }
+
+  /**
+   * Get version history for a file
+   */
+  async getFileVersions(fileId: number) {
+    return this.client.get(`/api/workspace/files/${fileId}/versions`);
+  }
+
+  /**
+   * Get diff between two file versions
+   */
+  async getFileDiff(fileId: number, v1: number, v2: number) {
+    return this.client.get(`/api/workspace/files/${fileId}/diff`, {
+      params: { v1, v2 }
+    });
+  }
+
+  /**
+   * Get content of a specific file version
+   */
+  async getFileVersionContent(fileId: number, versionNumber: number) {
+    return this.client.get(`/api/workspace/files/${fileId}/version/${versionNumber}/content`);
+  }
+
+  /**
+   * Get full file metadata including version count
+   */
+  async getFullFileMetadata(fileId: number) {
+    return this.client.get(`/api/workspace/files/${fileId}/metadata/full`);
+  }
+
+  /**
+   * Get file metadata by path
+   */
+  async getFileMetadataByPath(filePath: string) {
+    return this.client.get('/api/workspace/files/by-path', {
+      params: { file_path: filePath }
+    });
+  }
+
+  /**
+   * Update file metadata (tags, description, etc.)
+   */
+  async updateFileMetadata(fileId: number, data: {
+    description?: string;
+    content_type?: string;
+    tags?: string[];
+  }) {
+    return this.client.patch(`/api/workspace/files/metadata/${fileId}`, data);
+  }
+
+  // =============================================================================
+  // Workflow Schedules
+  // =============================================================================
+
+  /**
+   * List schedules for a workflow
+   */
+  async listSchedules(workflowId: number) {
+    return this.client.get(`/api/schedules/workflow/${workflowId}`);
+  }
+
+  /**
+   * Get a specific schedule
+   */
+  async getSchedule(scheduleId: number) {
+    return this.client.get(`/api/schedules/${scheduleId}`);
+  }
+
+  /**
+   * Create a new schedule
+   */
+  async createSchedule(data: {
+    workflow_id: number;
+    name?: string;
+    cron_expression: string;
+    timezone?: string;
+    enabled?: boolean;
+    default_input_data?: Record<string, unknown>;
+    max_concurrent_runs?: number;
+    timeout_minutes?: number;
+    idempotency_key_template?: string;
+  }) {
+    return this.client.post('/api/schedules/', data);
+  }
+
+  /**
+   * Update an existing schedule
+   */
+  async updateSchedule(scheduleId: number, data: {
+    name?: string;
+    cron_expression?: string;
+    timezone?: string;
+    enabled?: boolean;
+    default_input_data?: Record<string, unknown>;
+    max_concurrent_runs?: number;
+    timeout_minutes?: number;
+    idempotency_key_template?: string;
+  }) {
+    return this.client.patch(`/api/schedules/${scheduleId}`, data);
+  }
+
+  /**
+   * Delete a schedule
+   */
+  async deleteSchedule(scheduleId: number) {
+    return this.client.delete(`/api/schedules/${scheduleId}`);
+  }
+
+  /**
+   * Manually trigger a schedule
+   */
+  async triggerScheduleNow(scheduleId: number) {
+    return this.client.post(`/api/schedules/${scheduleId}/trigger`);
+  }
+
+  /**
+   * Get execution history for a schedule
+   */
+  async getScheduleHistory(scheduleId: number, params?: { limit?: number; skip?: number }) {
+    return this.client.get(`/api/schedules/${scheduleId}/history`, { params });
+  }
+
+  /**
+   * Validate a cron expression
+   */
+  async validateCronExpression(cronExpression: string, timezone?: string) {
+    return this.client.post('/api/schedules/validate-cron', {
+      cron_expression: cronExpression,
+      timezone: timezone || 'UTC'
+    });
+  }
+
+  // =============================================================================
+  // Workflow Triggers (Webhooks, File Watch)
+  // =============================================================================
+
+  /**
+   * List triggers for a workflow
+   */
+  async listTriggers(workflowId: number) {
+    return this.client.get(`/api/triggers/workflow/${workflowId}`);
+  }
+
+  /**
+   * Get a specific trigger
+   */
+  async getTrigger(triggerId: number) {
+    return this.client.get(`/api/triggers/${triggerId}`);
+  }
+
+  /**
+   * Create a new trigger
+   */
+  async createTrigger(data: {
+    workflow_id: number;
+    trigger_type: 'webhook' | 'file_watch';
+    name?: string;
+    enabled?: boolean;
+    config: Record<string, unknown>;
+  }) {
+    return this.client.post('/api/triggers/', data);
+  }
+
+  /**
+   * Update an existing trigger
+   */
+  async updateTrigger(triggerId: number, data: {
+    name?: string;
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+  }) {
+    return this.client.patch(`/api/triggers/${triggerId}`, data);
+  }
+
+  /**
+   * Delete a trigger
+   */
+  async deleteTrigger(triggerId: number) {
+    return this.client.delete(`/api/triggers/${triggerId}`);
+  }
+
+  /**
+   * Test-fire a trigger
+   */
+  async testTrigger(triggerId: number, testPayload?: Record<string, unknown>) {
+    return this.client.post(`/api/triggers/${triggerId}/test`, {
+      test_payload: testPayload || {}
+    });
+  }
+
+  /**
+   * Regenerate webhook secret
+   */
+  async regenerateWebhookSecret(triggerId: number) {
+    return this.client.post(`/api/triggers/${triggerId}/regenerate-secret`);
+  }
+
+  /**
+   * Get trigger execution history
+   */
+  async getTriggerHistory(triggerId: number, params?: { limit?: number; skip?: number }) {
+    return this.client.get(`/api/triggers/${triggerId}/history`, { params });
+  }
+
+  /**
+   * Validate a file watch path
+   */
+  async validateWatchPath(path: string) {
+    return this.client.post('/api/triggers/validate-path', null, {
+      params: { path }
+    });
   }
 }
 

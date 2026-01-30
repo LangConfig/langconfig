@@ -426,7 +426,7 @@ const NodeConfigPanel = ({
         setToolNodeAvailableTools({ custom: customTools, mcp: mcpTools, cli: [] });
       } catch (error) {
         // Ignore abort errors
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
           return;
         }
         console.error('Failed to fetch tools:', error);

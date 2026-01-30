@@ -41,6 +41,7 @@ class WorkflowProfileCreate(BaseModel):
     schema_output_config: Optional[dict] = None
     output_schema: Optional[str] = None
     blueprint: Optional[dict] = None
+    custom_output_path: Optional[str] = None  # Custom output directory for file writes
 
 
 class WorkflowProfileUpdate(BaseModel):
@@ -52,6 +53,7 @@ class WorkflowProfileUpdate(BaseModel):
     output_schema: Optional[str] = None
     blueprint: Optional[dict] = None
     lock_version: Optional[int] = Field(None, description="Current lock version for optimistic locking")
+    custom_output_path: Optional[str] = None  # Custom output directory for file writes
 
 
 class WorkflowProfileResponse(BaseModel):
@@ -64,6 +66,7 @@ class WorkflowProfileResponse(BaseModel):
     output_schema: Optional[str]
     blueprint: Optional[dict]
     lock_version: int  # For optimistic locking
+    custom_output_path: Optional[str]  # Custom output directory for file writes
     created_at: datetime
     updated_at: datetime
 
@@ -796,6 +799,157 @@ async def auto_export_deepagent_workflow(workflow: WorkflowProfile, db: Session)
             continue
 
     logger.info(f"Auto-export complete for workflow: {workflow.name}")
+
+
+# =============================================================================
+# Output Path Configuration Endpoints
+# =============================================================================
+
+class ValidatePathRequest(BaseModel):
+    path: str = Field(..., description="The custom output path to validate")
+
+
+class ValidatePathResponse(BaseModel):
+    valid: bool
+    resolved_path: Optional[str] = None
+    error: Optional[str] = None
+    writable: bool = False
+    exists: bool = False
+
+
+# Blocked path patterns for security
+BLOCKED_PATH_PATTERNS = [
+    # Windows system directories
+    r'^[A-Za-z]:\\Windows',
+    r'^[A-Za-z]:\\Program Files',
+    r'^[A-Za-z]:\\Program Files \(x86\)',
+    # Unix system directories
+    r'^/usr',
+    r'^/bin',
+    r'^/sbin',
+    r'^/etc',
+    r'^/var(?!/tmp)',  # Allow /var/tmp but block other /var paths
+    r'^/root',
+    r'^/boot',
+    r'^/sys',
+    r'^/proc',
+    # Project directories (prevent writing into codebase)
+    r'langconfig[\\/]backend',
+    r'langconfig[\\/]src',
+    r'[\\/]node_modules[\\/]',
+    r'[\\/]\.git[\\/]',
+]
+
+
+def _validate_output_path(path: str) -> tuple[bool, str, Optional[str]]:
+    """
+    Validate a custom output path for security and writability.
+
+    Returns:
+        (is_valid, error_message, resolved_path)
+    """
+    from pathlib import Path as PathLib
+    import os
+    import re
+
+    if not path or not path.strip():
+        return False, "Path cannot be empty", None
+
+    # Resolve to absolute path
+    try:
+        resolved = PathLib(path).resolve()
+        resolved_str = str(resolved)
+    except Exception as e:
+        return False, f"Invalid path format: {str(e)}", None
+
+    # Check for blocked patterns
+    for pattern in BLOCKED_PATH_PATTERNS:
+        if re.search(pattern, resolved_str, re.IGNORECASE):
+            return False, f"Access to this directory is not allowed for security reasons", None
+
+    # Check for path traversal attempts
+    if '..' in path:
+        return False, "Path traversal (..) is not allowed", None
+
+    # Check if path can be created or exists
+    try:
+        if resolved.exists():
+            if not resolved.is_dir():
+                return False, "Path exists but is not a directory", None
+            # Check write permissions
+            test_file = resolved / ".langconfig_write_test"
+            try:
+                test_file.touch()
+                test_file.unlink()
+            except PermissionError:
+                return False, "No write permission for this directory", None
+            except Exception as e:
+                return False, f"Cannot write to directory: {str(e)}", None
+        else:
+            # Try to create parent directories
+            try:
+                resolved.mkdir(parents=True, exist_ok=True)
+                # Clean up if we just created it
+                if not any(resolved.iterdir()):
+                    resolved.rmdir()
+            except PermissionError:
+                return False, "No permission to create this directory", None
+            except Exception as e:
+                return False, f"Cannot create directory: {str(e)}", None
+
+    except Exception as e:
+        return False, f"Path validation error: {str(e)}", None
+
+    return True, "", resolved_str
+
+
+@router.post("/{workflow_id}/validate-output-path", response_model=ValidatePathResponse)
+async def validate_output_path(
+    workflow_id: int,
+    request: ValidatePathRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Validate a custom output path for a workflow.
+
+    Checks that the path:
+    - Is not a system directory
+    - Is not inside the project codebase
+    - Can be created or already exists
+    - Has write permissions
+
+    Returns validation result with resolved absolute path.
+    """
+    from pathlib import Path as PathLib
+
+    # Verify workflow exists
+    workflow = db.query(WorkflowProfile).filter(
+        WorkflowProfile.id == workflow_id
+    ).first()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Validate the path
+    is_valid, error, resolved_path = _validate_output_path(request.path)
+
+    if is_valid:
+        resolved = PathLib(resolved_path)
+        return ValidatePathResponse(
+            valid=True,
+            resolved_path=resolved_path,
+            error=None,
+            writable=True,
+            exists=resolved.exists()
+        )
+    else:
+        return ValidatePathResponse(
+            valid=False,
+            resolved_path=None,
+            error=error,
+            writable=False,
+            exists=False
+        )
 
 
 # =============================================================================

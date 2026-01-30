@@ -13,7 +13,7 @@ import { useChatMetrics } from '../hooks/useChatMetrics';
 import ChatHeader from './ChatHeader';
 import MessagesPanel from './MessagesPanel';
 import MetricsPanel from './MetricsPanel';
-import type { ChatMessage, ChatSession, ChatStreamEvent } from '../types/chat';
+import type { ChatMessage, ChatSession, ChatStreamEvent, CustomEventPayload } from '../types/chat';
 
 export default function GlobalChatModal() {
   const {
@@ -30,6 +30,7 @@ export default function GlobalChatModal() {
 
   const modalRef = useRef<HTMLDivElement>(null);
   const [activeToolCalls, setActiveToolCalls] = useState<string[]>([]);
+  const [customEvents, setCustomEvents] = useState<Map<string, CustomEventPayload>>(new Map());
 
   // Session management hook
   const {
@@ -131,9 +132,10 @@ export default function GlobalChatModal() {
       addMessage,
       updateLastMessage,
       async () => {
-        // On complete: refresh metrics and clear active tools
+        // On complete: refresh metrics, clear active tools and custom events
         await refreshMetrics();
         setActiveToolCalls([]);
+        setCustomEvents(new Map());
       },
       (event: ChatStreamEvent) => {
         // Handle tool events
@@ -141,6 +143,18 @@ export default function GlobalChatModal() {
           setActiveToolCalls(prev => [...prev, event.tool_name!]);
         } else if (event.type === 'tool_end' && event.tool_name) {
           setActiveToolCalls(prev => prev.filter(t => t !== event.tool_name));
+        }
+      },
+      (event: ChatStreamEvent) => {
+        // Handle custom events (LangGraph-style progress, status, etc.)
+        if (event.type === 'custom_event' && event.data) {
+          const payload = event.data as CustomEventPayload;
+          const eventId = payload.event_id || `${payload.event_type}-${Date.now()}`;
+          setCustomEvents(prev => {
+            const next = new Map(prev);
+            next.set(eventId, payload);
+            return next;
+          });
         }
       }
     );
@@ -218,6 +232,7 @@ export default function GlobalChatModal() {
             disabled={!currentSessionId}
             sessionId={currentSessionId}
             activeToolCalls={activeToolCalls}
+            customEvents={customEvents}
           />
 
           {/* Metrics Panel - Right Sidebar */}

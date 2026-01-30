@@ -15,7 +15,8 @@ interface UseChatStreamingResult {
     onMessageAdd: (message: ChatMessage) => void,
     onMessageUpdate: (content: string) => void,
     onComplete: () => void,
-    onToolEvent?: (event: ChatStreamEvent) => void
+    onToolEvent?: (event: ChatStreamEvent) => void,
+    onCustomEvent?: (event: ChatStreamEvent) => void
   ) => Promise<void>;
   isStreaming: boolean;
   error: string | null;
@@ -40,7 +41,8 @@ export function useChatStreaming(
       onMessageAdd: (message: ChatMessage) => void,
       onMessageUpdate: (content: string) => void,
       onComplete: () => void,
-      onToolEvent?: (event: ChatStreamEvent) => void
+      onToolEvent?: (event: ChatStreamEvent) => void,
+      onCustomEvent?: (event: ChatStreamEvent) => void
     ) => {
       if (!sessionId || isStreaming) return;
 
@@ -128,6 +130,11 @@ export function useChatStreaming(
                   // Pass tool events to callback
                   if (onToolEvent) {
                     onToolEvent(data);
+                  }
+                } else if (data.type === 'custom_event') {
+                  // Pass custom events to callback (LangGraph-style progress, status, etc.)
+                  if (onCustomEvent) {
+                    onCustomEvent(data);
                   }
                 }
               } catch (parseError) {

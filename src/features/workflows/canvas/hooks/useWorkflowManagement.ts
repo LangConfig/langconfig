@@ -19,6 +19,7 @@ interface UseWorkflowManagementOptions {
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
   logError: (title: string, detail?: string) => void;
+  setCustomOutputPath?: (path: string | null) => void;
 }
 
 export function useWorkflowManagement({
@@ -31,6 +32,7 @@ export function useWorkflowManagement({
   showSuccess,
   showWarning,
   logError,
+  setCustomOutputPath,
 }: UseWorkflowManagementOptions) {
   // Core workflow identity state
   const [currentWorkflowId, setCurrentWorkflowId] = useState<number | null>(workflowId || null);
@@ -86,6 +88,11 @@ export function useWorkflowManagement({
       setCurrentWorkflowId(targetWorkflowId);
       setWorkflowName(workflow.name || 'Untitled Workflow');
       setEditedName(workflow.name || 'Untitled Workflow');
+
+      // Update custom output path if available
+      if (setCustomOutputPath) {
+        setCustomOutputPath(workflow.custom_output_path || null);
+      }
 
       // Load workflow configuration
       if (workflow.configuration) {

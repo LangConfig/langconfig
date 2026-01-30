@@ -75,7 +75,40 @@ class WorkspaceManager:
         
         logger.info(f"Task workspace: {workspace}")
         return workspace
-    
+
+    def get_task_workspace_with_override(
+        self,
+        project_id: Optional[int],
+        workflow_id: int,
+        task_id: int,
+        custom_output_path: Optional[str] = None
+    ) -> Path:
+        """
+        Get workspace directory with optional custom base directory override.
+
+        If custom_output_path is provided, uses: {custom_path}/workflow_{id}/task_{id}/
+        Otherwise falls back to the default workspace structure.
+
+        Args:
+            project_id: Project ID (used only when custom_output_path is None)
+            workflow_id: Workflow ID
+            task_id: Task ID
+            custom_output_path: Custom base directory path (overrides default)
+
+        Returns:
+            Path to task workspace directory
+        """
+        if custom_output_path:
+            # Use custom path as base
+            base = Path(custom_output_path).resolve()
+            workspace = base / f"workflow_{workflow_id}" / f"task_{task_id}"
+            workspace.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Task workspace (custom): {workspace}")
+            return workspace
+        else:
+            # Fall back to default structure
+            return self.get_task_workspace(project_id, workflow_id, task_id)
+
     def get_workflow_workspace(
         self,
         project_id: Optional[int],

@@ -44,6 +44,10 @@ interface UseUITogglesReturn {
   isEditingName: boolean;
   setIsEditingName: React.Dispatch<React.SetStateAction<boolean>>;
   handleStartEditingName: (e: React.MouseEvent) => void;
+
+  // Custom output path
+  customOutputPath: string | null;
+  setCustomOutputPath: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 /**
@@ -99,6 +103,9 @@ export function useUIToggles(): UseUITogglesReturn {
     setIsEditingName(true);
   }, []);
 
+  // Custom output path
+  const [customOutputPath, setCustomOutputPath] = useState<string | null>(null);
+
   return {
     showWorkflowDropdown,
     setShowWorkflowDropdown,
@@ -123,5 +130,7 @@ export function useUIToggles(): UseUITogglesReturn {
     isEditingName,
     setIsEditingName,
     handleStartEditingName,
+    customOutputPath,
+    setCustomOutputPath,
   };
 }

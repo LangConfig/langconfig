@@ -60,15 +60,16 @@ export function useTaskManagement({
   }, [isHistoryCollapsed]);
 
   // Fetch task history for current workflow
-  const fetchTaskHistory = useCallback(async (force: boolean = false) => {
+  // Returns the fetched tasks array for use by callers (e.g., completion handlers)
+  const fetchTaskHistory = useCallback(async (force: boolean = false): Promise<TaskHistoryEntry[]> => {
     if (!currentWorkflowId) {
       setTaskHistory([]);
-      return;
+      return [];
     }
 
     // Prevent duplicate/loop fetches (unless forced)
     if (isFetchingRef.current && !force) {
-      return;
+      return taskHistory; // Return current state when skipping fetch
     }
 
     isFetchingRef.current = true;
@@ -89,14 +90,17 @@ export function useTaskManagement({
           created_at: runningTask.created_at,
         });
       }
+
+      return tasks; // Return the fetched tasks
     } catch (error) {
       console.error('Failed to fetch task history:', error);
       setTaskHistory([]);
+      return [];
     } finally {
       isFetchingRef.current = false;
       setLoadingHistory(false);
     }
-  }, [currentWorkflowId]); // Only depend on workflowId, not callbacks
+  }, [currentWorkflowId, taskHistory]); // Include taskHistory for early return case
 
   // Load task history when workflow changes
   useEffect(() => {
@@ -109,10 +113,10 @@ export function useTaskManagement({
       await apiClient.deleteTask(taskId);
 
       // Remove from local state
-      setTaskHistory(prev => prev.filter(t => t.task_id !== taskId));
+      setTaskHistory(prev => prev.filter(t => t.id !== taskId));
 
       // Clear selection if deleted task was selected
-      if (selectedHistoryTask?.task_id === taskId) {
+      if (selectedHistoryTask?.id === taskId) {
         setSelectedHistoryTask(null);
       }
 
@@ -132,7 +136,7 @@ export function useTaskManagement({
 
     // If selecting a task, set it for replay
     if (task) {
-      setReplayTaskId(task.task_id);
+      setReplayTaskId(task.id);
     }
   }, []);
 

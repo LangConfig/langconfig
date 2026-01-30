@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, Trash2, Edit, Download, Copy, Upload, Sparkles, Code, Database, Terminal, X, Save, BookOpen, Tag, Clock, TrendingUp } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, Download, Copy, Upload, Sparkles, Code, Database, Terminal, X, Save, BookOpen, Tag, Clock, TrendingUp, Settings } from 'lucide-react';
 import DeepAgentBuilder from './DeepAgentBuilder';
 import SkillBuilderModal from './SkillBuilderModal';
 import CustomToolBuilder from '../../tools/ui/CustomToolBuilder';
@@ -141,11 +141,11 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
 
     const fetchCustomTools = async () => {
       try {
-        const response = await apiClient.listCustomTools({ signal: abortController.signal } as any);
+        const response = await apiClient.listCustomTools({ signal: abortController.signal });
         setAvailableCustomTools(response.data || []);
       } catch (error) {
         // Ignore abort errors
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
           return;
         }
         console.error('Failed to fetch custom tools:', error);
@@ -168,7 +168,7 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
         setAvailableWorkflows(response.data || []);
       } catch (error) {
         // Ignore abort errors
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
           return;
         }
         console.error('Failed to fetch workflows:', error);
@@ -2526,11 +2526,11 @@ const AgentLoadouts = () => {
 
   const loadAgents = async (signal?: AbortSignal) => {
     try {
-      const res = await apiClient.listDeepAgents({ signal } as any);
+      const res = await apiClient.listDeepAgents({ signal });
       setAgents(res.data || []);
     } catch (e) {
-      // Ignore abort errors
-      if (e instanceof Error && e.name === 'AbortError') {
+      // Ignore abort/cancel errors (AbortError for fetch, CanceledError for axios)
+      if (e instanceof Error && (e.name === 'AbortError' || e.name === 'CanceledError')) {
         return;
       }
       console.error(e);
@@ -2541,11 +2541,11 @@ const AgentLoadouts = () => {
 
   const loadTools = async (signal?: AbortSignal) => {
     try {
-      const res = await apiClient.listCustomTools({ signal } as any);
+      const res = await apiClient.listCustomTools({ signal });
       setTools(res.data || []);
     } catch (e) {
-      // Ignore abort errors
-      if (e instanceof Error && e.name === 'AbortError') {
+      // Ignore abort/cancel errors (AbortError for fetch, CanceledError for axios)
+      if (e instanceof Error && (e.name === 'AbortError' || e.name === 'CanceledError')) {
         return;
       }
       console.error('[AgentLoadouts] Failed to load tools:', e);
@@ -2557,8 +2557,8 @@ const AgentLoadouts = () => {
       const res = await apiClient.get('/api/skills', { signal });
       setSkills(res.data || []);
     } catch (e) {
-      // Ignore abort errors
-      if (e instanceof Error && e.name === 'AbortError') {
+      // Ignore abort/cancel errors (AbortError for fetch, CanceledError for axios)
+      if (e instanceof Error && (e.name === 'AbortError' || e.name === 'CanceledError')) {
         return;
       }
       console.error('[AgentLoadouts] Failed to load skills:', e);

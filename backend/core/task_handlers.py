@@ -578,6 +578,328 @@ async def handle_generate_workflow_code(payload: dict, task_id: int) -> dict:
 
 
 # =============================================================================
+# Scheduled Workflow Execution Handlers
+# =============================================================================
+
+@register_handler("execute_scheduled_workflow")
+async def handle_execute_scheduled_workflow(payload: dict, task_id: int) -> dict:
+    """
+    Execute a workflow triggered by a cron schedule.
+
+    Updates the ScheduledRunLog with execution status and results.
+
+    Payload:
+        schedule_id: int - Schedule that triggered this execution
+        run_log_id: int - ScheduledRunLog entry ID
+        workflow_id: int - Workflow to execute
+        input_data: dict - Input data for workflow execution
+        timeout_minutes: int - Execution timeout
+
+    Returns:
+        dict with execution results:
+        {
+            "success": bool,
+            "workflow_id": int,
+            "schedule_id": int,
+            "execution_result": dict
+        }
+    """
+    schedule_id = payload.get("schedule_id")
+    run_log_id = payload.get("run_log_id")
+    workflow_id = payload.get("workflow_id")
+    input_data = payload.get("input_data", {})
+    timeout_minutes = payload.get("timeout_minutes", 60)
+
+    logger.info(
+        f"Task {task_id}: Executing scheduled workflow {workflow_id} "
+        f"(schedule: {schedule_id}, run_log: {run_log_id})",
+        extra={
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "schedule_id": schedule_id
+        }
+    )
+
+    db: Session = SessionLocal()
+    try:
+        # Import models here to avoid circular dependencies
+        from models.workflow_schedule import ScheduledRunLog, ScheduleRunStatus, WorkflowSchedule
+        from models.workflow import WorkflowProfile
+        from datetime import datetime
+
+        # Update run log status to RUNNING
+        run_log = db.query(ScheduledRunLog).filter(
+            ScheduledRunLog.id == run_log_id
+        ).first()
+
+        if run_log:
+            run_log.status = ScheduleRunStatus.RUNNING.value
+            run_log.started_at = datetime.utcnow()
+            db.commit()
+
+        # Load workflow
+        workflow = db.query(WorkflowProfile).filter(
+            WorkflowProfile.id == workflow_id
+        ).first()
+
+        if not workflow:
+            raise ValueError(f"Workflow {workflow_id} not found")
+
+        # Execute the workflow
+        # Import executor here to avoid circular dependencies
+        from core.workflows.executor import execute_workflow_sync
+
+        # Prepare execution input
+        execution_input = {
+            "task": input_data.get("task", "Scheduled execution"),
+            "context": input_data.get("context", {}),
+            **input_data
+        }
+
+        # Execute workflow (synchronous wrapper for background execution)
+        result = await execute_workflow_sync(
+            workflow_id=workflow_id,
+            input_data=execution_input,
+            db=db
+        )
+
+        # Update run log with success
+        if run_log:
+            run_log.status = ScheduleRunStatus.SUCCESS.value
+            run_log.completed_at = datetime.utcnow()
+            db.commit()
+
+        # Update schedule status
+        schedule = db.query(WorkflowSchedule).filter(
+            WorkflowSchedule.id == schedule_id
+        ).first()
+
+        if schedule:
+            schedule.last_run_status = ScheduleRunStatus.SUCCESS.value
+            db.commit()
+
+        logger.info(
+            f"Task {task_id}: Scheduled workflow {workflow_id} completed successfully",
+            extra={
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "schedule_id": schedule_id
+            }
+        )
+
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "schedule_id": schedule_id,
+            "run_log_id": run_log_id,
+            "execution_result": result if isinstance(result, dict) else {"output": str(result)}
+        }
+
+    except Exception as e:
+        # Update run log with failure
+        try:
+            from models.workflow_schedule import ScheduledRunLog, ScheduleRunStatus, WorkflowSchedule
+            from datetime import datetime
+
+            run_log = db.query(ScheduledRunLog).filter(
+                ScheduledRunLog.id == run_log_id
+            ).first()
+
+            if run_log:
+                run_log.status = ScheduleRunStatus.FAILED.value
+                run_log.completed_at = datetime.utcnow()
+                run_log.error_message = str(e)
+                db.commit()
+
+            # Update schedule status
+            schedule = db.query(WorkflowSchedule).filter(
+                WorkflowSchedule.id == schedule_id
+            ).first()
+
+            if schedule:
+                schedule.last_run_status = ScheduleRunStatus.FAILED.value
+                db.commit()
+
+        except Exception as update_error:
+            logger.error(
+                f"Failed to update run log status: {update_error}",
+                exc_info=True
+            )
+
+        logger.error(
+            f"Task {task_id}: Scheduled workflow {workflow_id} failed: {e}",
+            exc_info=True,
+            extra={
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "schedule_id": schedule_id
+            }
+        )
+
+        # Re-raise to trigger automatic retry
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
+# Triggered Workflow Execution Handlers (Webhooks, File Watch)
+# =============================================================================
+
+@register_handler("execute_triggered_workflow")
+async def handle_execute_triggered_workflow(payload: dict, task_id: int) -> dict:
+    """
+    Execute a workflow triggered by an event (webhook, file watch, etc.).
+
+    Updates the TriggerLog with execution status and results.
+
+    Payload:
+        trigger_id: int - Trigger that fired
+        trigger_log_id: int - TriggerLog entry ID
+        workflow_id: int - Workflow to execute
+        trigger_type: str - Type of trigger (webhook, file_watch)
+        input_data: dict - Input data for workflow execution
+        trigger_source: str - Source of trigger (IP, file path, etc.)
+
+    Returns:
+        dict with execution results:
+        {
+            "success": bool,
+            "workflow_id": int,
+            "trigger_id": int,
+            "execution_result": dict
+        }
+    """
+    trigger_id = payload.get("trigger_id")
+    trigger_log_id = payload.get("trigger_log_id")
+    workflow_id = payload.get("workflow_id")
+    trigger_type = payload.get("trigger_type")
+    input_data = payload.get("input_data", {})
+    trigger_source = payload.get("trigger_source", "unknown")
+
+    logger.info(
+        f"Task {task_id}: Executing triggered workflow {workflow_id} "
+        f"(trigger: {trigger_id}, type: {trigger_type}, source: {trigger_source})",
+        extra={
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "trigger_id": trigger_id,
+            "trigger_type": trigger_type
+        }
+    )
+
+    db: Session = SessionLocal()
+    try:
+        from models.workflow_trigger import TriggerLog, TriggerStatus, WorkflowTrigger
+        from models.workflow import WorkflowProfile
+        from datetime import datetime
+
+        # Update trigger log status to RUNNING
+        trigger_log = db.query(TriggerLog).filter(
+            TriggerLog.id == trigger_log_id
+        ).first()
+
+        if trigger_log:
+            trigger_log.status = TriggerStatus.RUNNING.value
+            db.commit()
+
+        # Load workflow
+        workflow = db.query(WorkflowProfile).filter(
+            WorkflowProfile.id == workflow_id
+        ).first()
+
+        if not workflow:
+            raise ValueError(f"Workflow {workflow_id} not found")
+
+        # Execute the workflow
+        from core.workflows.executor import execute_workflow_sync
+
+        # Prepare execution input - merge trigger input with defaults
+        execution_input = {
+            "task": input_data.get("task", f"Triggered execution ({trigger_type})"),
+            "context": input_data.get("context", {}),
+            **{k: v for k, v in input_data.items() if k not in ["task", "context"]}
+        }
+
+        # Add trigger metadata to context
+        if "context" not in execution_input:
+            execution_input["context"] = {}
+        execution_input["context"]["_trigger"] = {
+            "type": trigger_type,
+            "source": trigger_source,
+            "trigger_id": trigger_id,
+        }
+
+        # Execute workflow
+        result = await execute_workflow_sync(
+            workflow_id=workflow_id,
+            input_data=execution_input,
+            db=db
+        )
+
+        # Update trigger log with success
+        if trigger_log:
+            trigger_log.status = TriggerStatus.SUCCESS.value
+            trigger_log.completed_at = datetime.utcnow()
+            db.commit()
+
+        logger.info(
+            f"Task {task_id}: Triggered workflow {workflow_id} completed successfully",
+            extra={
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "trigger_id": trigger_id
+            }
+        )
+
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "trigger_id": trigger_id,
+            "trigger_log_id": trigger_log_id,
+            "trigger_type": trigger_type,
+            "execution_result": result if isinstance(result, dict) else {"output": str(result)}
+        }
+
+    except Exception as e:
+        # Update trigger log with failure
+        try:
+            from models.workflow_trigger import TriggerLog, TriggerStatus
+            from datetime import datetime
+
+            trigger_log = db.query(TriggerLog).filter(
+                TriggerLog.id == trigger_log_id
+            ).first()
+
+            if trigger_log:
+                trigger_log.status = TriggerStatus.FAILED.value
+                trigger_log.completed_at = datetime.utcnow()
+                trigger_log.error_message = str(e)
+                db.commit()
+
+        except Exception as update_error:
+            logger.error(
+                f"Failed to update trigger log status: {update_error}",
+                exc_info=True
+            )
+
+        logger.error(
+            f"Task {task_id}: Triggered workflow {workflow_id} failed: {e}",
+            exc_info=True,
+            extra={
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "trigger_id": trigger_id
+            }
+        )
+
+        # Re-raise to trigger automatic retry
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 
@@ -602,5 +924,7 @@ __all__ = [
     "handle_download_images",
     "handle_index_document",
     "handle_generate_workflow_code",
+    "handle_execute_scheduled_workflow",
+    "handle_execute_triggered_workflow",
     "get_registered_handlers"
 ]

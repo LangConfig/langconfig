@@ -97,8 +97,8 @@ export function useWorkflowExecution({
     directive: '',
     classification: 'GENERAL',
     executor_type: 'default',
-    max_events: 10000,
-    timeout_seconds: 600,
+    max_events: 100000,  // Default: 100k events (backend supports up to 500k)
+    timeout_seconds: 1200,  // Default: 20 minutes
   });
 
   // Context documents
@@ -309,7 +309,7 @@ export function useWorkflowExecution({
           additional_context: additionalContext || '',
           checkpointer_enabled: checkpointerEnabled,
           recursion_limit: globalRecursionLimit,
-          max_events: executionConfig.max_events || 10000,
+          max_events: executionConfig.max_events || 100000,
           timeout_seconds: executionConfig.timeout_seconds || 600
         },
         context_documents: contextDocuments,

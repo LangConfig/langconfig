@@ -551,3 +551,104 @@ async def get_default_guardrails():
             "The reasoning loop is handled internally by LangChain - these add extra safety."
         )
     )
+
+
+# =============================================================================
+# Directory Browser Endpoint
+# =============================================================================
+
+class DirectoryEntry(BaseModel):
+    name: str
+    path: str
+    is_directory: bool
+
+
+class DirectoryListResponse(BaseModel):
+    current_path: str
+    parent_path: Optional[str]
+    entries: list[DirectoryEntry]
+
+
+# Hidden and system directories to exclude
+HIDDEN_DIRS = {
+    '.git', '.svn', '.hg', '.bzr',
+    '__pycache__', '.pytest_cache', '.mypy_cache',
+    'node_modules', '.venv', 'venv', '.env',
+    '$RECYCLE.BIN', 'System Volume Information',
+    '.Trash', '.Spotlight-V100', '.fseventsd',
+    'AppData', 'Application Data', 'Local Settings',
+}
+
+
+@router.get("/browse-directories", response_model=DirectoryListResponse)
+async def browse_directories(path: str = "."):
+    """
+    List directories for folder browser UI.
+
+    Returns subdirectories at the given path for navigation.
+    Excludes hidden directories, system folders, and files.
+
+    Args:
+        path: Directory path to browse (defaults to user home)
+    """
+    from pathlib import Path as PathLib
+    import re
+
+    # Default to user home if path is "." or empty
+    if not path or path == "." or path == "~":
+        path = str(PathLib.home())
+
+    try:
+        current = PathLib(path).resolve()
+
+        if not current.exists():
+            raise HTTPException(status_code=404, detail="Directory not found")
+
+        if not current.is_dir():
+            raise HTTPException(status_code=400, detail="Path is not a directory")
+
+        # Get parent path (None if at root)
+        parent_path = None
+        if current.parent != current:
+            parent_path = str(current.parent)
+
+        # List subdirectories
+        entries = []
+        try:
+            for item in sorted(current.iterdir(), key=lambda x: x.name.lower()):
+                # Skip files
+                if not item.is_dir():
+                    continue
+
+                # Skip hidden directories (starting with .)
+                if item.name.startswith('.'):
+                    continue
+
+                # Skip known hidden/system directories
+                if item.name in HIDDEN_DIRS:
+                    continue
+
+                # Skip Windows system directories
+                if re.match(r'^[A-Za-z]:\\(Windows|Program Files)', str(item), re.IGNORECASE):
+                    continue
+
+                entries.append(DirectoryEntry(
+                    name=item.name,
+                    path=str(item),
+                    is_directory=True
+                ))
+
+        except PermissionError:
+            # Return empty list if we can't read the directory
+            pass
+
+        return DirectoryListResponse(
+            current_path=str(current),
+            parent_path=parent_path,
+            entries=entries
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error browsing directory: {str(e)}")

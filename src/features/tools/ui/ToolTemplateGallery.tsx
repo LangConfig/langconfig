@@ -75,7 +75,7 @@ const ToolTemplateGallery = ({ onSelectTemplate, onStartFromScratch }: ToolTempl
       setTemplates(response.data);
     } catch (error) {
       // Ignore abort errors
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError')) {
         return;
       }
       console.error('Failed to load tool templates:', error);

@@ -147,6 +147,9 @@ function AppContent() {
   const [selectedHistoryTask, setSelectedHistoryTask] = useState<TaskHistoryEntry | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Sidebar panel state (agents vs history)
+  const [sidebarPanel, setSidebarPanel] = useState<'agents' | 'history'>('agents');
+
   // Sync workflowTab with current route
   useEffect(() => {
     if (location.pathname === '/results') {
@@ -174,10 +177,15 @@ function AppContent() {
   const handleTabChange = useCallback((tab: 'studio' | 'results') => {
     setWorkflowTab(tab);
     navigate(tab === 'results' ? '/results' : '/studio');
+    // Auto-switch sidebar to history when going to results tab
+    if (tab === 'results') {
+      setSidebarPanel('history');
+    }
   }, [navigate]);
 
   // Handle sidebar panel change (Agents/History tabs)
   const handleSidebarPanelChange = useCallback((panel: 'agents' | 'history') => {
+    setSidebarPanel(panel);
     // Switch to studio tab when clicking Agents tab
     if (panel === 'agents') {
       handleTabChange('studio');
@@ -381,6 +389,7 @@ function AppContent() {
                 handleTabChange('results');
               }
             }}
+            activePanel={sidebarPanel}
             onPanelChange={handleSidebarPanelChange}
           />
         )}
