@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from datetime import datetime, timezone
 import logging
 import asyncio
 
@@ -190,6 +191,17 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Watchdog: auto-fail stale processing jobs (stuck > 5 minutes)
+    STALE_JOB_THRESHOLD_SECONDS = 300
+    if (
+        job.status == PresentationJobStatus.PROCESSING.value
+        and job.created_at
+        and (datetime.now(timezone.utc) - job.created_at.replace(tzinfo=timezone.utc)).total_seconds() > STALE_JOB_THRESHOLD_SECONDS
+    ):
+        logger.warning(f"Job {job_id} detected as stale (processing > {STALE_JOB_THRESHOLD_SECONDS}s), marking as failed")
+        job.mark_failed(f"Job timed out (stale after {STALE_JOB_THRESHOLD_SECONDS}s)")
+        db.commit()
 
     return PresentationJobResponse(
         id=job.id,

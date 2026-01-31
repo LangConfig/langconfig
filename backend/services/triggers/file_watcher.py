@@ -29,6 +29,24 @@ logger = logging.getLogger(__name__)
 
 # Track last trigger times for debouncing
 _last_trigger_times: Dict[str, datetime] = {}
+_debounce_check_counter: int = 0
+_DEBOUNCE_CLEANUP_INTERVAL = 100  # Clean up every N calls
+_DEBOUNCE_MAX_SIZE = 1000  # Force cleanup if dict exceeds this size
+_DEBOUNCE_STALE_SECONDS = 600  # Remove entries older than 10 minutes
+
+
+def _cleanup_stale_debounce_entries() -> None:
+    """Remove debounce entries older than 10 minutes to prevent memory leaks."""
+    global _last_trigger_times
+    now = datetime.now(timezone.utc)
+    stale_keys = [
+        key for key, last_time in _last_trigger_times.items()
+        if (now - last_time).total_seconds() > _DEBOUNCE_STALE_SECONDS
+    ]
+    for key in stale_keys:
+        del _last_trigger_times[key]
+    if stale_keys:
+        logger.debug(f"Cleaned up {len(stale_keys)} stale debounce entries")
 
 
 class FileWatchHandler:
@@ -55,6 +73,14 @@ class FileWatchHandler:
 
     def should_trigger(self, event_type: str, file_path: str) -> bool:
         """Determine if this event should trigger the workflow."""
+        global _debounce_check_counter
+
+        # Periodically clean up stale debounce entries
+        _debounce_check_counter += 1
+        if _debounce_check_counter >= _DEBOUNCE_CLEANUP_INTERVAL or len(_last_trigger_times) > _DEBOUNCE_MAX_SIZE:
+            _debounce_check_counter = 0
+            _cleanup_stale_debounce_entries()
+
         # Check event type
         if event_type not in self.events:
             return False

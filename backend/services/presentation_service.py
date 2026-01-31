@@ -34,6 +34,13 @@ from models.presentation_job import (
 )
 from services.oauth_service import google_oauth_service
 
+try:
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+except ImportError:
+    httplib2 = None
+    AuthorizedHttp = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +71,9 @@ class PresentationService:
     """
     Service for generating presentations from workflow artifacts.
     """
+
+    # Maximum time for a single job to complete (4 minutes)
+    JOB_TIMEOUT_SECONDS = 240
 
     # Theme configurations
     THEMES = {
@@ -133,7 +143,7 @@ class PresentationService:
 
     async def process_job(self, db: Session, job_id: int) -> PresentationJob:
         """
-        Process a presentation generation job.
+        Process a presentation generation job with a timeout.
 
         Args:
             db: Database session
@@ -150,27 +160,17 @@ class PresentationService:
         db.commit()
 
         try:
-            # Prepare slide content from input items
-            slides = await self._prepare_slides(job.input_items, job.title)
-
-            # Generate based on format
-            if job.output_format == PresentationFormat.GOOGLE_SLIDES.value:
-                result_url = await self._generate_google_slides(db, job.title, slides, job.theme)
-                job.mark_completed(result_url=result_url)
-
-            elif job.output_format == PresentationFormat.PDF.value:
-                file_path = await self._generate_pdf(job.id, job.title, slides, job.theme)
-                job.mark_completed(result_file_path=file_path)
-
-            elif job.output_format == PresentationFormat.REVEALJS.value:
-                file_path = await self._generate_revealjs(job.id, job.title, slides, job.theme)
-                job.mark_completed(result_file_path=file_path)
-
-            else:
-                raise ValueError(f"Unknown output format: {job.output_format}")
-
+            await asyncio.wait_for(
+                self._execute_job(db, job),
+                timeout=self.JOB_TIMEOUT_SECONDS
+            )
             db.commit()
             logger.info(f"Completed presentation job {job.id}")
+
+        except asyncio.TimeoutError:
+            logger.error(f"Presentation job {job.id} timed out after {self.JOB_TIMEOUT_SECONDS}s")
+            job.mark_failed(f"Job timed out after {self.JOB_TIMEOUT_SECONDS} seconds")
+            db.commit()
 
         except Exception as e:
             logger.error(f"Failed to process presentation job {job.id}: {e}")
@@ -178,6 +178,33 @@ class PresentationService:
             db.commit()
 
         return job
+
+    async def _execute_job(self, db: Session, job: PresentationJob) -> None:
+        """
+        Execute the actual presentation generation work.
+
+        Args:
+            db: Database session
+            job: The job to execute
+        """
+        # Prepare slide content from input items
+        slides = await self._prepare_slides(job.input_items, job.title)
+
+        # Generate based on format
+        if job.output_format == PresentationFormat.GOOGLE_SLIDES.value:
+            result_url = await self._generate_google_slides(db, job.title, slides, job.theme)
+            job.mark_completed(result_url=result_url)
+
+        elif job.output_format == PresentationFormat.PDF.value:
+            file_path = await self._generate_pdf(job.id, job.title, slides, job.theme)
+            job.mark_completed(result_file_path=file_path)
+
+        elif job.output_format == PresentationFormat.REVEALJS.value:
+            file_path = await self._generate_revealjs(job.id, job.title, slides, job.theme)
+            job.mark_completed(result_file_path=file_path)
+
+        else:
+            raise ValueError(f"Unknown output format: {job.output_format}")
 
     async def _prepare_slides(
         self,
@@ -593,9 +620,15 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
         if not credentials:
             raise ValueError("Google OAuth not connected. Please connect your Google account first.")
 
-        # Build Slides API client
-        slides_service = build('slides', 'v1', credentials=credentials)
-        drive_service = build('drive', 'v3', credentials=credentials)
+        # Build Slides API client with HTTP timeout
+        if httplib2 is not None and AuthorizedHttp is not None:
+            http = httplib2.Http(timeout=60)
+            authorized_http = AuthorizedHttp(credentials, http=http)
+            slides_service = build('slides', 'v1', http=authorized_http)
+            drive_service = build('drive', 'v3', http=authorized_http)
+        else:
+            slides_service = build('slides', 'v1', credentials=credentials)
+            drive_service = build('drive', 'v3', credentials=credentials)
 
         try:
             # Create presentation

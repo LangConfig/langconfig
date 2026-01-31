@@ -170,6 +170,12 @@ export function usePresentationJob({
   const intervalRef = useRef<number | null>(null);
   const hasCompletedRef = useRef(false);
   const isPollingRef = useRef(false);
+  const pollAttemptsRef = useRef(0);
+  const pollStartTimeRef = useRef<number>(0);
+
+  // Polling safety limits
+  const MAX_POLL_ATTEMPTS = 100;
+  const MAX_POLL_DURATION_MS = 300_000; // 5 minutes
 
   // Clear any existing interval
   const clearPolling = useCallback(() => {
@@ -194,10 +200,25 @@ export function usePresentationJob({
 
     hasCompletedRef.current = false;
     isPollingRef.current = true;
+    pollAttemptsRef.current = 0;
+    pollStartTimeRef.current = Date.now();
     setIsLoading(true);
 
     const checkStatus = async (): Promise<boolean> => {
       if (!jobId || hasCompletedRef.current) return true;
+
+      // Check polling safety limits
+      pollAttemptsRef.current += 1;
+      const elapsed = Date.now() - pollStartTimeRef.current;
+      if (pollAttemptsRef.current > MAX_POLL_ATTEMPTS || elapsed > MAX_POLL_DURATION_MS) {
+        const timeoutMsg = `Presentation generation timed out after ${Math.round(elapsed / 1000)}s (${pollAttemptsRef.current} attempts)`;
+        setStatus('failed');
+        setError(timeoutMsg);
+        setIsLoading(false);
+        hasCompletedRef.current = true;
+        onError?.(timeoutMsg);
+        return true; // Stop polling
+      }
 
       try {
         const response = await fetch(`${API_BASE}/api/presentations/${jobId}/status`);
@@ -291,6 +312,8 @@ export function usePresentationJob({
     setError(null);
     setProgress(0);
     hasCompletedRef.current = false;
+    pollAttemptsRef.current = 0;
+    pollStartTimeRef.current = Date.now();
 
     try {
       const response = await fetch(`${API_BASE}/api/presentations/generate`, {
