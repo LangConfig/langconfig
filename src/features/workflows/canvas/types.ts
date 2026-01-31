@@ -68,6 +68,11 @@ export interface NodeConfig {
   use_deepagents?: boolean;
   subagents?: any[];
   middleware?: any[];
+  // Node-level caching (LangGraph 1.0)
+  cache_enabled?: boolean;
+  cache_ttl?: number;  // seconds
+  // Deferred execution (LangGraph 1.0) - wait for all parallel inputs
+  deferred?: boolean;
 }
 
 /**

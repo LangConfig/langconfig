@@ -36,7 +36,12 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Custom Tool Builder** - Create specialized tools beyond built-in MCP servers
 - **Real-Time Monitoring** - Watch agent execution, tool calls, token usage, and costs live
 - **Artifact Gallery** - View and bulk download generated images and files from workflow executions
-- **Export to Code** - Generate standalone Python packages with Streamlit UI, or view LangGraph code
+- **Workflow Scheduling** - Automate workflows with cron expressions, timezone support, and concurrency controls
+- **Event-Driven Triggers** - Fire workflows from webhooks (HMAC-SHA256 verified) or file system changes (glob patterns, debounce)
+- **File Versioning & Diff Viewer** - Track file version history with unified and side-by-side diff views
+- **Presentation Generation** - Export workflow artifacts to Google Slides, PDF, or Reveal.js presentations
+- **Export to Code** - Generate standalone Python packages with Streamlit UI, FastAPI server, or raw LangGraph code
+- **LangGraph Subgraph Streaming** - Nested subgraph execution with real-time SSE streaming
 - **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
 - **Local-First** - All data stays on your machine
@@ -153,6 +158,10 @@ langconfig/
 │   │   ├── chat/             # Chat sessions & streaming
 │   │   ├── knowledge/        # Document upload & RAG
 │   │   ├── tools/            # Custom tool management
+│   │   ├── schedules/        # Cron-based workflow scheduling
+│   │   ├── triggers/         # Event-driven workflow triggers
+│   │   ├── webhooks/         # Incoming webhook endpoints
+│   │   ├── presentations/    # Presentation generation (Slides, PDF, Reveal.js)
 │   │   └── settings/         # API keys & configuration
 │   ├── core/
 │   │   ├── workflows/        # LangGraph orchestration engine
@@ -164,7 +173,9 @@ langconfig/
 │   ├── services/
 │   │   ├── context_retrieval.py    # RAG retrieval with HyDE
 │   │   ├── llama_config.py         # Vector store (pgvector)
-│   │   └── token_counter.py        # Token tracking & cost calculation
+│   │   ├── token_counter.py        # Token tracking & cost calculation
+│   │   ├── scheduler_service.py    # APScheduler cron service
+│   │   └── triggers/               # File watcher & trigger services
 │   ├── models/               # SQLAlchemy ORM models
 │   ├── middleware/           # FastAPI middleware (performance, CORS)
 │   ├── db/                   # Database initialization
@@ -189,6 +200,8 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 - **Chat Sessions** - Conversation history and session state
 - **Vector Storage** - Document embeddings for RAG retrieval
 - **LangGraph Checkpoints** - Workflow state persistence (via `langgraph-checkpoint-postgres`)
+- **Schedules & Triggers** - Cron schedules, webhook triggers, file watchers, and execution logs
+- **File Versions** - Workspace file version history with diffs
 
 **Setup Steps:**
 
@@ -326,7 +339,7 @@ Run models locally with zero API costs:
 **Custom Tool Templates** (create via UI):
 - **Notifications**: Slack, Discord (multi-channel webhooks)
 - **CMS/Publishing**: WordPress REST API, Twitter/X API
-- **Image/Video**: DALL-E 3, Sora, Imagen 3, Nano Banana (Gemini 2.5 Flash Image), Veo 3
+- **Image/Video**: DALL-E 3, ChatGPT Image Gen 1.5, Sora, Imagen 3, Nano Banana (Gemini 2.5 Flash Image), Veo 3.1 Fast
 - **Database**: PostgreSQL, MySQL, MongoDB queries
 - **API/Webhook**: Custom REST API calls with auth
 - **Data Transform**: JSON ↔ CSV ↔ XML ↔ YAML conversion
@@ -362,6 +375,45 @@ Run models locally with zero API costs:
 - Local models via Ollama/LM Studio
 - Sentence Transformers (embeddings)
 - Unstructured (document processing)
+
+---
+
+## Automation
+
+LangConfig supports automated workflow execution through cron schedules, webhooks, and file system triggers.
+
+### Cron Scheduling
+
+Schedule workflows to run automatically on a recurring basis:
+
+1. Open a workflow → **Settings** → **Schedule**
+2. Enter a cron expression (e.g., `0 9 * * 1-5` for weekdays at 9 AM)
+3. Select a timezone and configure optional input data
+4. Enable the schedule
+
+Schedules support concurrency limits, idempotency keys for deduplication, and a full execution history log.
+
+### Webhook Triggers
+
+Trigger workflows from external services via HTTP:
+
+1. Open a workflow → **Settings** → **Triggers** → **Add Webhook**
+2. Copy the generated webhook URL and secret
+3. Configure your external service to POST to the URL
+4. Payloads are verified with HMAC-SHA256 signatures and optional IP whitelisting
+
+Use input mapping to transform incoming payloads into workflow input.
+
+### File Watch Triggers
+
+Trigger workflows when files change on disk:
+
+1. Open a workflow → **Settings** → **Triggers** → **Add File Watch**
+2. Set a directory path and glob pattern (e.g., `*.csv`)
+3. Choose events to watch: created, modified, deleted, or moved
+4. Configure debounce interval to prevent rapid re-triggers
+
+File watchers support recursive directory monitoring.
 
 ---
 

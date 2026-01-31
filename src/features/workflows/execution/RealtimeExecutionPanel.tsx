@@ -115,6 +115,7 @@ const ToolCallItem = ({
   renderedHeader,
   renderedInput,
   renderedResult,
+  rawInput,
   contentBlocks,
   artifacts,
   hasMultimodal,
@@ -128,6 +129,8 @@ const ToolCallItem = ({
   renderedHeader: string;
   renderedInput: string;
   renderedResult: string;
+  /** Full untruncated tool input for fullscreen image modal */
+  rawInput?: string;
   /** Multimodal content blocks from MCP tools */
   contentBlocks?: ContentBlock[];
   /** Artifacts for UI display only */
@@ -260,7 +263,7 @@ const ToolCallItem = ({
               {/* Render multimodal content blocks first (images, audio, etc.) */}
               {hasMultimodal && contentBlocks && contentBlocks.length > 0 && (
                 <div className="my-2">
-                  <ContentBlockRenderer blocks={contentBlocks} />
+                  <ContentBlockRenderer blocks={contentBlocks} toolInput={rawInput} />
                 </div>
               )}
 
@@ -362,6 +365,7 @@ interface SectionItem {
   tool?: {
     toolName: string;
     input: string;
+    rawInput?: string; // Full untruncated input for display in fullscreen modal
     result?: string;
     status: 'running' | 'completed' | 'error';
     runId?: string; // LangChain run_id for unique tool call matching
@@ -843,12 +847,16 @@ export default function RealtimeExecutionPanel({
                 item.tool?.status === 'running'
             );
 
+            // Stringify raw input once for both paths
+            const rawInputStr = typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput, null, 2);
+
             if (existingToolIdx >= 0) {
               // Update the existing preparing entry with full info AND the actual tool run_id
               const existingTool = section.items[existingToolIdx];
               if (existingTool.tool) {
                 existingTool.tool.toolName = toolName;
                 existingTool.tool.input = formatToolInput(toolName, rawInput);
+                existingTool.tool.rawInput = rawInputStr;
                 existingTool.tool.runId = toolRunId; // CRITICAL: Set the actual run_id so on_tool_end can find it
               }
               // Also update the id for proper tracking
@@ -861,6 +869,7 @@ export default function RealtimeExecutionPanel({
                   toolName,
                   // Use smart formatting to truncate large inputs (especially file content)
                   input: formatToolInput(toolName, rawInput),
+                  rawInput: rawInputStr,
                   status: 'running',
                   runId: toolRunId, // Store for matching on_tool_end
                 },
@@ -1762,6 +1771,7 @@ export default function RealtimeExecutionPanel({
                               renderedHeader={renderedHeader}
                               renderedInput={renderedInput}
                               renderedResult={renderedResult}
+                              rawInput={item.tool.rawInput}
                               contentBlocks={item.tool.contentBlocks}
                               artifacts={item.tool.artifacts}
                               hasMultimodal={item.tool.hasMultimodal}

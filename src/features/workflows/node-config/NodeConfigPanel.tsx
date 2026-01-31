@@ -44,6 +44,11 @@ interface NodeConfig {
   debug?: boolean; // Advanced: Debug Mode
   cache?: boolean; // Advanced: Enable Cache
   guardrails?: string; // Advanced: Custom agent execution guardrails (stops, tool usage rules)
+  // Node-level caching (LangGraph 1.0)
+  cache_enabled?: boolean;
+  cache_ttl?: number;  // seconds
+  // Deferred execution (LangGraph 1.0) - wait for all parallel inputs
+  deferred?: boolean;
 }
 
 interface NodeConfigPanelProps {
@@ -147,6 +152,12 @@ const NodeConfigPanel = ({
   const [debugMode, setDebugMode] = useState(false);
   const [enableCache, setEnableCache] = useState(true);
   const [enableParallelTools, setEnableParallelTools] = useState(true);
+
+  // Node-level caching (LangGraph 1.0)
+  const [cacheEnabled, setCacheEnabled] = useState(false);
+  const [cacheTtl, setCacheTtl] = useState(300);
+  // Deferred execution (LangGraph 1.0)
+  const [deferred, setDeferred] = useState(false);
 
   // Agent Guardrails (per-agent customization)
   const [customGuardrails, setCustomGuardrails] = useState<string | null>(null);
@@ -561,6 +572,12 @@ const NodeConfigPanel = ({
       // Load custom guardrails (null means use default)
       setCustomGuardrails((selectedNode as any).guardrails || nodeConfig.guardrails || null);
 
+      // Node-level caching (LangGraph 1.0)
+      setCacheEnabled((selectedNode as any).cache_enabled ?? nodeConfig.cache_enabled ?? false);
+      setCacheTtl((selectedNode as any).cache_ttl ?? nodeConfig.cache_ttl ?? 300);
+      // Deferred execution (LangGraph 1.0)
+      setDeferred((selectedNode as any).deferred ?? nodeConfig.deferred ?? false);
+
       setShowDeleteConfirm(false);
     }
   }, [selectedNode?.id]);
@@ -697,7 +714,13 @@ const NodeConfigPanel = ({
         } : {}),
 
         // Per-agent guardrails (null = use default)
-        guardrails: customGuardrails || null
+        guardrails: customGuardrails || null,
+
+        // Node-level caching (LangGraph 1.0)
+        cache_enabled: cacheEnabled,
+        cache_ttl: cacheTtl,
+        // Deferred execution (LangGraph 1.0)
+        deferred: deferred
       };
 
       // Include the name in the full config so it updates everywhere
@@ -2332,6 +2355,80 @@ const NodeConfigPanel = ({
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Node Caching - only for agent/tool nodes */}
+          {config.agentType && !['CONDITIONAL_NODE', 'LOOP_NODE', 'OUTPUT_NODE'].includes(config.agentType) && (
+            <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--color-border-dark)' }}>
+              <div className="px-3 py-2 rounded-lg mb-3" style={{
+                backgroundColor: 'var(--color-primary)',
+              }}>
+                <h3 className="text-base font-semibold" style={{ color: 'white' }}>
+                  Caching
+                </h3>
+              </div>
+              <label className="flex items-center justify-between p-2 rounded border cursor-pointer hover:border-primary/50 transition-colors" style={{ borderColor: 'var(--color-border)' }}>
+                <div>
+                  <span className="text-sm font-medium block" style={{ color: 'var(--color-text-primary)' }}>Enable node caching</span>
+                  <span className="text-xs opacity-70 block">Cache this node's output to avoid re-execution</span>
+                </div>
+                <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${cacheEnabled ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <input
+                    type="checkbox"
+                    checked={cacheEnabled}
+                    onChange={(e) => setCacheEnabled(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${cacheEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                </div>
+              </label>
+              {cacheEnabled && (
+                <div className="mt-3 ml-2">
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                    Cache TTL
+                  </label>
+                  <select
+                    value={cacheTtl}
+                    onChange={(e) => setCacheTtl(parseInt(e.target.value))}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onWheel={(e) => e.stopPropagation()}
+                    className="w-full px-2 py-1 text-xs rounded border"
+                    style={{
+                      backgroundColor: 'var(--color-background)',
+                      borderColor: 'var(--color-border-dark)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                  >
+                    <option value={30}>30 seconds</option>
+                    <option value={60}>1 minute</option>
+                    <option value={300}>5 minutes</option>
+                    <option value={900}>15 minutes</option>
+                    <option value={3600}>1 hour</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Deferred Execution */}
+          {config.agentType && !['CONDITIONAL_NODE', 'LOOP_NODE'].includes(config.agentType) && (
+            <div className="border-t pt-4 mt-3" style={{ borderColor: 'var(--color-border-dark)' }}>
+              <label className="flex items-center justify-between p-2 rounded border cursor-pointer hover:border-primary/50 transition-colors" style={{ borderColor: 'var(--color-border)' }}>
+                <div>
+                  <span className="text-sm font-medium block" style={{ color: 'var(--color-text-primary)' }}>Wait for all inputs</span>
+                  <span className="text-xs opacity-70 block">Node waits for all parallel branches to complete before executing.</span>
+                </div>
+                <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${deferred ? 'bg-primary' : 'bg-gray-300'}`}>
+                  <input
+                    type="checkbox"
+                    checked={deferred}
+                    onChange={(e) => setDeferred(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${deferred ? 'translate-x-5' : 'translate-x-1'}`} />
+                </div>
+              </label>
             </div>
           )}
 

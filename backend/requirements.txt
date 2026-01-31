@@ -12,15 +12,19 @@ psycopg[binary]>=3.2.0
 psycopg-pool>=3.2.0
 
 # LangChain v1.0 + LangGraph (latest versions)
-langchain
-langchain-core
-langchain-openai
-langchain-anthropic
-langchain-google-genai
+langchain>=1.2.7
+langchain-core>=1.2.7
+langchain-openai>=1.0.1
+langchain-anthropic>=1.2.0
+langchain-google-genai>=4.1.2
 langchain-community==0.4.1  # Pinned version for stability
 langchain-postgres
-langgraph
+langgraph>=1.0.7
 langgraph-checkpoint-postgres
+# Multi-agent and dynamic tool libraries
+langgraph-supervisor
+langgraph-swarm
+langgraph-bigtool
 tiktoken>=0.5.0
 langchain-text-splitters  # Advanced text splitting capabilities
 
