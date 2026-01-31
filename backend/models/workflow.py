@@ -26,6 +26,8 @@ class WorkflowStrategy(str, Enum):
     SUPERVISOR_ARCHITECTURE = "supervisor_architecture"
     RLM = "rlm"
     RLM_RAG_HYBRID = "rlm_rag_hybrid"
+    LANGGRAPH_SUPERVISOR = "langgraph_supervisor"
+    LANGGRAPH_SWARM = "langgraph_swarm"
 
 class WorkflowProfile(Base, OptimisticLockMixin):
     """

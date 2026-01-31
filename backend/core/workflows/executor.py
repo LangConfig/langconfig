@@ -21,6 +21,22 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
+# Task 3: Node-level caching support
+from core.workflows.cache_config import build_cache_policy, get_cache_backend
+
+# Task 10: Official multi-agent pattern wrappers
+from core.workflows.official_patterns import (
+    build_supervisor_graph, build_swarm_graph,
+    SUPERVISOR_AVAILABLE, SWARM_AVAILABLE,
+)
+
+# Task 14: interrupt()-based HITL for APPROVAL_NODE
+try:
+    from langgraph.types import interrupt, Command
+    INTERRUPT_AVAILABLE = True
+except ImportError:
+    INTERRUPT_AVAILABLE = False
+
 from models.workflow import WorkflowProfile
 from core.workflows.events.emitter import create_execution_callback_handler
 from core.workflows.events.progress import clear_execution_context
@@ -83,6 +99,9 @@ class SimpleWorkflowState(TypedDict):
     # agent_attachments: Retrieved per-agent from node config
     workflow_attachments: Optional[List[Dict[str, Any]]]
     agent_attachments: Optional[Dict[str, List[Dict[str, Any]]]]  # {node_id: [attachments]}
+
+    # Deferred node support: parallel branch outputs merged here
+    branch_results: Annotated[Dict[str, Any], operator.ior]
 
 
 class SimpleWorkflowExecutor:
@@ -187,25 +206,68 @@ class SimpleWorkflowExecutor:
 
             graph = await self._build_graph_from_workflow(workflow)
 
+            # Task 10: Strategy dispatch for official multi-agent patterns
+            strategy_type = getattr(workflow, "strategy_type", None)
+            strategy_value = strategy_type.value if strategy_type else None
+            use_official_pattern = False
+
+            if strategy_value == "langgraph_supervisor" and SUPERVISOR_AVAILABLE:
+                workflow_config = workflow.configuration or {}
+                agents_config = workflow_config.get("agents", [])
+                supervisor_prompt = workflow_config.get("supervisor_prompt")
+                try:
+                    compiled_graph = build_supervisor_graph(
+                        model=None,  # Will be resolved from config inside builder
+                        agents=agents_config,
+                        supervisor_prompt=supervisor_prompt,
+                    )
+                    use_official_pattern = True
+                    logger.info(f"Using langgraph-supervisor pattern for workflow '{workflow.name}'")
+                except Exception as e:
+                    logger.warning(f"Failed to build supervisor graph, falling back to standard: {e}")
+
+            elif strategy_value == "langgraph_swarm" and SWARM_AVAILABLE:
+                workflow_config = workflow.configuration or {}
+                agents_config = workflow_config.get("agents", [])
+                try:
+                    compiled_graph = build_swarm_graph(
+                        model=None,  # Will be resolved from config inside builder
+                        agents=agents_config,
+                    )
+                    use_official_pattern = True
+                    logger.info(f"Using langgraph-swarm pattern for workflow '{workflow.name}'")
+                except Exception as e:
+                    logger.warning(f"Failed to build swarm graph, falling back to standard: {e}")
+
             # 2. Get checkpointer for state persistence
             # Only use checkpointer if explicitly enabled in input_data
             checkpointer_enabled = input_data.get("checkpointer_enabled", False)
             from core.workflows.checkpointing.manager import get_checkpointer
             checkpointer = get_checkpointer() if checkpointer_enabled else None
 
-            # 3. Compile the graph with checkpointer
-            if checkpointer:
-                logger.info(f"Compiling workflow '{workflow.name}' with checkpointing enabled")
-                compiled_graph = graph.compile(
-                    checkpointer=checkpointer,
-                    interrupt_before=[]  # Can add APPROVAL_NODE here for HITL
-                )
-            else:
-                logger.warning(
-                    f"Compiling workflow '{workflow.name}' WITHOUT checkpointing - "
-                    f"state will not be persisted"
-                )
-                compiled_graph = graph.compile()
+            # 3. Compile the graph with checkpointer and optional cache backend
+            # Official patterns (supervisor/swarm) return pre-compiled graphs
+            if not use_official_pattern:
+                workflow_settings = (workflow.configuration or {}).get("settings", {})
+                cache_backend = get_cache_backend(workflow_settings)
+                compile_kwargs = {}
+                if cache_backend:
+                    compile_kwargs["cache"] = cache_backend
+                    logger.info(f"[CACHE] Cache backend enabled for workflow '{workflow.name}'")
+
+                if checkpointer:
+                    logger.info(f"Compiling workflow '{workflow.name}' with checkpointing enabled")
+                    compiled_graph = graph.compile(
+                        checkpointer=checkpointer,
+                        interrupt_before=[],  # Can add APPROVAL_NODE here for HITL
+                        **compile_kwargs,
+                    )
+                else:
+                    logger.warning(
+                        f"Compiling workflow '{workflow.name}' WITHOUT checkpointing - "
+                        f"state will not be persisted"
+                    )
+                    compiled_graph = graph.compile(**compile_kwargs)
 
             # 4. Create initial state with user's query
             query = input_data.get("query", "")
@@ -230,6 +292,8 @@ class SimpleWorkflowExecutor:
                 "agent_attachments": None,  # Will be populated per-agent from node configs
                 # Custom output path for file writes (if configured per-workflow)
                 "custom_output_path": getattr(workflow, 'custom_output_path', None),
+                # Deferred node support: parallel branch outputs merged here
+                "branch_results": {},
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -1360,7 +1424,24 @@ class SimpleWorkflowExecutor:
 
             # Create node executor function for all other node types
             node_executor = self._create_node_executor(node_id, agent_type, node)
-            graph.add_node(node_id, node_executor)
+
+            # Task 3 + Task 6: Build add_node kwargs for caching and deferred support
+            node_config = node.get("config", {})
+            add_node_kwargs = {}
+
+            # Task 3: Cache policy
+            node_cache_policy = build_cache_policy(node_config) if node_config else None
+            if node_cache_policy:
+                add_node_kwargs["cache_policy"] = node_cache_policy
+                logger.info(f"[CACHE] Node '{node_id}' caching enabled (TTL={node_config.get('cache_ttl', 300)}s)")
+
+            # Task 6: Deferred flag
+            is_deferred = node_config.get("deferred", False) if node_config else False
+            if is_deferred:
+                add_node_kwargs["defer"] = True
+                logger.info(f"[DEFERRED] Node '{node_id}' marked as deferred")
+
+            graph.add_node(node_id, node_executor, **add_node_kwargs)
 
             logger.info(f"Added node to graph: {node_id} (type: {agent_type})")
 
@@ -2526,13 +2607,30 @@ When your work is complete, deliver the final result and END."""
                         "message_count": len(state.get("messages", []))
                     }
                     logger.info(f"[APPROVAL_NODE] Workflow paused for human approval: {approval_context}")
-                    logger.debug(f"[APPROVAL_NODE] This node requires 'interrupt_before' compilation config")
-                    return {
-                        "current_step": node_id,
-                        "workflow_status": "AWAITING_APPROVAL",
-                        "requires_human_approval": True,
-                        "approval_context": approval_context
-                    }
+                    if INTERRUPT_AVAILABLE:
+                        decision = interrupt({
+                            "type": "approval_required",
+                            "context": approval_context,
+                            "message": "Please review and approve before continuing."
+                        })
+                        if decision == "reject":
+                            return {
+                                "current_step": node_id,
+                                "workflow_status": "REJECTED",
+                                "error_message": "Rejected by human reviewer"
+                            }
+                        return {
+                            "current_step": node_id,
+                            "workflow_status": "APPROVED"
+                        }
+                    else:
+                        logger.debug(f"[APPROVAL_NODE] This node requires 'interrupt_before' compilation config")
+                        return {
+                            "current_step": node_id,
+                            "workflow_status": "AWAITING_APPROVAL",
+                            "requires_human_approval": True,
+                            "approval_context": approval_context
+                        }
 
                 else:
                     valid_types = ['CHECKPOINT_NODE', 'OUTPUT_NODE', 'CONDITIONAL_NODE', 'APPROVAL_NODE', 'LOOP_NODE']
@@ -2779,3 +2877,37 @@ def get_executor() -> SimpleWorkflowExecutor:
     if _executor is None:
         _executor = SimpleWorkflowExecutor()
     return _executor
+
+
+async def execute_workflow_sync(
+    workflow_id: int,
+    input_data: Dict[str, Any],
+    db: Any
+) -> Dict[str, Any]:
+    """
+    Execute a workflow by ID. Used by task handlers for scheduled/triggered executions.
+
+    Args:
+        workflow_id: The workflow ID to execute
+        input_data: Input data for the workflow
+        db: Database session
+
+    Returns:
+        Execution result dict
+
+    Raises:
+        ValueError: If workflow not found
+    """
+    workflow = db.query(WorkflowProfile).filter(WorkflowProfile.id == workflow_id).first()
+    if not workflow:
+        raise ValueError(f"Workflow {workflow_id} not found")
+
+    executor = get_executor()
+    project_id = workflow.project_id if hasattr(workflow, 'project_id') else 0
+    result = await executor.execute_workflow(
+        workflow=workflow,
+        input_data=input_data,
+        project_id=project_id,
+        task_id=0
+    )
+    return result

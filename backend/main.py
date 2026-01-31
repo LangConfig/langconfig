@@ -267,6 +267,7 @@ from api.tasks import routes as tasks
 from api.knowledge import rag, store
 from api.system import settings, health, debug, background_tasks
 from api.models import local as local_models
+from api.models import capabilities as model_capabilities
 from api.workflows import execution as orchestration, checkpoints
 from api.agents import deep_agents as deepagents, routes as agents, generator as agent_generator
 from api.chat import routes as chat
@@ -300,6 +301,7 @@ app.include_router(background_tasks.router)  # Background task queue management
 app.include_router(workspace.router)  # Workspace file management
 app.include_router(settings.router)
 app.include_router(local_models.router, prefix="/api/local-models", tags=["local-models"])  # Local model configurations
+app.include_router(model_capabilities.router, prefix="/api/models", tags=["models"])  # Model capability profiles
 app.include_router(agents.router)  # Agent templates (preset agents)
 app.include_router(action_presets.router)  # Action presets library with enhanced metadata
 app.include_router(custom_tools.router)  # Custom user-defined tools
