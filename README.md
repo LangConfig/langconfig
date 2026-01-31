@@ -4,8 +4,8 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Node](https://img.shields.io/badge/Node-18+-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
-[![LangChain](https://img.shields.io/badge/LangChain-v1.0-orange.svg)](https://langchain.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-latest-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![LangChain](https://img.shields.io/badge/LangChain-v1.2.7-orange.svg)](https://langchain.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.0.7-orange.svg)](https://langchain-ai.github.io/langgraph/)
 
 
 <img width="2615" height="816" alt="Langconfig Banner" src="https://github.com/user-attachments/assets/059f5595-2a48-4fae-bab8-5760661bcbb5" />
@@ -33,6 +33,11 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Interactive Chat Testing** - Test agents with live streaming, tool execution visibility, and document upload
 - **RAG Knowledge Base** - Upload documents (PDF, DOCX, code) for semantic search with pgvector
 - **Multi-Model Support** - OpenAI (GPT-4o, GPT-5), Anthropic (Claude 4.5 Sonnet/Opus/Haiku), Google (Gemini 3 Pro, Gemini 2.5), DeepSeek, local models (Ollama, LM Studio)
+- **Multi-Agent Patterns** - Supervisor (hierarchical delegation) and Swarm (peer-to-peer handoffs) strategies via `langgraph-supervisor` and `langgraph-swarm`
+- **Node-Level Caching** - Per-node `CachePolicy` with configurable TTL and backend (in-memory or Redis) to skip redundant re-execution
+- **Deferred Node Execution** - Map-reduce patterns: fan out to parallel agents, then a synthesis node collects all results
+- **Dynamic Tool System** - `langgraph-bigtool` for large tool registries (15+ tools) and middleware-based tool add/remove based on workflow state
+- **Model Capability Profiles** - Auto-detect model capabilities (function calling, structured output, vision, JSON mode) to adapt agent behavior per model
 - **Custom Tool Builder** - Create specialized tools beyond built-in MCP servers
 - **Real-Time Monitoring** - Watch agent execution, tool calls, token usage, and costs live
 - **Artifact Gallery** - View and bulk download generated images and files from workflow executions
@@ -42,7 +47,7 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Presentation Generation** - Export workflow artifacts to Google Slides, PDF, or Reveal.js presentations
 - **Export to Code** - Generate standalone Python packages with Streamlit UI, FastAPI server, or raw LangGraph code
 - **LangGraph Subgraph Streaming** - Nested subgraph execution with real-time SSE streaming
-- **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
+- **Human-in-the-Loop** - Approval checkpoints using LangGraph's `interrupt()` for critical decisions
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
 - **Local-First** - All data stays on your machine
 
@@ -162,14 +167,15 @@ langconfig/
 │   │   ├── triggers/         # Event-driven workflow triggers
 │   │   ├── webhooks/         # Incoming webhook endpoints
 │   │   ├── presentations/    # Presentation generation (Slides, PDF, Reveal.js)
+│   │   ├── models/           # Model capabilities & profiles
 │   │   └── settings/         # API keys & configuration
 │   ├── core/
-│   │   ├── workflows/        # LangGraph orchestration engine
-│   │   ├── agents/           # Agent factory & base classes
+│   │   ├── workflows/        # LangGraph orchestration engine (caching, deferred nodes, supervisor/swarm)
+│   │   ├── agents/           # Agent factory, base classes, model profiles
 │   │   ├── templates/        # Pre-built agent & workflow templates
-│   │   ├── tools/            # Native and custom tool integrations
+│   │   ├── tools/            # Native tools, custom tools, bigtool registry
 │   │   ├── codegen/          # Python code export generation
-│   │   └── middleware/       # LangGraph middleware (RAG, validation)
+│   │   └── middleware/       # LangGraph middleware (RAG, validation, dynamic tools)
 │   ├── services/
 │   │   ├── context_retrieval.py    # RAG retrieval with HyDE
 │   │   ├── llama_config.py         # Vector store (pgvector)
@@ -254,7 +260,23 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 5. Review and customize (add more tools, adjust prompt)
 6. Click **Save** → use in workflows or chat testing
 
-### Example 4: Export Workflow as Standalone App
+### Example 4: Fan-Out Research with Deferred Synthesis
+
+1. Go to **Studio** → **New Workflow**
+2. Add 3 research agents in parallel (e.g., "Market Research", "Technical Research", "Competitor Analysis")
+3. Add a "Synthesis" agent and connect all 3 research agents to it
+4. Open Synthesis node settings → enable **Wait for all inputs**
+5. Click **Run** → all 3 agents execute in parallel → Synthesis waits for all results → produces merged analysis
+
+### Example 5: Use Supervisor Multi-Agent Strategy
+
+1. Go to **Studio** → **New Workflow**
+2. Set strategy type to **Supervisor**
+3. Define worker agents (e.g., "Researcher", "Writer", "Editor") with their tools and prompts
+4. The supervisor automatically delegates tasks to workers and collects results
+5. Click **Run** → supervisor orchestrates the team
+
+### Example 6: Export Workflow as Standalone App
 
 1. Build workflow visually (e.g., Research → Plan → Implement → Test)
 2. Click **Export** → **Download Python Package**
@@ -358,8 +380,8 @@ Run models locally with zero API costs:
 **Backend:**
 - Python 3.11+
 - FastAPI 0.115
-- LangChain v1.0 (full ecosystem)
-- LangGraph 0.4+ (with checkpoint-postgres)
+- LangChain 1.2.7 (full ecosystem)
+- LangGraph 1.0.7 (with checkpoint-postgres, supervisor, swarm, bigtool)
 - LlamaIndex (document indexing & RAG)
 
 **Database:**
