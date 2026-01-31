@@ -42,14 +42,18 @@ interface ContentBlockRendererProps {
   className?: string;
   /** Whether to show fullscreen modal for images */
   enableFullscreen?: boolean;
+  /** Full (untruncated) tool input to display in the fullscreen image modal */
+  toolInput?: string;
 }
 
 export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({
   blocks,
   className = '',
   enableFullscreen = true,
+  toolInput,
 }) => {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  const [showToolInput, setShowToolInput] = useState(false);
 
   if (!blocks || blocks.length === 0) {
     return null;
@@ -108,7 +112,7 @@ export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setFullscreenImage(null)}
         >
-          <div className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center">
+          <div className="relative max-w-7xl max-h-[90vh] w-full h-full flex flex-col items-center justify-center">
             <div className="absolute top-4 right-4 flex gap-2 z-10">
               {/* Download button */}
               <button
@@ -132,7 +136,7 @@ export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({
               </button>
               {/* Close button */}
               <button
-                onClick={() => setFullscreenImage(null)}
+                onClick={() => { setFullscreenImage(null); setShowToolInput(false); }}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
                 aria-label="Close fullscreen"
               >
@@ -142,9 +146,26 @@ export const ContentBlockRenderer: React.FC<ContentBlockRendererProps> = ({
             <img
               src={fullscreenImage}
               alt="Fullscreen view"
-              className="max-w-full max-h-full object-contain rounded-lg"
+              className="max-w-full max-h-full object-contain rounded-lg flex-shrink"
+              style={{ minHeight: 0 }}
               onClick={(e) => e.stopPropagation()}
             />
+            {/* Collapsible Tool Input section */}
+            {toolInput && (
+              <div className="w-full max-w-3xl mt-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setShowToolInput(!showToolInput)}
+                  className="px-3 py-1.5 text-xs font-medium rounded bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                >
+                  {showToolInput ? 'Hide Tool Input' : 'View Tool Input'}
+                </button>
+                {showToolInput && (
+                  <pre className="mt-2 p-3 rounded-lg bg-black/60 text-gray-200 text-xs font-mono overflow-auto max-h-60 whitespace-pre-wrap break-words border border-white/10">
+                    {toolInput}
+                  </pre>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
