@@ -22,7 +22,7 @@
     "highlight.js": "^11.11.1",
     "html2canvas": "^1.4.1",
     "html2canvas-oklch": "^1.5.0-alpha.0",
-    "jspdf": "^4.0.0",
+    "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.25",
     "lucide-react": "^0.546.0",
