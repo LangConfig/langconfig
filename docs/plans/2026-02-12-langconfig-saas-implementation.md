@@ -3763,7 +3763,720 @@ git commit -m "feat: skill.md loader with markdown parsing, tool conversion, and
 
 ---
 
-### Task 19e: Wire Tools into Plugin Execution
+### Task 19e: CLI & Developer Tools for Agents
+
+Agents need real developer tools to be genuinely useful — not just web search. This task adds shell execution, git operations, test runners, linters, and package management as agent-callable tools. These are what make LangConfig agents competitive with Claude Code, Cursor, and Devin.
+
+**Source files to reference:**
+- `backend/tools/native_tools.py` — file system tools (read, write, edit, ls, glob, grep)
+- `backend/services/mcp_manager.py` — MCP servers for git, test runner, static analyzer
+- `backend/schemas/mcp_tools.py` — test runner & static analyzer MCP configs
+
+**Files:**
+- Create: `packages/core/tools/cli_tools.py`
+- Create: `packages/core/tools/git_tools.py`
+- Create: `packages/core/tools/dev_tools.py`
+- Modify: `packages/core/tools/native_tools.py`
+- Modify: `packages/core/tools/factory.py`
+- Test: `packages/core/tests/test_cli_tools.py`
+
+**Step 1: Create sandboxed shell execution tool**
+
+This is the most powerful and most dangerous tool. It must be sandboxed.
+
+```python
+# packages/core/tools/cli_tools.py
+"""CLI tools for agent use — sandboxed shell execution."""
+import asyncio
+import os
+from dataclasses import dataclass
+from typing import Optional
+
+from langchain_core.tools import StructuredTool
+
+
+@dataclass
+class ShellSandbox:
+    """Sandbox configuration for shell execution."""
+    allowed_commands: set[str] = None  # None = allow all, set = whitelist
+    blocked_patterns: set[str] = None  # Patterns to block (rm -rf, etc.)
+    working_directory: Optional[str] = None
+    timeout_seconds: int = 30
+    max_output_chars: int = 10000
+
+    def __post_init__(self):
+        if self.blocked_patterns is None:
+            self.blocked_patterns = {
+                "rm -rf /", "rm -rf ~", ":(){ :|:& };:",  # Fork bomb
+                "mkfs", "dd if=", "> /dev/sd",            # Destructive
+                "chmod 777 /", "chown root",               # Privilege escalation
+                "curl | sh", "wget | sh",                  # Pipe to shell
+                "sudo rm", "sudo mkfs",                    # Sudo destructive
+            }
+
+    def validate_command(self, command: str) -> tuple[bool, str]:
+        """Check if a command is safe to run."""
+        cmd_lower = command.lower().strip()
+        for pattern in self.blocked_patterns:
+            if pattern.lower() in cmd_lower:
+                return False, f"Blocked: command matches dangerous pattern '{pattern}'"
+        if self.allowed_commands:
+            base_cmd = cmd_lower.split()[0] if cmd_lower else ""
+            if base_cmd not in self.allowed_commands:
+                return False, f"Blocked: '{base_cmd}' not in allowed commands"
+        return True, ""
+
+
+# Default sandbox for agents — blocks destructive patterns but allows common dev tools
+DEFAULT_SANDBOX = ShellSandbox(
+    timeout_seconds=60,
+    max_output_chars=20000,
+)
+
+# Restricted sandbox — whitelist of safe commands only
+RESTRICTED_SANDBOX = ShellSandbox(
+    allowed_commands={
+        "ls", "cat", "head", "tail", "grep", "find", "wc",
+        "echo", "pwd", "whoami", "date", "env",
+        "python", "python3", "pip", "pip3",
+        "node", "npm", "npx",
+        "git", "gh",
+        "pytest", "jest", "vitest",
+        "pylint", "mypy", "eslint", "tsc",
+        "curl", "wget",
+        "docker", "docker-compose",
+    },
+    timeout_seconds=30,
+    max_output_chars=10000,
+)
+
+
+def create_shell_tool(sandbox: ShellSandbox = DEFAULT_SANDBOX) -> StructuredTool:
+    """Create a sandboxed shell execution tool for agents."""
+
+    async def run_shell(command: str, working_directory: str = "") -> str:
+        """Execute a shell command and return stdout + stderr."""
+        safe, reason = sandbox.validate_command(command)
+        if not safe:
+            return f"Error: {reason}"
+
+        cwd = working_directory or sandbox.working_directory or os.getcwd()
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=sandbox.timeout_seconds,
+            )
+            output = ""
+            if stdout:
+                output += stdout.decode("utf-8", errors="replace")
+            if stderr:
+                output += "\n[stderr]\n" + stderr.decode("utf-8", errors="replace")
+            if proc.returncode != 0:
+                output += f"\n[exit code: {proc.returncode}]"
+            return output[:sandbox.max_output_chars]
+        except asyncio.TimeoutError:
+            return f"Error: Command timed out after {sandbox.timeout_seconds}s"
+        except Exception as e:
+            return f"Error: {e}"
+
+    return StructuredTool.from_function(
+        coroutine=run_shell,
+        name="shell",
+        description=(
+            "Execute a shell command. Use for: running scripts, installing packages, "
+            "checking system state, running builds, etc. Returns stdout and stderr."
+        ),
+    )
+```
+
+**Step 2: Create git tools**
+
+```python
+# packages/core/tools/git_tools.py
+"""Git tools for agents — common git operations without raw shell."""
+from langchain_core.tools import StructuredTool
+import asyncio
+
+
+async def _run_git(args: list[str], cwd: str = ".") -> str:
+    """Run a git command and return output."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+    output = stdout.decode("utf-8", errors="replace")
+    if stderr:
+        output += "\n" + stderr.decode("utf-8", errors="replace")
+    return output.strip()[:10000]
+
+
+def create_git_tools() -> list[StructuredTool]:
+    """Create a suite of git tools for agents."""
+
+    async def git_status(repo_path: str = ".") -> str:
+        """Show working tree status (modified, staged, untracked files)."""
+        return await _run_git(["status", "--short"], cwd=repo_path)
+
+    async def git_diff(repo_path: str = ".", staged: bool = False) -> str:
+        """Show changes in working tree or staged changes."""
+        args = ["diff", "--stat"]
+        if staged:
+            args.append("--cached")
+        return await _run_git(args, cwd=repo_path)
+
+    async def git_log(repo_path: str = ".", count: int = 10) -> str:
+        """Show recent commit history."""
+        return await _run_git(
+            ["log", f"-{count}", "--oneline", "--graph"], cwd=repo_path
+        )
+
+    async def git_add(files: str, repo_path: str = ".") -> str:
+        """Stage files for commit. Use '.' for all changes."""
+        return await _run_git(["add"] + files.split(), cwd=repo_path)
+
+    async def git_commit(message: str, repo_path: str = ".") -> str:
+        """Create a git commit with the given message."""
+        return await _run_git(["commit", "-m", message], cwd=repo_path)
+
+    async def git_branch(repo_path: str = ".") -> str:
+        """List branches and show current branch."""
+        return await _run_git(["branch", "-v"], cwd=repo_path)
+
+    async def git_checkout(branch: str, create: bool = False, repo_path: str = ".") -> str:
+        """Switch branches or create a new branch."""
+        args = ["checkout"]
+        if create:
+            args.append("-b")
+        args.append(branch)
+        return await _run_git(args, cwd=repo_path)
+
+    async def git_stash(action: str = "list", repo_path: str = ".") -> str:
+        """Manage stash (list, push, pop, apply)."""
+        return await _run_git(["stash", action], cwd=repo_path)
+
+    return [
+        StructuredTool.from_function(coroutine=git_status, name="git_status",
+            description="Show working tree status — modified, staged, and untracked files"),
+        StructuredTool.from_function(coroutine=git_diff, name="git_diff",
+            description="Show file changes (unstaged by default, use staged=True for staged)"),
+        StructuredTool.from_function(coroutine=git_log, name="git_log",
+            description="Show recent commit history as a graph"),
+        StructuredTool.from_function(coroutine=git_add, name="git_add",
+            description="Stage files for commit. Pass file paths or '.' for all"),
+        StructuredTool.from_function(coroutine=git_commit, name="git_commit",
+            description="Create a git commit with the given message"),
+        StructuredTool.from_function(coroutine=git_branch, name="git_branch",
+            description="List all branches with current branch highlighted"),
+        StructuredTool.from_function(coroutine=git_checkout, name="git_checkout",
+            description="Switch to a branch, or create a new one with create=True"),
+        StructuredTool.from_function(coroutine=git_stash, name="git_stash",
+            description="Manage git stash — list, push, pop, or apply"),
+    ]
+```
+
+**Step 3: Create dev/utility tools (test runners, linters, package managers)**
+
+```python
+# packages/core/tools/dev_tools.py
+"""Developer utility tools — test runners, linters, package managers."""
+from langchain_core.tools import StructuredTool
+import asyncio
+import os
+
+
+async def _run_cmd(cmd: list[str], cwd: str = ".", timeout: int = 120) -> str:
+    """Run a command and return output."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    output = stdout.decode("utf-8", errors="replace")
+    if stderr:
+        output += "\n[stderr]\n" + stderr.decode("utf-8", errors="replace")
+    output += f"\n[exit code: {proc.returncode}]"
+    return output.strip()[:20000]
+
+
+def create_test_runner_tools() -> list[StructuredTool]:
+    """Tools for running tests (pytest, jest, vitest)."""
+
+    async def run_pytest(
+        path: str = ".", args: str = "-v", working_directory: str = "."
+    ) -> str:
+        """Run Python tests with pytest. Returns pass/fail summary and error details."""
+        cmd = ["python", "-m", "pytest", path] + args.split()
+        return await _run_cmd(cmd, cwd=working_directory, timeout=120)
+
+    async def run_jest(
+        path: str = ".", args: str = "", working_directory: str = "."
+    ) -> str:
+        """Run JavaScript/TypeScript tests with Jest."""
+        cmd = ["npx", "jest", path] + (args.split() if args else [])
+        return await _run_cmd(cmd, cwd=working_directory, timeout=120)
+
+    async def run_vitest(
+        path: str = ".", args: str = "--run", working_directory: str = "."
+    ) -> str:
+        """Run Vite-based tests with Vitest."""
+        cmd = ["npx", "vitest", path] + args.split()
+        return await _run_cmd(cmd, cwd=working_directory, timeout=120)
+
+    async def run_tests_auto(path: str = ".", working_directory: str = ".") -> str:
+        """Auto-detect test framework and run tests.
+        Checks for pytest.ini/conftest.py (Python) or jest.config/vitest.config (JS)."""
+        cwd = working_directory
+        if os.path.exists(os.path.join(cwd, "conftest.py")) or \
+           os.path.exists(os.path.join(cwd, "pytest.ini")):
+            return await run_pytest(path, "-v", cwd)
+        elif os.path.exists(os.path.join(cwd, "vitest.config.ts")) or \
+             os.path.exists(os.path.join(cwd, "vitest.config.js")):
+            return await run_vitest(path, "--run", cwd)
+        elif os.path.exists(os.path.join(cwd, "jest.config.js")) or \
+             os.path.exists(os.path.join(cwd, "jest.config.ts")):
+            return await run_jest(path, "", cwd)
+        elif os.path.exists(os.path.join(cwd, "package.json")):
+            return await _run_cmd(["npm", "test"], cwd=cwd)
+        return "Could not auto-detect test framework. Use run_pytest, run_jest, or run_vitest directly."
+
+    return [
+        StructuredTool.from_function(coroutine=run_pytest, name="run_pytest",
+            description="Run Python tests with pytest. Returns results with pass/fail counts"),
+        StructuredTool.from_function(coroutine=run_jest, name="run_jest",
+            description="Run JavaScript/TypeScript tests with Jest"),
+        StructuredTool.from_function(coroutine=run_vitest, name="run_vitest",
+            description="Run Vite-based tests with Vitest"),
+        StructuredTool.from_function(coroutine=run_tests_auto, name="run_tests",
+            description="Auto-detect test framework (pytest/jest/vitest) and run tests"),
+    ]
+
+
+def create_linter_tools() -> list[StructuredTool]:
+    """Static analysis and linting tools."""
+
+    async def run_pylint(path: str = ".", working_directory: str = ".") -> str:
+        """Lint Python code with pylint. Returns issues with severity levels."""
+        return await _run_cmd(["python", "-m", "pylint", path, "--output-format=text"], cwd=working_directory)
+
+    async def run_mypy(path: str = ".", working_directory: str = ".") -> str:
+        """Type check Python code with mypy."""
+        return await _run_cmd(["python", "-m", "mypy", path], cwd=working_directory)
+
+    async def run_eslint(path: str = ".", working_directory: str = ".") -> str:
+        """Lint JavaScript/TypeScript with ESLint."""
+        return await _run_cmd(["npx", "eslint", path], cwd=working_directory)
+
+    async def run_tsc(working_directory: str = ".") -> str:
+        """TypeScript type checking (no emit)."""
+        return await _run_cmd(["npx", "tsc", "--noEmit"], cwd=working_directory)
+
+    return [
+        StructuredTool.from_function(coroutine=run_pylint, name="run_pylint",
+            description="Lint Python code with pylint — returns issues and quality score"),
+        StructuredTool.from_function(coroutine=run_mypy, name="run_mypy",
+            description="Type check Python code with mypy"),
+        StructuredTool.from_function(coroutine=run_eslint, name="run_eslint",
+            description="Lint JavaScript/TypeScript with ESLint"),
+        StructuredTool.from_function(coroutine=run_tsc, name="run_tsc",
+            description="TypeScript type checking — runs tsc --noEmit"),
+    ]
+
+
+def create_package_manager_tools() -> list[StructuredTool]:
+    """Package management tools for Python and JavaScript."""
+
+    async def pip_install(packages: str, working_directory: str = ".") -> str:
+        """Install Python packages with pip."""
+        return await _run_cmd(
+            ["python", "-m", "pip", "install"] + packages.split(),
+            cwd=working_directory,
+        )
+
+    async def pip_list(working_directory: str = ".") -> str:
+        """List installed Python packages."""
+        return await _run_cmd(["python", "-m", "pip", "list"], cwd=working_directory)
+
+    async def npm_install(packages: str = "", working_directory: str = ".") -> str:
+        """Install Node.js packages with npm."""
+        cmd = ["npm", "install"] + (packages.split() if packages else [])
+        return await _run_cmd(cmd, cwd=working_directory)
+
+    async def npm_run(script: str, working_directory: str = ".") -> str:
+        """Run an npm script (e.g., build, test, lint)."""
+        return await _run_cmd(["npm", "run", script], cwd=working_directory)
+
+    return [
+        StructuredTool.from_function(coroutine=pip_install, name="pip_install",
+            description="Install Python packages with pip"),
+        StructuredTool.from_function(coroutine=pip_list, name="pip_list",
+            description="List installed Python packages"),
+        StructuredTool.from_function(coroutine=npm_install, name="npm_install",
+            description="Install Node.js packages with npm"),
+        StructuredTool.from_function(coroutine=npm_run, name="npm_run",
+            description="Run an npm script (build, test, lint, dev, etc.)"),
+    ]
+
+
+def create_docker_tools() -> list[StructuredTool]:
+    """Docker tools for container management."""
+
+    async def docker_ps(all: bool = False) -> str:
+        """List running containers (or all with all=True)."""
+        args = ["docker", "ps"]
+        if all:
+            args.append("-a")
+        return await _run_cmd(args)
+
+    async def docker_compose_up(
+        services: str = "", detach: bool = True, working_directory: str = "."
+    ) -> str:
+        """Start docker-compose services."""
+        cmd = ["docker-compose", "up"]
+        if detach:
+            cmd.append("-d")
+        if services:
+            cmd.extend(services.split())
+        return await _run_cmd(cmd, cwd=working_directory)
+
+    async def docker_logs(container: str, tail: int = 50) -> str:
+        """Show container logs."""
+        return await _run_cmd(["docker", "logs", "--tail", str(tail), container])
+
+    return [
+        StructuredTool.from_function(coroutine=docker_ps, name="docker_ps",
+            description="List Docker containers (running or all)"),
+        StructuredTool.from_function(coroutine=docker_compose_up, name="docker_compose_up",
+            description="Start docker-compose services"),
+        StructuredTool.from_function(coroutine=docker_logs, name="docker_logs",
+            description="Show logs from a Docker container"),
+    ]
+```
+
+**Step 4: Update native_tools.py to include file system tools (port from existing)**
+
+Add to `packages/core/tools/native_tools.py` — these complete the file system toolkit:
+
+```python
+# Add to native_tools.py
+
+def create_file_read_tool() -> StructuredTool:
+    """Read file contents with line numbers."""
+    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            selected = lines[offset:offset + limit]
+            return "".join(
+                f"{i + offset + 1:>6}\t{line}" for i, line in enumerate(selected)
+            )
+        except Exception as e:
+            return f"Error: {e}"
+
+    return StructuredTool.from_function(
+        coroutine=read_file, name="read_file",
+        description="Read a file's contents with line numbers. Supports offset and limit.",
+    )
+
+
+def create_file_write_tool() -> StructuredTool:
+    """Write content to a file."""
+    async def write_file(file_path: str, content: str) -> str:
+        try:
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"Written {len(content)} chars to {file_path}"
+        except Exception as e:
+            return f"Error: {e}"
+
+    return StructuredTool.from_function(
+        coroutine=write_file, name="write_file",
+        description="Write content to a file. Creates parent directories if needed.",
+    )
+
+
+def create_file_edit_tool() -> StructuredTool:
+    """Find and replace text in a file."""
+    async def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if old_string not in content:
+                return f"Error: old_string not found in {file_path}"
+            count = content.count(old_string)
+            if count > 1:
+                return f"Error: old_string found {count} times — must be unique. Add more context."
+            content = content.replace(old_string, new_string, 1)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"Replaced 1 occurrence in {file_path}"
+        except Exception as e:
+            return f"Error: {e}"
+
+    return StructuredTool.from_function(
+        coroutine=edit_file, name="edit_file",
+        description="Find and replace a unique string in a file. old_string must appear exactly once.",
+    )
+
+
+def create_ls_tool() -> StructuredTool:
+    """List directory contents."""
+    async def ls(directory_path: str = ".") -> str:
+        import os
+        try:
+            entries = []
+            for name in sorted(os.listdir(directory_path)):
+                full = os.path.join(directory_path, name)
+                if os.path.isdir(full):
+                    entries.append(f"  {name}/")
+                else:
+                    size = os.path.getsize(full)
+                    entries.append(f"  {name} ({size} bytes)")
+            return "\n".join(entries) or "(empty directory)"
+        except Exception as e:
+            return f"Error: {e}"
+
+    return StructuredTool.from_function(
+        coroutine=ls, name="ls",
+        description="List files and directories in a path.",
+    )
+
+
+def create_glob_tool() -> StructuredTool:
+    """Find files matching a glob pattern."""
+    async def glob_search(pattern: str, path: str = ".") -> str:
+        import glob as g
+        import os
+        matches = sorted(g.glob(os.path.join(path, pattern), recursive=True))
+        return "\n".join(matches[:100]) or "No matches found"
+
+    return StructuredTool.from_function(
+        coroutine=glob_search, name="glob",
+        description="Find files matching a glob pattern (e.g., '**/*.py', 'src/**/*.tsx').",
+    )
+
+
+def create_grep_tool() -> StructuredTool:
+    """Search file contents for a pattern."""
+    async def grep_search(pattern: str, path: str = ".", file_pattern: str = "") -> str:
+        import re, os, glob as g
+        results = []
+        if os.path.isfile(path):
+            files = [path]
+        elif file_pattern:
+            files = g.glob(os.path.join(path, file_pattern), recursive=True)
+        else:
+            files = g.glob(os.path.join(path, "**", "*"), recursive=True)
+
+        regex = re.compile(pattern)
+        for fp in files[:500]:
+            if not os.path.isfile(fp):
+                continue
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                    for i, line in enumerate(f, 1):
+                        if regex.search(line):
+                            results.append(f"{fp}:{i}: {line.rstrip()}")
+                            if len(results) >= 50:
+                                return "\n".join(results) + "\n... (truncated at 50 matches)"
+            except Exception:
+                continue
+        return "\n".join(results) or "No matches found"
+
+    return StructuredTool.from_function(
+        coroutine=grep_search, name="grep",
+        description="Search file contents for a regex pattern. Returns matching lines with file:line prefix.",
+    )
+
+
+def get_native_tools() -> dict[str, StructuredTool]:
+    """Return all native tools keyed by name."""
+    return {
+        "web_search": create_web_search_tool(),
+        "web_fetch": create_web_fetch_tool(),
+        "read_file": create_file_read_tool(),
+        "write_file": create_file_write_tool(),
+        "edit_file": create_file_edit_tool(),
+        "ls": create_ls_tool(),
+        "glob": create_glob_tool(),
+        "grep": create_grep_tool(),
+    }
+```
+
+**Step 5: Update ToolFactory to include all tool categories**
+
+Update `packages/core/tools/factory.py` to support tool category loading:
+
+```python
+# Add to ToolFactory class:
+
+TOOL_CATEGORIES = {
+    "shell": lambda: [create_shell_tool()],
+    "git": lambda: create_git_tools(),
+    "test": lambda: create_test_runner_tools(),
+    "lint": lambda: create_linter_tools(),
+    "package": lambda: create_package_manager_tools(),
+    "docker": lambda: create_docker_tools(),
+}
+
+@staticmethod
+def create_tools(tool_configs: list[dict], credentials: dict = {}) -> list[BaseTool]:
+    tools = []
+    native = get_native_tools()
+
+    for config in tool_configs:
+        tool_type = config.get("type", "native")
+        name = config.get("name", "")
+
+        if tool_type == "native" and name in native:
+            tools.append(native[name])
+        elif tool_type == "category" and name in ToolFactory.TOOL_CATEGORIES:
+            tools.extend(ToolFactory.TOOL_CATEGORIES[name]())
+        elif tool_type == "custom":
+            # ... existing custom tool logic
+        elif tool_type == "mcp":
+            # ... existing MCP logic
+        elif tool_type == "skill":
+            # ... existing skill logic
+
+    return tools
+```
+
+Now a workflow node can specify tools like:
+```json
+{
+  "tools": [
+    {"name": "web_search", "type": "native"},
+    {"name": "read_file", "type": "native"},
+    {"name": "git", "type": "category"},
+    {"name": "test", "type": "category"},
+    {"name": "shell", "type": "category"}
+  ]
+}
+```
+
+**Step 6: Write tests**
+
+```python
+# packages/core/tests/test_cli_tools.py
+import pytest
+from tools.cli_tools import ShellSandbox, RESTRICTED_SANDBOX, DEFAULT_SANDBOX
+
+
+def test_default_sandbox_blocks_dangerous():
+    safe, reason = DEFAULT_SANDBOX.validate_command("rm -rf /")
+    assert safe is False
+    assert "dangerous" in reason.lower() or "blocked" in reason.lower()
+
+
+def test_default_sandbox_allows_normal():
+    safe, _ = DEFAULT_SANDBOX.validate_command("ls -la")
+    assert safe is True
+
+
+def test_restricted_sandbox_whitelist():
+    safe, _ = RESTRICTED_SANDBOX.validate_command("python -m pytest")
+    assert safe is True
+
+
+def test_restricted_sandbox_blocks_unlisted():
+    safe, _ = RESTRICTED_SANDBOX.validate_command("nc -lvp 4444")
+    assert safe is False
+
+
+def test_fork_bomb_blocked():
+    safe, _ = DEFAULT_SANDBOX.validate_command(":(){ :|:& };:")
+    assert safe is False
+```
+
+```python
+# packages/core/tests/test_git_tools.py
+import pytest
+from tools.git_tools import create_git_tools
+
+
+def test_git_tools_created():
+    tools = create_git_tools()
+    names = [t.name for t in tools]
+    assert "git_status" in names
+    assert "git_diff" in names
+    assert "git_log" in names
+    assert "git_add" in names
+    assert "git_commit" in names
+    assert "git_branch" in names
+    assert "git_checkout" in names
+    assert len(tools) >= 7
+```
+
+```python
+# packages/core/tests/test_dev_tools.py
+import pytest
+from tools.dev_tools import (
+    create_test_runner_tools,
+    create_linter_tools,
+    create_package_manager_tools,
+    create_docker_tools,
+)
+
+
+def test_test_runner_tools():
+    tools = create_test_runner_tools()
+    names = [t.name for t in tools]
+    assert "run_pytest" in names
+    assert "run_jest" in names
+    assert "run_tests" in names
+
+
+def test_linter_tools():
+    tools = create_linter_tools()
+    names = [t.name for t in tools]
+    assert "run_pylint" in names
+    assert "run_mypy" in names
+    assert "run_eslint" in names
+    assert "run_tsc" in names
+
+
+def test_package_manager_tools():
+    tools = create_package_manager_tools()
+    names = [t.name for t in tools]
+    assert "pip_install" in names
+    assert "npm_install" in names
+    assert "npm_run" in names
+
+
+def test_docker_tools():
+    tools = create_docker_tools()
+    names = [t.name for t in tools]
+    assert "docker_ps" in names
+    assert "docker_compose_up" in names
+```
+
+**Step 7: Run tests and commit**
+
+```bash
+cd packages/core
+pytest tests/test_cli_tools.py tests/test_git_tools.py tests/test_dev_tools.py -v
+# Expected: PASS
+git add packages/core/tools/ packages/core/tests/
+git commit -m "feat: CLI/dev tools — shell, git, test runners, linters, package managers, docker"
+```
+
+---
+
+### Task 19g: Wire Tools into Plugin Execution
 
 Connect the tools system to the plugin execution flow so agents can actually use tools during workflow runs.
 
@@ -3813,7 +4526,7 @@ git commit -m "feat: wire tools (native, custom, MCP, skills) into plugin execut
 
 ---
 
-### Task 19f: Tool Templates Registry
+### Task 19h: Tool Templates Registry
 
 Port the template system so users can quickly create tools from pre-configured templates.
 
