@@ -147,7 +147,7 @@ async def oauth_callback(
                 if (window.opener) {{
                     window.opener.postMessage({{
                         type: 'google-oauth-error',
-                        error: 'Token exchange failed: {str(e).replace("'", "\\'")}'
+                        error: 'Token exchange failed: {str(e)}'
                     }}, '*');
                     window.close();
                 }} else {{

@@ -14,6 +14,7 @@ import CustomToolBuilder from '../../tools/ui/CustomToolBuilder';
 import apiClient, { ConflictErrorClass } from '../../../lib/api-client';
 import ConflictDialog from '../../workflows/ui/ConflictDialog';
 import { useNotification } from '../../../hooks/useNotification';
+import { useAvailableModels } from '../../../hooks/useAvailableModels';
 
 interface Agent {
   id: number;
@@ -112,6 +113,9 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
   const [defaultGuardrails, setDefaultGuardrails] = useState<string>('');
   const [guardrailsDescription, setGuardrailsDescription] = useState<string>('');
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+
+  // Fetch available models
+  const { models: availableModelsList, isLoading: isModelsLoading } = useAvailableModels();
 
   // Update config when agent changes
   useEffect(() => {
@@ -563,18 +567,44 @@ print(result)
                     <select
                       value={config.model || 'gpt-4o'}
                       onChange={(e) => setConfig({ ...config, model: e.target.value })}
-                      className="px-3 py-2 border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="px-3 py-2 border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                      disabled={isModelsLoading}
                       style={{
                         color: 'var(--color-text-primary)',
-                        minWidth: '160px'
+                        minWidth: '200px'
                       }}
                     >
-                      <option value="gpt-5.2">GPT-5.2</option>
-                      <option value="gpt-5.1">GPT-5.1</option>
-                      <option value="gpt-4o">GPT-4o</option>
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-                      <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                      {availableModelsList.length > 0 ? (
+                        <>
+                          {/* Cloud Models */}
+                          <optgroup label="Cloud Models">
+                            {availableModelsList.filter(m => m.type === 'cloud').map(model => (
+                              <option key={model.id} value={model.id}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          {/* Local Models */}
+                          {availableModelsList.some(m => m.type === 'local') && (
+                            <optgroup label="Local Models">
+                              {availableModelsList.filter(m => m.type === 'local').map(model => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <option value="gpt-5.2">GPT-5.2</option>
+                          <option value="gpt-5.1">GPT-5.1</option>
+                          <option value="gpt-4o">GPT-4o</option>
+                          <option value="gpt-4o-mini">GPT-4o Mini</option>
+                          <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                          <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
