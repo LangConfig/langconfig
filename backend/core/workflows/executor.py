@@ -103,6 +103,9 @@ class SimpleWorkflowState(TypedDict):
     # Deferred node support: parallel branch outputs merged here
     branch_results: Annotated[Dict[str, Any], operator.ior]
 
+    # Critic output for conditional routing
+    critic_output: Optional[str]
+
 
 class SimpleWorkflowExecutor:
     """
@@ -294,6 +297,8 @@ class SimpleWorkflowExecutor:
                 "custom_output_path": getattr(workflow, 'custom_output_path', None),
                 # Deferred node support: parallel branch outputs merged here
                 "branch_results": {},
+                # Critic output for conditional routing
+                "critic_output": None,
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -1664,8 +1669,10 @@ class SimpleWorkflowExecutor:
 
         async def node_executor(state: SimpleWorkflowState, config: dict = None) -> Dict[str, Any]:
             """Execute a single node in the workflow."""
-            # Convert agent_type to human-readable name (e.g., "battlefield_6_expert" -> "Battlefield 6 Expert")
-            display_name = agent_type.replace('_', ' ').title()
+            # Get the actual display label from node_data if available
+            node_label = node_data.get("data", {}).get("label")
+            # Convert agent_type to human-readable name as fallback
+            display_name = node_label or agent_type.replace('_', ' ').title()
             logger.info(f"[{display_name}] Executing agent (node: {node_id})")
 
             try:
@@ -2357,12 +2364,30 @@ When your work is complete, deliver the final result and END."""
                         content_preview = str(msg.content)[:150] if hasattr(msg, 'content') else 'N/A'
                         logger.debug(f"[{display_name}] Message {i+1}/{len(new_messages)} ({msg_type}): {content_preview}...")
 
+                    # Extract critic output if this is a critic node
+                    # We check if 'critic' is in the display_name or agent_type
+                    current_critic_output = None
+                    if "critic" in display_name.lower() or "critic" in agent_type.lower():
+                        if new_messages:
+                            # Use the last contentful message from the critic
+                            for msg in reversed(new_messages):
+                                content = str(msg.content)
+                                if content and len(content) > 10:
+                                    current_critic_output = content
+                                    logger.info(f"[{display_name}] Captured critic_output: {current_critic_output[:100]}...")
+                                    break
+
                     # Return new messages (reducer will append them)
-                    return {
+                    update = {
                         "messages": new_messages,
                         "current_node": node_id,
                         "last_agent_type": agent_type
                     }
+
+                    if current_critic_output:
+                        update["critic_output"] = current_critic_output
+
+                    return update
                 else:
                     logger.warning(f"[Node: {node_id}] No messages to process")
                     return {
