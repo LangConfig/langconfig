@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useCallback, useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -1126,12 +1126,43 @@ if __name__ == "__main__":
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // Find source node to check for control types
+      const sourceNode = nodes.find((n: Node) => n.id === params.source);
+      const agentType = sourceNode?.data?.agentType;
+      
+      // Determine default label based on existing edges from this node
+      let edgeLabel = undefined;
+      let edgeData = undefined;
+      
+      if (agentType === 'CONDITIONAL_NODE') {
+        const existingEdges = edges.filter((e: Edge) => e.source === params.source);
+        if (existingEdges.length === 0) {
+          edgeLabel = 'true';
+        } else if (existingEdges.length === 1) {
+          edgeLabel = 'false';
+        }
+      } else if (agentType === 'LOOP_NODE') {
+        const existingEdges = edges.filter((e: Edge) => e.source === params.source);
+        if (existingEdges.length === 0) {
+          edgeLabel = 'continue';
+        } else if (existingEdges.length === 1) {
+          edgeLabel = 'exit';
+        }
+      }
+
+      if (edgeLabel) {
+        edgeData = { label: edgeLabel };
+      }
+
       // Add edge with enhanced styling using theme colors
       const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
       const newEdge = {
         ...params,
+        id: `e-${params.source}-${params.target}-${Date.now()}`,
         type: 'smoothstep',
-        animated: false, // Don't animate by default
+        label: edgeLabel,
+        data: edgeData,
+        animated: false,
         style: {
           stroke: primaryColor || '#6366f1',
           strokeWidth: 2.5,
@@ -1140,11 +1171,29 @@ if __name__ == "__main__":
           type: 'arrowclosed' as const,
           color: primaryColor || '#6366f1',
         },
+        labelStyle: { fill: primaryColor || '#6366f1', fontWeight: 700 },
+        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.8 },
+        labelBgPadding: [8, 4],
+        labelBgBorderRadius: 4,
       };
-      setEdges((eds) => addEdge(newEdge, eds));
+      setEdges((eds: Edge[]) => addEdge(newEdge, eds));
     },
-    [setEdges]
+    [setEdges, nodes, edges]
   );
+
+  const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    const newLabel = prompt('Enter edge label (e.g., true, false, continue, exit):', edge.label as string || '');
+    if (newLabel !== null) {
+      setEdges((eds: Edge[]) => 
+        eds.map((e: Edge) => 
+          e.id === edge.id 
+            ? { ...e, label: newLabel, data: { ...e.data, label: newLabel } } 
+            : e
+        )
+      );
+      showSuccess('Edge label updated');
+    }
+  }, [setEdges, showSuccess]);
 
   // Handle node drag start - prevent auto-save during drag
   const onNodeDragStart = useCallback(() => {
@@ -1509,7 +1558,7 @@ if __name__ == "__main__":
 
     try {
       const configuration = {
-        nodes: nodes.map(n => {
+        nodes: nodes.map((n: Node) => {
           const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
           const normalizedConfig = {
             ...n.data.config,
@@ -1525,9 +1574,10 @@ if __name__ == "__main__":
             position: n.position
           };
         }),
-        edges: edges.map(e => ({
+        edges: edges.map((e: Edge) => ({
           source: e.source,
-          target: e.target
+          target: e.target,
+          data: e.data
         }))
       };
 
@@ -1615,9 +1665,31 @@ if __name__ == "__main__":
         };
       });
 
+      // Validate and theme edges correctly
+      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#6366f1';
+      const restoredEdges = (config.edges || []).map((e: any) => ({
+        ...e,
+        id: e.id || `e-${e.source}-${e.target}-${Date.now()}`,
+        type: 'smoothstep',
+        label: e.label || e.data?.label,
+        animated: false,
+        style: {
+          stroke: primaryColor,
+          strokeWidth: 2.5,
+        },
+        markerEnd: {
+          type: 'arrowclosed',
+          color: primaryColor,
+        },
+        labelStyle: { fill: primaryColor, fontWeight: 700 },
+        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.8 },
+        labelBgPadding: [8, 4],
+        labelBgBorderRadius: 4,
+      }));
+
       // Always update the canvas state, even for empty workflows
       setNodes(validatedNodes);
-      setEdges(config.edges || []);
+      setEdges(restoredEdges);
       setWorkflowName(workflow.name || 'Untitled Workflow');
       setEditedName(workflow.name || 'Untitled Workflow');
       setCurrentWorkflowId(workflowId);
@@ -1796,6 +1868,7 @@ if __name__ == "__main__":
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onNodeClick={handleNodeClick}
+                  onEdgeDoubleClick={onEdgeDoubleClick}
                   onNodeDragStart={onNodeDragStart}
                   onNodeDragStop={onNodeDragStop}
                   onInit={(instance) => {

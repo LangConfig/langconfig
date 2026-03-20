@@ -107,7 +107,7 @@ export function useVersionManagement({
 
     try {
       const configuration = {
-        nodes: nodes.map(n => {
+        nodes: nodes.map((n: Node) => {
           const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
           const normalizedConfig = {
             ...n.data.config,
@@ -123,9 +123,10 @@ export function useVersionManagement({
             config: normalizedConfig
           };
         }),
-        edges: edges.map(e => ({
+        edges: edges.map((e: Edge) => ({
           source: e.source,
-          target: e.target
+          target: e.target,
+          data: e.data
         }))
       };
 
