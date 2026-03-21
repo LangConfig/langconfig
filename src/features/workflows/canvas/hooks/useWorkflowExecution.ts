@@ -282,8 +282,11 @@ export function useWorkflowExecution({
           }
         })),
         edges: edges.map(e => ({
+          id: e.id,
           source: e.source,
-          target: e.target
+          target: e.target,
+          label: e.label,
+          data: e.data
         }))
       };
 

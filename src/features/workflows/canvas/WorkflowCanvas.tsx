@@ -252,9 +252,13 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     progress: number;
     startTime?: string;
     duration?: string;
-  }>({
-    state: 'idle',
-    progress: 0,
+  }>(() => {
+    // Restore 'running' state if we have a task ID in localStorage (prevent UI appearing 'idle' after reload)
+    const savedTaskId = localStorage.getItem('langconfig-current-task-id');
+    return {
+      state: savedTaskId ? 'running' : 'idle',
+      progress: 0,
+    };
   });
   const [showExecutionDialog, setShowExecutionDialog] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
@@ -1003,19 +1007,40 @@ if __name__ == "__main__":
 
         if (savedNodes && Array.isArray(savedNodes)) {
           // Validate and fix node positions with better defaults
-          validatedNodes = savedNodes.map((node, index) => ({
-            ...node,
-            position: {
-              x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
-                ? node.position.x
-                : 250 + (index * 200), // Better horizontal spacing
-              y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
-                ? node.position.y
-                : 250
-            },
-            width: node.width || 200, // Ensure width is always set
-            height: node.height || 100 // Ensure height is always set
-          }));
+          validatedNodes = savedNodes.map((node, index) => {
+            // Restore agentType from node data or type
+            let restoredAgentType = node.data?.agentType || node.type || 'default';
+            
+            // Normalize informal types (handle variations from older versions or missed persistence)
+            if (restoredAgentType === 'conditional' || node.data?.label === 'Conditional') {
+              restoredAgentType = 'CONDITIONAL_NODE';
+            } else if (restoredAgentType === 'start' || node.data?.label === 'Start') {
+              restoredAgentType = 'START_NODE';
+            } else if (restoredAgentType === 'end' || node.data?.label === 'End') {
+              restoredAgentType = 'END_NODE';
+            } else if (restoredAgentType === 'loop' || node.data?.label === 'Loop') {
+              restoredAgentType = 'LOOP_NODE';
+            }
+            
+            return {
+              ...node,
+              type: 'custom', // LangConfig nodes are always 'custom'
+              data: {
+                ...node.data,
+                agentType: restoredAgentType,
+              },
+              position: {
+                x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
+                  ? node.position.x
+                  : 250 + (index * 200), // Better horizontal spacing
+                y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
+                  ? node.position.y
+                  : 250
+              },
+              width: node.width || 200, // Ensure width is always set
+              height: node.height || 100 // Ensure height is always set
+            };
+          });
           setNodes(validatedNodes);
         }
 
@@ -1075,6 +1100,7 @@ if __name__ == "__main__":
       position: n.position,
       data: {
         label: n.data.label,
+        agentType: n.data.agentType, // CRITICAL: Save agentType to localStorage
         config: n.data.config
       }
     }))),
@@ -1639,14 +1665,28 @@ if __name__ == "__main__":
         // Backend saves nodes with: id, type (from agentType), config, position
         // Frontend needs: id, type='custom', data={label, agentType, model, config}, position
 
+        // Normalize agentType if it's missing or informal (e.g. from an old save)
+        let restoredAgentType = node.type || (node.data?.agentType) || 'default';
+        if (restoredAgentType.toLowerCase() === 'conditional') restoredAgentType = 'CONDITIONAL_NODE';
+        if (restoredAgentType.toLowerCase() === 'loop') restoredAgentType = 'LOOP_NODE';
+        if (restoredAgentType.toLowerCase() === 'start') restoredAgentType = 'START_NODE';
+        if (restoredAgentType.toLowerCase() === 'end') restoredAgentType = 'END_NODE';
+        if (restoredAgentType.toLowerCase() === 'approval') restoredAgentType = 'APPROVAL_NODE';
+        if (restoredAgentType.toLowerCase() === 'tool') restoredAgentType = 'TOOL_NODE';
+
         // If node already has data field (from a previous save), use it
         // Otherwise, reconstruct it from the saved type and config
         const nodeData = node.data || {
           label: node.type ? node.type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Node ${node.id}`,
-          agentType: node.type || 'default',
+          agentType: restoredAgentType,
           model: node.config?.model || 'gpt-4o-mini',
           config: node.config || {}
         };
+        
+        // Final fallback ensure agentType is set correctly in data if we are using existing node.data
+        if (nodeData && !nodeData.agentType) {
+          nodeData.agentType = restoredAgentType;
+        }
 
         return {
           ...node,
@@ -1967,6 +2007,7 @@ if __name__ == "__main__":
                   workflowMetrics={workflowMetrics}
                   userPrompt={userPrompt}
                   workflowName={workflowName}
+                  currentTaskId={currentTaskId}
                 />
 
                 {/* Thinking Toasts - Rendered outside ReactFlow with screen coordinates */}

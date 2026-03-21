@@ -193,34 +193,24 @@ export function useExecutionHandlers({
       const configuration = {
         nodes: nodes.map(n => ({
           id: n.id,
-          type: n.data.label.toLowerCase().replace(/\s+/g, '_'),
+          type: n.data.agentType || n.data.label.toLowerCase().replace(/\s+/g, '_'),
+          data: n.data, // Preserve data for restoration
           config: {
-            model: n.data.config?.model || 'gpt-4o-mini',
-            temperature: n.data.config?.temperature ?? 0.7,
-            system_prompt: n.data.config?.system_prompt || '',
-            // Legacy tools field
-            tools: n.data.config?.tools || [],
-            // CRITICAL: Propagate native_tools and custom_tools for agent factory
-            native_tools: n.data.config?.native_tools || [],
-            cli_tools: n.data.config?.cli_tools || [],
-            custom_tools: n.data.config?.custom_tools || [],
-            enable_model_routing: n.data.config?.enable_model_routing ?? false,
-            enable_parallel_tools: n.data.config?.enable_parallel_tools ?? true,
-            enable_memory: n.data.config?.enable_memory ?? false,
-            enable_rag: n.data.config?.enable_rag ?? false,
-            // Ensure recursion limit is passed if set
-            recursion_limit: n.data.config?.recursion_limit,
-            // Pass pause settings
-            pauseBefore: n.data.config?.pauseBefore ?? false,
-            pauseAfter: n.data.config?.pauseAfter ?? false,
-            // DeepAgent support: pass use_deepagents flag and subagent configs
-            use_deepagents: n.data.config?.use_deepagents ?? false,
-            subagents: n.data.config?.subagents || []
+            ...n.data.config, // Preserve ALL config fields (important for CONDITIONAL_NODE, etc.)
+            model: n.data.config?.model || n.data.model || 'gpt-4o-mini',
+            temperature: n.data.config?.temperature ?? n.data.temperature ?? 0.7,
+            system_prompt: n.data.config?.system_prompt || n.data.system_prompt || '',
+            // Ensure tool fields are explicitly set for backend factory
+            native_tools: n.data.config?.native_tools || n.data.native_tools || [],
+            custom_tools: n.data.config?.custom_tools || n.data.custom_tools || [],
           }
         })),
         edges: edges.map(e => ({
+          id: e.id,
           source: e.source,
-          target: e.target
+          target: e.target,
+          label: e.label,
+          data: e.data
         }))
       };
 

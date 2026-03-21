@@ -124,8 +124,10 @@ export function useVersionManagement({
           };
         }),
         edges: edges.map((e: Edge) => ({
+          id: e.id,
           source: e.source,
           target: e.target,
+          label: e.label,
           data: e.data
         }))
       };
@@ -169,13 +171,19 @@ export function useVersionManagement({
             }
           }
 
+          // Normalize agentType
+          let restoredAgentType = n.data?.agentType || n.type || 'default';
+          if (restoredAgentType === 'conditional' || n.data?.label === 'Conditional') {
+            restoredAgentType = 'CONDITIONAL_NODE';
+          }
+
           return {
             id: n.id,
             type: 'custom',
             position: validPosition,
             data: n.data || {
               label: n.type,
-              agentType: n.type,
+              agentType: restoredAgentType,
               config: n.config || {}
             }
           };
@@ -183,11 +191,13 @@ export function useVersionManagement({
 
         // Restore edges
         const restoredEdges = config.edges.map((e: any) => ({
-          id: `e${e.source}-${e.target}`,
+          id: e.id || `e${e.source}-${e.target}`,
           source: e.source,
           target: e.target,
-          type: 'smoothstep',
-          animated: true
+          label: e.label,
+          data: e.data,
+          type: e.type || 'smoothstep',
+          animated: e.animated ?? true
         }));
 
         setNodes(restoredNodes);

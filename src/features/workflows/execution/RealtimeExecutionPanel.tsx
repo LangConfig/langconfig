@@ -28,6 +28,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { calculateAndFormatCost } from '@/utils/modelPricing';
+import { apiClient } from '@/lib/api-client';
 import { SubAgentPanelStack } from './SubagentPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import { AgentContextViewer } from './AgentContextViewer';
@@ -122,7 +123,7 @@ const ToolCallItem = ({
   progressMessage,
   progressPercent,
   progressStep,
-  progressTotal
+  progressTotal,
 }: {
   status: 'running' | 'completed' | 'error';
   toolName: string;
@@ -353,6 +354,9 @@ export interface RealtimeExecutionPanelProps {
 
   /** Name of the workflow being executed */
   workflowName?: string;
+
+  /** Active task ID for direct cancellation (important after reload) */
+  currentTaskId?: number | null;
 }
 
 interface SectionItem {
@@ -528,6 +532,7 @@ export default function RealtimeExecutionPanel({
   workflowMetrics,
   userPrompt,
   workflowName,
+  currentTaskId,
 }: RealtimeExecutionPanelProps) {
   // Removed visibleCharCount state - we now always show all content immediately
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1315,6 +1320,34 @@ export default function RealtimeExecutionPanel({
           )}
 
           <div className="flex items-center gap-2">
+            {/* Stop Execution Button */}
+            {!isReplay && executionStatus?.state === 'running' && events.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (confirm('Are you sure you want to stop this execution?')) {
+                    try {
+                      // Use currentTaskId from props first (most reliable after reload), 
+                      // fallback to extracting from events
+                      const taskId = currentTaskId || (events[0]?.data as any)?.task_id;
+                      if (taskId) {
+                        await apiClient.cancelTask(taskId);
+                        if (onClose) onClose(); // Auto-close or allow user to see cancelled state
+                      } else {
+                        alert('Could not identify task ID to cancel.');
+                      }
+                    } catch (error) {
+                      console.error('Failed to cancel task:', error);
+                    }
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-white text-red-600 hover:bg-red-50 transition-colors shadow-sm"
+                title="Stop Execution"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>Stop Execution</span>
+              </button>
+            )}
+
             {/* Full Screen Toggle */}
             <button
               onClick={() => setIsFullScreen(!isFullScreen)}

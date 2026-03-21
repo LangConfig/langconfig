@@ -432,6 +432,14 @@ async def execute_code_node(
     except Exception as e:
         logger.error(f"Agent execution failed: {e}", exc_info=True)
         error_msg = f"Execution error: {type(e).__name__} - {e}"
+
+        # CRITICAL: If this is a recursion error, re-raise it to stop the WHOLE workflow.
+        # Otherwise, the workflow might loop and re-execute the agent, leading to infinite token spend.
+        # Check both the type name and the message content for "recursion".
+        if "recursion" in error_msg.lower() or type(e).__name__ == "GraphRecursionError":
+            logger.error(f"🚨 TERMINATING WORKFLOW: Infinite loop/recursion detected in agent '{node_agent_config.get('label', 'unknown')}'")
+            raise e
+
         return {
             **_update_status(WorkflowStatus.FAILED_EXECUTION, "execute_code", error_msg),
             "execution_failed": True
@@ -581,6 +589,12 @@ Your goal is to validate the work done by the previous agent.
     except Exception as e:
         error_msg = f"Critique execution error: {e}"
         logger.error(error_msg, exc_info=True)
+
+        # CRITICAL: If this is a recursion error, re-raise it to stop the WHOLE workflow.
+        if "recursion" in error_msg.lower() or type(e).__name__ == "GraphRecursionError":
+            logger.error(f"🚨 TERMINATING WORKFLOW: Infinite loop/recursion detected in Critic agent")
+            raise e
+
         return {
             **_update_status(
                 WorkflowStatus.FAILED_VALIDATION,

@@ -399,9 +399,9 @@ const WorkflowSettingsDialog = memo(function WorkflowSettingsDialog({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
-                  min="5"
+                  min="1"
                   max="500"
-                  step="5"
+                  step="1"
                   value={globalRecursionLimit}
                   onChange={(e) => setGlobalRecursionLimit(parseInt(e.target.value))}
                   className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-gray-700"
