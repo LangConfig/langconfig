@@ -64,7 +64,7 @@ playwright>=1.48.0  # For browser tool (requires: python -m playwright install c
 # Security & Utilities
 cryptography
 python-dotenv==1.0.1
-httpx==0.27.2
+httpx>=0.28.1
 aiofiles==24.1.0
 python-json-logger
 deepdiff>=7.0.0  # Phase 2: Deep comparison for workflow version diffs

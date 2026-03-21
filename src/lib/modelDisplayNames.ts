@@ -23,7 +23,9 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gemini-3-pro-preview': 'Gemini 3 Pro',
 
   // Google - Gemini 2.5
+  'gemini-2.0-flash': 'Gemini 2.0 Flash',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
 
   // Default
   'none': 'None'
