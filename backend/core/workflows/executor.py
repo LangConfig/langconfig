@@ -46,6 +46,11 @@ logger = logging.getLogger(__name__)
 
 
 # Simple state for user-created workflows
+def pick_last(left: Any, right: Any) -> Any:
+    """Reducer that picks the latest (right) value if it's not None."""
+    return right if right is not None else left
+
+
 class SimpleWorkflowState(TypedDict):
     """
     State for user-created workflows from the frontend.
@@ -71,8 +76,9 @@ class SimpleWorkflowState(TypedDict):
     context_documents: Optional[List[int]]
 
     # Node tracking
-    current_node: Optional[str]
-    last_agent_type: Optional[str]
+    current_node: Annotated[Optional[str], pick_last]
+    agent_type: Annotated[Optional[str], pick_last]
+    last_agent_type: Annotated[Optional[str], pick_last]
 
     # Execution history (with reducer)
     step_history: Annotated[List[Dict[str, Any]], operator.add]
@@ -104,7 +110,7 @@ class SimpleWorkflowState(TypedDict):
     branch_results: Annotated[Dict[str, Any], operator.ior]
 
     # Critic output for conditional routing
-    critic_output: Optional[str]
+    critic_output: Annotated[Optional[str], pick_last]
 
 
 class SimpleWorkflowExecutor:
@@ -283,6 +289,7 @@ class SimpleWorkflowExecutor:
                 "query": query,
                 "context_documents": input_data.get("context_documents"),
                 "current_node": None,
+                "agent_type": None,
                 "last_agent_type": None,
                 "step_history": [],
                 "result": None,
@@ -1868,8 +1875,15 @@ Continue:""")
 
                     # Build DeepAgentConfig from agent_config
                     # Get native_tools from config (these are the main tools like web_search, file ops, etc.)
-                    native_tools_list = agent_config.get("native_tools", [])
-                    logger.info(f"[{display_name}] Native tools for DeepAgent: {native_tools_list}")
+                    native_tools_list = list(agent_config.get("native_tools", []))
+                    # Merge mcp_tools into native_tools for backward compatibility with older workflow versions
+                    mcp_tools_list_extra = agent_config.get("mcp_tools", [])
+                    if mcp_tools_list_extra:
+                        for t_name in mcp_tools_list_extra:
+                            if t_name not in native_tools_list:
+                                native_tools_list.append(t_name)
+
+                    logger.info(f"[{display_name}] Component tools for DeepAgent: {native_tools_list}")
 
                     # Debug: Log raw subagent configuration before Pydantic parsing
                     raw_subagents = agent_config.get("subagents", [])
@@ -2378,9 +2392,11 @@ When your work is complete, deliver the final result and END."""
                                     break
 
                     # Return new messages (reducer will append them)
+                    # Return new messages (reducer will append them)
                     update = {
                         "messages": new_messages,
                         "current_node": node_id,
+                        "agent_type": agent_type,
                         "last_agent_type": agent_type
                     }
 
@@ -2393,6 +2409,7 @@ When your work is complete, deliver the final result and END."""
                     return {
                         "messages": [],  # Always include messages key for reducer
                         "current_node": node_id,
+                        "agent_type": agent_type,
                         "last_agent_type": agent_type
                     }
 
@@ -2401,7 +2418,9 @@ When your work is complete, deliver the final result and END."""
                 return {
                     "messages": [],  # Always include messages key for reducer
                     "error_message": str(e),
-                    "current_node": node_id
+                    "current_node": node_id,
+                    "agent_type": agent_type,
+                    "last_agent_type": agent_type
                 }
 
         return node_executor
