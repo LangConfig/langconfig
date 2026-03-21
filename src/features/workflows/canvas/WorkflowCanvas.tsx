@@ -1495,6 +1495,39 @@ if __name__ == "__main__":
     }
   }, [showExecutionDialog, activeProjectId]);
 
+  // Auto-reset execution status if task completes in backend (polling fallback)
+  useEffect(() => {
+    let interval: any;
+    if (executionStatus.state === 'running' && currentTaskId) {
+      interval = setInterval(async () => {
+        try {
+          const response = await apiClient.getTaskStatus(currentTaskId);
+          const backendStatus = response.data?.status || response.data?.state;
+          
+          if (['completed', 'failed', 'cancelled', 'error', 'success'].includes(backendStatus?.toLowerCase())) {
+            setExecutionStatus(prev => ({
+              ...prev,
+              state: 'idle',
+              progress: 0
+            }));
+            localStorage.removeItem('langconfig-current-task-id');
+            if (interval) clearInterval(interval);
+          }
+        } catch (error) {
+          // If task is not found (404), something went wrong or it was deleted - stop polling
+          if ((error as any).response?.status === 404) {
+             setExecutionStatus(prev => ({ ...prev, state: 'idle' }));
+             localStorage.removeItem('langconfig-current-task-id');
+             if (interval) clearInterval(interval);
+          }
+        }
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [executionStatus.state, currentTaskId]);
+
   // Handle Escape key to close dialog
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

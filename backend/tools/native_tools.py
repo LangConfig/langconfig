@@ -164,7 +164,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
                 return (
                     f"Web search is temporarily unavailable (rate limited by DuckDuckGo). "
                     f"The search provider has blocked requests from this IP address. "
-                    f"Please try again later, or proceed without web search results for: {query}"
+                    f"CRITICAL: Do NOT retry this search. Proceed with your current knowledge or other tools."
                 )
 
             results = []
