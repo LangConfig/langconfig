@@ -205,13 +205,18 @@ async def web_search(query: str, max_results: int = 5) -> str:
                         results.append(text[:300])  # Limit length
 
             if not results:
+                logger.warning(f"No DuckDuckGo results found - attempting Yahoo Search as fallback")
+                yahoo_results = await _yahoo_search_fallback(query, max_results)
+                if yahoo_results:
+                    return yahoo_results
+                
                 logger.warning(f"No results found for: {query}")
                 # Log a sample of the HTML for debugging
                 logger.debug(f"HTML sample (first 1000 chars): {html[:1000]}")
                 return f"No search results found for: {query}. Try a different search query."
 
             # Format results
-            result_text = f"Search results for '{query}':\n\n"
+            result_text = f"Search results for '{query}' (via DuckDuckGo):\n\n"
             for i, snippet in enumerate(results, 1):
                 result_text += f"{i}. {snippet}\n\n"
 
@@ -223,7 +228,52 @@ async def web_search(query: str, max_results: int = 5) -> str:
         return f"Search timed out. Please try again with a simpler query."
     except Exception as e:
         logger.error(f"Web search failed: {e}")
-        return f"Error performing web search: {str(e)}"
+        # Try Yahoo fallback on ANY failure
+        try:
+            return await _yahoo_search_fallback(query, max_results)
+        except Exception as fallback_e:
+            logger.warning(f"Yahoo fallback also failed: {fallback_e}")
+            return f"Error performing web search: {str(e)}"
+
+async def _yahoo_search_fallback(query: str, max_results: int = 5) -> Optional[str]:
+    """Fallback search using Yahoo."""
+    try:
+        from bs4 import BeautifulSoup
+        
+        # Format query for Yahoo
+        formatted_query = query.replace(' ', '+')
+        url = f"https://search.yahoo.com/search?p={formatted_query}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        }
+        
+        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
+            response = await client.get(url)
+            if response.status_code != 200:
+                return None
+                
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            results = []
+            # Yahoo search result snippet class (compText covers description)
+            for div in soup.select('.compText.aAbs, .compText, .st'):
+                snippet = div.get_text().strip()
+                if len(snippet) > 20 and snippet not in results:
+                    results.append(snippet)
+                if len(results) >= max_results:
+                    break
+            
+            if not results:
+                return None
+                
+            result_text = f"Search results for '{query}' (via Yahoo):\n\n"
+            for i, snippet in enumerate(results, 1):
+                result_text += f"{i}. {snippet}\n\n"
+            
+            return result_text
+    except Exception as e:
+        logger.warning(f"Yahoo fallback failed: {e}")
+        return None
 
 
 @tool

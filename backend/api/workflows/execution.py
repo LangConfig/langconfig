@@ -255,8 +255,14 @@ async def execute_workflow_background(
 
         logger.info(f"Task {task_id} used {total_tokens} total tokens")
 
-        # Update task with formatted output, step history, AND workflow summary
-        task.status = TaskStatus.COMPLETED
+        # Update task status based on execution result
+        if result and "error" in result:
+            task.status = TaskStatus.FAILED
+            logger.error(f"Task {task_id} failed: {result['error']}")
+        else:
+            task.status = TaskStatus.COMPLETED
+            logger.info(f"Task {task_id} completed successfully")
+
         task.tokens_used = total_tokens
         if result and "formatted_output" in result:
             formatted_out = result["formatted_output"]
