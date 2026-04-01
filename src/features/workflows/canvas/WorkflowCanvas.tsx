@@ -1906,6 +1906,8 @@ if __name__ == "__main__":
                   workflowMetrics={workflowMetrics}
                   userPrompt={userPrompt}
                   workflowName={workflowName}
+                  currentTaskId={currentTaskId}
+                  onContinueFromTask={handleContinueFromTask}
                 />
 
                 {/* Thinking Toasts - Rendered outside ReactFlow with screen coordinates */}

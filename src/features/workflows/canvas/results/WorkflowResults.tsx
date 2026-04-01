@@ -652,6 +652,43 @@ const WorkflowResults = memo(function WorkflowResults({
                                 </pre>
                               </div>
                             )}
+
+                            {/* Follow Up CTA - Prominent card at bottom of results */}
+                            {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                              <div className="mt-10 mb-4 border-t pt-8" style={{ borderColor: 'var(--color-border-dark)' }}>
+                                <div
+                                  className="rounded-xl p-6 border cursor-pointer transition-all hover:shadow-lg group"
+                                  style={{
+                                    backgroundColor: 'var(--color-panel-dark)',
+                                    borderColor: 'var(--color-border-dark)',
+                                  }}
+                                  onClick={() => onContinueFromTask(displayTask.id)}
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div
+                                      className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                                      style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                                    >
+                                      <span className="material-symbols-outlined text-xl">reply</span>
+                                    </div>
+                                    <div className="flex-1">
+                                      <h4 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                                        Continue this conversation
+                                      </h4>
+                                      <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Send a follow-up prompt with full context from this run
+                                      </p>
+                                    </div>
+                                    <span
+                                      className="material-symbols-outlined text-2xl transition-transform group-hover:translate-x-1"
+                                      style={{ color: 'var(--color-primary)' }}
+                                    >
+                                      arrow_forward
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
