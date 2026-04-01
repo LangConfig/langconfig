@@ -105,6 +105,9 @@ interface WorkflowResultsProps {
   nodeTokenCosts: Record<string, any>;
   expandedToolCalls: Set<number>;
   setExpandedToolCalls: (expanded: Set<number>) => void;
+
+  // Follow-up continuation
+  onContinueFromTask?: (taskId: number) => void;
 }
 
 /**
@@ -150,6 +153,7 @@ const WorkflowResults = memo(function WorkflowResults({
   nodeTokenCosts,
   expandedToolCalls,
   setExpandedToolCalls,
+  onContinueFromTask,
 }: WorkflowResultsProps) {
 
   // Get the task to display (selected or latest)
@@ -398,6 +402,22 @@ const WorkflowResults = memo(function WorkflowResults({
                                   <div>Duration: {Math.round(displayTask.duration_seconds)}s</div>
                                 )}
                               </div>
+                              {/* Continue Conversation Button */}
+                              {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                                <button
+                                  onClick={() => onContinueFromTask(displayTask.id)}
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-all hover:opacity-90 border"
+                                  style={{
+                                    borderColor: 'var(--color-primary)',
+                                    color: 'var(--color-primary)',
+                                  }}
+                                  title="Continue conversation from this task"
+                                >
+                                  <span className="material-symbols-outlined text-base">reply</span>
+                                  <span>Follow Up</span>
+                                </button>
+                              )}
+
                               {/* View Execution Log Button */}
                               <button
                                 onClick={() => {
@@ -563,6 +583,22 @@ const WorkflowResults = memo(function WorkflowResults({
                                     <Eye className="w-4 h-4 text-gray-600 dark:text-text-muted" />
                                   )}
                                 </button>
+
+                                {/* Continue Conversation Button */}
+                                {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                                  <button
+                                    onClick={() => onContinueFromTask(displayTask.id)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90 border"
+                                    style={{
+                                      borderColor: 'var(--color-primary)',
+                                      color: 'var(--color-primary)',
+                                    }}
+                                    title="Continue conversation from this task's output"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">reply</span>
+                                    <span>Follow Up</span>
+                                  </button>
+                                )}
 
                                 {/* View Execution Log Button */}
                                 <button
