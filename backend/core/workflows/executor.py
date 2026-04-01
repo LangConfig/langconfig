@@ -19,7 +19,7 @@ import operator
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, SystemMessage
 
 # Task 3: Node-level caching support
 from core.workflows.cache_config import build_cache_policy, get_cache_backend
@@ -272,11 +272,38 @@ class SimpleWorkflowExecutor:
             # 4. Create initial state with user's query
             query = input_data.get("query", "")
             now = datetime.utcnow()
+
+            # Reconstruct continuation messages if continuing from a previous task
+            continuation_messages = []
+            raw_continuation = input_data.get("continuation_messages", [])
+            if raw_continuation:
+                for msg in raw_continuation:
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if role == "human":
+                        continuation_messages.append(HumanMessage(content=content))
+                    elif role == "ai":
+                        ai_kwargs = {}
+                        if msg.get("tool_calls"):
+                            ai_kwargs["tool_calls"] = msg["tool_calls"]
+                        if msg.get("name"):
+                            ai_kwargs["name"] = msg["name"]
+                        continuation_messages.append(AIMessage(content=content, **ai_kwargs))
+                    elif role == "tool":
+                        continuation_messages.append(ToolMessage(
+                            content=content,
+                            tool_call_id=msg.get("tool_call_id", "unknown"),
+                            name=msg.get("name", "unknown")
+                        ))
+                    elif role == "system":
+                        continuation_messages.append(SystemMessage(content=content))
+                logger.info(f"Injected {len(continuation_messages)} continuation messages into initial state")
+
             initial_state: SimpleWorkflowState = {
                 "workflow_id": workflow.id,
                 "task_id": task_id,
                 "project_id": project_id,
-                "messages": [],
+                "messages": continuation_messages,  # Seed with continuation messages (empty list if new conversation)
                 "query": query,
                 "context_documents": input_data.get("context_documents"),
                 "current_node": None,
