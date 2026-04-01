@@ -184,6 +184,7 @@ export interface ExecutionConfig {
   max_events?: number;
   timeout_seconds?: number;
   context_documents?: any[];
+  continue_from_task_id?: number;  // Follow-up from a previous task
 }
 
 /**
