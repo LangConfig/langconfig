@@ -313,10 +313,14 @@ export function useWorkflowExecution({
           timeout_seconds: executionConfig.timeout_seconds || 600
         },
         context_documents: contextDocuments,
+        continue_from_task_id: executionConfig.continue_from_task_id,
       });
 
       setCurrentTaskId(response.data.task_id);
       localStorage.setItem('langconfig-current-task-id', response.data.task_id.toString());
+
+      // Clear continuation link after execution starts
+      setExecutionConfig(prev => ({ ...prev, continue_from_task_id: undefined }));
 
       setExecutionStatus(prev => ({
         ...prev,
