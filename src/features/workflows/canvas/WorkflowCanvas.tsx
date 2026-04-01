@@ -649,6 +649,17 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   }, [onTabChange]);
 
+  // Handle "Follow Up" from a completed task — opens the execution dialog with continuation
+  const handleContinueFromTask = useCallback((taskId: number) => {
+    setExecutionConfig(prev => ({
+      ...prev,
+      directive: '',
+      prompt: '',
+      continue_from_task_id: taskId,
+    }));
+    setShowExecutionDialog(true);
+  }, []);
+
   // Re-center canvas when execution starts and animate edges
   useEffect(() => {
     if (executionStatus.state === 'running' && reactFlowInstance && nodes.length > 0) {
@@ -1957,6 +1968,7 @@ if __name__ == "__main__":
               nodeTokenCosts={nodeTokenCosts}
               expandedToolCalls={expandedToolCalls}
               setExpandedToolCalls={setExpandedToolCalls}
+              onContinueFromTask={handleContinueFromTask}
             />
           )}
 
@@ -2003,25 +2015,23 @@ if __name__ == "__main__":
             </div>
           )}
 
-          {/* Execution Configuration Dialog */}
-          {activeTab === 'studio' && (
-            <ExecutionConfigDialog
-              isOpen={showExecutionDialog}
-              onClose={() => setShowExecutionDialog(false)}
-              onExecute={executeWorkflow}
-              executionConfig={executionConfig}
-              setExecutionConfig={setExecutionConfig}
-              showAdvancedOptions={showAdvancedOptions}
-              setShowAdvancedOptions={setShowAdvancedOptions}
-              additionalContext={additionalContext}
-              setAdditionalContext={setAdditionalContext}
-              contextDocuments={contextDocuments}
-              setContextDocuments={setContextDocuments}
-              availableDocuments={availableDocuments}
-              attachments={workflowAttachments}
-              onAttachmentsChange={setWorkflowAttachments}
-            />
-          )}
+          {/* Execution Configuration Dialog - available on all tabs for Follow Up */}
+          <ExecutionConfigDialog
+            isOpen={showExecutionDialog}
+            onClose={() => setShowExecutionDialog(false)}
+            onExecute={executeWorkflow}
+            executionConfig={executionConfig}
+            setExecutionConfig={setExecutionConfig}
+            showAdvancedOptions={showAdvancedOptions}
+            setShowAdvancedOptions={setShowAdvancedOptions}
+            additionalContext={additionalContext}
+            setAdditionalContext={setAdditionalContext}
+            contextDocuments={contextDocuments}
+            setContextDocuments={setContextDocuments}
+            availableDocuments={availableDocuments}
+            attachments={workflowAttachments}
+            onAttachmentsChange={setWorkflowAttachments}
+          />
 
           {/* Save Workflow Modal */}
           <SaveWorkflowModal
