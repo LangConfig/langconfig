@@ -22,7 +22,7 @@ interface AvailableWorkflow {
   name: string;
 }
 
-type Tab = 'studio' | 'results' | 'files' | 'artifacts';
+type Tab = 'studio' | 'results' | 'files' | 'artifacts' | 'settings';
 
 interface WorkflowToolbarProps {
   // Workflow name editing
@@ -56,9 +56,6 @@ interface WorkflowToolbarProps {
   versions: WorkflowVersion[];
   loadingVersions: boolean;
   handleLoadVersion: (versionNumber: number) => void;
-
-  // Settings
-  handleToggleSettingsModal: () => void;
 
   // Tabs (merged from TabNavigation)
   activeTab: Tab;
@@ -97,7 +94,6 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
   versions,
   loadingVersions,
   handleLoadVersion,
-  handleToggleSettingsModal,
   activeTab,
   onTabChange,
   taskHistoryCount,
@@ -304,20 +300,7 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
             </div>
           )}
 
-          {/* Settings Button - Icon only */}
-          <button
-            onClick={handleToggleSettingsModal}
-            className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-white/5"
-            style={{ color: 'var(--color-text-muted)' }}
-            title="Workflow Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* Divider */}
-          <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-2" />
-
-          {/* Tabs - After settings */}
+          {/* Tabs */}
           <div className="flex items-center">
             <button onClick={() => onTabChange('studio')} className={tabClass('studio')}>
               Studio
@@ -332,6 +315,10 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
             <button onClick={() => onTabChange('artifacts')} className={`${tabClass('artifacts')} flex items-center gap-1.5`}>
               <Image className="w-4 h-4" />
               Artifacts {artifactsCount > 0 && <span className="text-xs opacity-70">({artifactsCount})</span>}
+            </button>
+            <button onClick={() => onTabChange('settings')} className={`${tabClass('settings')} flex items-center gap-1.5`}>
+              <Settings className="w-4 h-4" />
+              Settings
             </button>
           </div>
         </div>

@@ -40,7 +40,7 @@ import SaveToLibraryModal from './dialogs/SaveToLibraryModal';
 import SaveVersionDialog from './dialogs/SaveVersionDialog';
 import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
 import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
-import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
+import WorkflowSettingsTab from './settings/WorkflowSettingsTab';
 import ChatWarningModal from './dialogs/ChatWarningModal';
 import PresentationDialog from './dialogs/PresentationDialog';
 import WorkflowResults from './results/WorkflowResults';
@@ -239,12 +239,13 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
-  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts'>(() => {
+  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts' | 'settings'>(() => {
     // Initialize from URL hash if present
     const hash = window.location.hash.replace('#', '');
     if (hash === 'results') return 'results';
     if (hash === 'files') return 'files';
     if (hash === 'artifacts') return 'artifacts';
+    if (hash === 'settings') return 'settings';
     return 'studio';
   });
   const [executionStatus, setExecutionStatus] = useState<{
@@ -402,9 +403,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setShowWorkflowDropdown,
     handleToggleWorkflowDropdown,
     handleCloseWorkflowDropdown,
-    showSettingsModal,
-    handleToggleSettingsModal,
-    handleCloseSettingsModal,
     showThinkingStream,
     handleToggleThinkingStream,
     showLiveExecutionPanel,
@@ -643,7 +641,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   }, [nodeExecutionStatuses, nodeTokenCosts, nodeWarnings, setNodes]);
 
   // Update URL when tab changes - delegate to parent component
-  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts') => {
+  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts' | 'settings') => {
     setActiveTab(newTab);
     if (newTab === 'studio' || newTab === 'results') {
       onTabChange?.(newTab);
@@ -1768,7 +1766,6 @@ if __name__ == "__main__":
           versions={versions}
           loadingVersions={loadingVersions}
           handleLoadVersion={handleLoadVersion}
-          handleToggleSettingsModal={handleToggleSettingsModal}
           // Tab props (merged from TabNavigation)
           activeTab={activeTab}
           onTabChange={(tab) => {
@@ -1865,19 +1862,6 @@ if __name__ == "__main__":
                     onRun={handleRun}
                     onStop={handleStop}
                     onClear={handleClear}
-                  />
-
-                  {/* Workflow Settings Modal */}
-                  <WorkflowSettingsDialog
-                    isOpen={showSettingsModal}
-                    onClose={handleCloseSettingsModal}
-                    workflowId={currentWorkflowId ?? undefined}
-                    checkpointerEnabled={checkpointerEnabled}
-                    onToggleCheckpointer={handleToggleCheckpointer}
-                    globalRecursionLimit={globalRecursionLimit}
-                    setGlobalRecursionLimit={setGlobalRecursionLimit}
-                    customOutputPath={customOutputPath}
-                    onOutputPathChange={handleOutputPathChange}
                   />
 
                   {/* MiniMap with enhanced styling - only show when nodes have valid positions */}
@@ -2016,6 +2000,19 @@ if __name__ == "__main__":
                 onCreatePresentation={() => setShowPresentationDialog(true)}
               />
             </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <WorkflowSettingsTab
+              workflowId={currentWorkflowId ?? undefined}
+              checkpointerEnabled={checkpointerEnabled}
+              onToggleCheckpointer={handleToggleCheckpointer}
+              globalRecursionLimit={globalRecursionLimit}
+              setGlobalRecursionLimit={setGlobalRecursionLimit}
+              customOutputPath={customOutputPath}
+              onOutputPathChange={handleOutputPathChange}
+            />
           )}
 
           {/* Execution Configuration Dialog - available on all tabs for Follow Up */}

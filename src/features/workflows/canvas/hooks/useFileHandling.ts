@@ -26,7 +26,7 @@ export interface TaskFile {
 
 interface UseFileHandlingOptions {
   currentTaskId: number | null;
-  activeTab: 'studio' | 'results' | 'files' | 'artifacts';
+  activeTab: 'studio' | 'results' | 'files' | 'artifacts' | 'settings';
   /** Custom output path for workflows that have a custom destination configured */
   customOutputPath?: string | null;
   /** Workflow ID - used to fetch all files for a workflow when no task is selected */
