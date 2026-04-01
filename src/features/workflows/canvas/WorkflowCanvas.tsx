@@ -137,6 +137,7 @@ interface WorkflowExecutionContext {
   max_retries: number;
   max_events?: number;  // Configurable event limit (default: 10k)
   timeout_seconds?: number;  // Configurable timeout (default: 10 min)
+  continue_from_task_id?: number;
 }
 
 // Ref interface for exposing methods to parent components
@@ -2031,6 +2032,7 @@ if __name__ == "__main__":
             availableDocuments={availableDocuments}
             attachments={workflowAttachments}
             onAttachmentsChange={setWorkflowAttachments}
+            continueFromTaskId={executionConfig.continue_from_task_id}
           />
 
           {/* Save Workflow Modal */}
