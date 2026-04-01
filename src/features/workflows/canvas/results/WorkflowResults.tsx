@@ -403,7 +403,7 @@ const WorkflowResults = memo(function WorkflowResults({
                                 )}
                               </div>
                               {/* Continue Conversation Button */}
-                              {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                              {displayTask?.status === 'completed' && onContinueFromTask && (
                                 <button
                                   onClick={() => onContinueFromTask(displayTask.id)}
                                   className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-all hover:opacity-90 border"
@@ -585,7 +585,7 @@ const WorkflowResults = memo(function WorkflowResults({
                                 </button>
 
                                 {/* Continue Conversation Button */}
-                                {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                                {displayTask?.status === 'completed' && onContinueFromTask && (
                                   <button
                                     onClick={() => onContinueFromTask(displayTask.id)}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90 border"
@@ -654,7 +654,7 @@ const WorkflowResults = memo(function WorkflowResults({
                             )}
 
                             {/* Follow Up CTA - Prominent card at bottom of results */}
-                            {displayTask?.status === 'COMPLETED' && onContinueFromTask && (
+                            {displayTask?.status === 'completed' && onContinueFromTask && (
                               <div className="mt-10 mb-4 border-t pt-8" style={{ borderColor: 'var(--color-border-dark)' }}>
                                 <div
                                   className="rounded-xl p-6 border cursor-pointer transition-all hover:shadow-lg group"
