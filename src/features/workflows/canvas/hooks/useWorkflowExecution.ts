@@ -229,8 +229,18 @@ export function useWorkflowExecution({
         }))
       );
     } catch (error: any) {
-      console.error('Failed to cancel workflow:', error);
-      logError('Failed to cancel workflow', error.response?.data?.detail || error.message);
+      console.warn('Failed to cancel workflow or task already finished:', error);
+      
+      // Force UI reset even on error (important if task is already dead on backend)
+      setCurrentTaskId(null);
+      localStorage.removeItem('langconfig-current-task-id');
+      setExecutionStatus({
+        state: 'idle',
+        currentNode: '',
+        progress: 0,
+        startTime: '',
+        duration: '0s',
+      });
     }
   }, [currentTaskId, showWarning, logError, setNodes]);
 
@@ -282,8 +292,11 @@ export function useWorkflowExecution({
           }
         })),
         edges: edges.map(e => ({
+          id: e.id,
           source: e.source,
-          target: e.target
+          target: e.target,
+          label: e.label,
+          data: e.data
         }))
       };
 

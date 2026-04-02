@@ -6,7 +6,7 @@
  */
 
 import { memo, useMemo } from 'react';
-import { Download, Copy, Check, Eye, EyeOff, List, History as HistoryIcon } from 'lucide-react';
+import { Download, Copy, Check, Eye, EyeOff, List, History as HistoryIcon, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -449,6 +449,23 @@ const WorkflowResults = memo(function WorkflowResults({
                                   <span className="text-xs font-mono text-gray-500 dark:text-text-muted">
                                     Task #{displayTask.id}
                                   </span>
+                                  {displayTask?.status === 'running' && (
+                                    <button
+                                      onClick={async () => {
+                                        if (confirm('Are you sure you want to stop this execution?')) {
+                                          try {
+                                            await apiClient.cancelTask(displayTask.id);
+                                          } catch (error) {
+                                            console.error('Failed to cancel task:', error);
+                                          }
+                                        }
+                                      }}
+                                      className="text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
+                                    >
+                                      <XCircle className="w-3 h-3" />
+                                      Stop Execution
+                                    </button>
+                                  )}
                                   {!isLatestTask && (
                                     <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                                       Historical

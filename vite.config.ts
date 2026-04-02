@@ -30,6 +30,7 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
+    allowedHosts: [process.env.VITE_ALLOWED_HOSTS || "localhost"],
     host: host || false,
     hmr: host
       ? {

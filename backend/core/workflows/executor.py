@@ -37,6 +37,22 @@ try:
 except ImportError:
     INTERRUPT_AVAILABLE = False
 
+# Task 3: Node-level caching support
+from core.workflows.cache_config import build_cache_policy, get_cache_backend
+
+# Task 10: Official multi-agent pattern wrappers
+from core.workflows.official_patterns import (
+    build_supervisor_graph, build_swarm_graph,
+    SUPERVISOR_AVAILABLE, SWARM_AVAILABLE,
+)
+
+# Task 14: interrupt()-based HITL for APPROVAL_NODE
+try:
+    from langgraph.types import interrupt, Command
+    INTERRUPT_AVAILABLE = True
+except ImportError:
+    INTERRUPT_AVAILABLE = False
+
 from models.workflow import WorkflowProfile
 from core.workflows.events.emitter import create_execution_callback_handler
 from core.workflows.events.progress import clear_execution_context
@@ -46,6 +62,11 @@ logger = logging.getLogger(__name__)
 
 
 # Simple state for user-created workflows
+def pick_last(left: Any, right: Any) -> Any:
+    """Reducer that picks the latest (right) value if it's not None."""
+    return right if right is not None else left
+
+
 class SimpleWorkflowState(TypedDict):
     """
     State for user-created workflows from the frontend.
@@ -71,8 +92,9 @@ class SimpleWorkflowState(TypedDict):
     context_documents: Optional[List[int]]
 
     # Node tracking
-    current_node: Optional[str]
-    last_agent_type: Optional[str]
+    current_node: Annotated[Optional[str], pick_last]
+    agent_type: Annotated[Optional[str], pick_last]
+    last_agent_type: Annotated[Optional[str], pick_last]
 
     # Execution history (with reducer)
     step_history: Annotated[List[Dict[str, Any]], operator.add]
@@ -102,6 +124,9 @@ class SimpleWorkflowState(TypedDict):
 
     # Deferred node support: parallel branch outputs merged here
     branch_results: Annotated[Dict[str, Any], operator.ior]
+
+    # Critic output for conditional routing
+    critic_output: Annotated[Optional[str], pick_last]
 
 
 class SimpleWorkflowExecutor:
@@ -307,6 +332,7 @@ class SimpleWorkflowExecutor:
                 "query": query,
                 "context_documents": input_data.get("context_documents"),
                 "current_node": None,
+                "agent_type": None,
                 "last_agent_type": None,
                 "step_history": [],
                 "result": None,
@@ -321,6 +347,8 @@ class SimpleWorkflowExecutor:
                 "custom_output_path": getattr(workflow, 'custom_output_path', None),
                 # Deferred node support: parallel branch outputs merged here
                 "branch_results": {},
+                # Critic output for conditional routing
+                "critic_output": None,
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -1691,8 +1719,10 @@ class SimpleWorkflowExecutor:
 
         async def node_executor(state: SimpleWorkflowState, config: dict = None) -> Dict[str, Any]:
             """Execute a single node in the workflow."""
-            # Convert agent_type to human-readable name (e.g., "battlefield_6_expert" -> "Battlefield 6 Expert")
-            display_name = agent_type.replace('_', ' ').title()
+            # Get the actual display label from node_data if available
+            node_label = node_data.get("data", {}).get("label")
+            # Convert agent_type to human-readable name as fallback
+            display_name = node_label or agent_type.replace('_', ' ').title()
             logger.info(f"[{display_name}] Executing agent (node: {node_id})")
 
             try:
@@ -1888,8 +1918,15 @@ Continue:""")
 
                     # Build DeepAgentConfig from agent_config
                     # Get native_tools from config (these are the main tools like web_search, file ops, etc.)
-                    native_tools_list = agent_config.get("native_tools", [])
-                    logger.info(f"[{display_name}] Native tools for DeepAgent: {native_tools_list}")
+                    native_tools_list = list(agent_config.get("native_tools", []))
+                    # Merge mcp_tools into native_tools for backward compatibility with older workflow versions
+                    mcp_tools_list_extra = agent_config.get("mcp_tools", [])
+                    if mcp_tools_list_extra:
+                        for t_name in mcp_tools_list_extra:
+                            if t_name not in native_tools_list:
+                                native_tools_list.append(t_name)
+
+                    logger.info(f"[{display_name}] Component tools for DeepAgent: {native_tools_list}")
 
                     # Debug: Log raw subagent configuration before Pydantic parsing
                     raw_subagents = agent_config.get("subagents", [])
@@ -2384,17 +2421,38 @@ When your work is complete, deliver the final result and END."""
                         content_preview = str(msg.content)[:150] if hasattr(msg, 'content') else 'N/A'
                         logger.debug(f"[{display_name}] Message {i+1}/{len(new_messages)} ({msg_type}): {content_preview}...")
 
+                    # Extract critic output if this is a critic node
+                    # We check if 'critic' is in the display_name or agent_type
+                    current_critic_output = None
+                    if "critic" in display_name.lower() or "critic" in agent_type.lower():
+                        if new_messages:
+                            # Use the last contentful message from the critic
+                            for msg in reversed(new_messages):
+                                content = str(msg.content)
+                                if content and len(content) > 10:
+                                    current_critic_output = content
+                                    logger.info(f"[{display_name}] Captured critic_output: {current_critic_output[:100]}...")
+                                    break
+
                     # Return new messages (reducer will append them)
-                    return {
+                    # Return new messages (reducer will append them)
+                    update = {
                         "messages": new_messages,
                         "current_node": node_id,
+                        "agent_type": agent_type,
                         "last_agent_type": agent_type
                     }
+
+                    if current_critic_output:
+                        update["critic_output"] = current_critic_output
+
+                    return update
                 else:
                     logger.warning(f"[Node: {node_id}] No messages to process")
                     return {
                         "messages": [],  # Always include messages key for reducer
                         "current_node": node_id,
+                        "agent_type": agent_type,
                         "last_agent_type": agent_type
                     }
 
@@ -2403,7 +2461,9 @@ When your work is complete, deliver the final result and END."""
                 return {
                     "messages": [],  # Always include messages key for reducer
                     "error_message": str(e),
-                    "current_node": node_id
+                    "current_node": node_id,
+                    "agent_type": agent_type,
+                    "last_agent_type": agent_type
                 }
 
         return node_executor

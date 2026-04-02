@@ -64,7 +64,10 @@ export function useUIToggles(): UseUITogglesReturn {
   }, []);
 
   // Live execution panel
-  const [showLiveExecutionPanel, setShowLiveExecutionPanel] = useState(false);
+  const [showLiveExecutionPanel, setShowLiveExecutionPanel] = useState(() => {
+    // Restore panel visibility if we have an active task
+    return localStorage.getItem('langconfig-current-task-id') !== null;
+  });
   const handleToggleLiveExecutionPanel = useCallback(() => {
     setShowLiveExecutionPanel(prev => !prev);
   }, []);

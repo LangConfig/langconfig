@@ -47,7 +47,7 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Presentation Generation** - Export workflow artifacts to Google Slides, PDF, or Reveal.js presentations
 - **Export to Code** - Generate standalone Python packages with Streamlit UI, FastAPI server, or raw LangGraph code
 - **LangGraph Subgraph Streaming** - Nested subgraph execution with real-time SSE streaming
-- **Human-in-the-Loop** - Approval checkpoints using LangGraph's `interrupt()` for critical decisions
+- **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
 - **Local-First** - All data stays on your machine
 
@@ -167,7 +167,6 @@ langconfig/
 │   │   ├── triggers/         # Event-driven workflow triggers
 │   │   ├── webhooks/         # Incoming webhook endpoints
 │   │   ├── presentations/    # Presentation generation (Slides, PDF, Reveal.js)
-│   │   ├── models/           # Model capabilities & profiles
 │   │   └── settings/         # API keys & configuration
 │   ├── core/
 │   │   ├── workflows/        # LangGraph orchestration engine (caching, deferred nodes, supervisor/swarm)

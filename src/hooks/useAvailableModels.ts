@@ -97,7 +97,9 @@ export function useAvailableModels(
         'gemini-3-pro-preview': { name: 'Gemini 3 Pro', provider: 'Google' },
 
         // Google - Gemini 2.5
+        'gemini-2.0-flash': { name: 'Gemini 2.0 Flash', provider: 'Google' },
         'gemini-2.5-flash': { name: 'Gemini 2.5 Flash', provider: 'Google' },
+        'gemini-2.5-flash-lite': { name: 'Gemini 2.5 Flash-Lite', provider: 'Google' },
       };
 
       // Convert cloud models to ModelOption format

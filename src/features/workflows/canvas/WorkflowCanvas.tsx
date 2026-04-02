@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useCallback, useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -254,9 +254,13 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     progress: number;
     startTime?: string;
     duration?: string;
-  }>({
-    state: 'idle',
-    progress: 0,
+  }>(() => {
+    // Restore 'running' state if we have a task ID in localStorage (prevent UI appearing 'idle' after reload)
+    const savedTaskId = localStorage.getItem('langconfig-current-task-id');
+    return {
+      state: savedTaskId ? 'running' : 'idle',
+      progress: 0,
+    };
   });
   const [showExecutionDialog, setShowExecutionDialog] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
@@ -1013,19 +1017,40 @@ if __name__ == "__main__":
 
         if (savedNodes && Array.isArray(savedNodes)) {
           // Validate and fix node positions with better defaults
-          validatedNodes = savedNodes.map((node, index) => ({
-            ...node,
-            position: {
-              x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
-                ? node.position.x
-                : 250 + (index * 200), // Better horizontal spacing
-              y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
-                ? node.position.y
-                : 250
-            },
-            width: node.width || 200, // Ensure width is always set
-            height: node.height || 100 // Ensure height is always set
-          }));
+          validatedNodes = savedNodes.map((node, index) => {
+            // Restore agentType from node data or type
+            let restoredAgentType = node.data?.agentType || node.type || 'default';
+            
+            // Normalize informal types (handle variations from older versions or missed persistence)
+            if (restoredAgentType === 'conditional' || node.data?.label === 'Conditional') {
+              restoredAgentType = 'CONDITIONAL_NODE';
+            } else if (restoredAgentType === 'start' || node.data?.label === 'Start') {
+              restoredAgentType = 'START_NODE';
+            } else if (restoredAgentType === 'end' || node.data?.label === 'End') {
+              restoredAgentType = 'END_NODE';
+            } else if (restoredAgentType === 'loop' || node.data?.label === 'Loop') {
+              restoredAgentType = 'LOOP_NODE';
+            }
+            
+            return {
+              ...node,
+              type: 'custom', // LangConfig nodes are always 'custom'
+              data: {
+                ...node.data,
+                agentType: restoredAgentType,
+              },
+              position: {
+                x: typeof node.position?.x === 'number' && !isNaN(node.position.x)
+                  ? node.position.x
+                  : 250 + (index * 200), // Better horizontal spacing
+                y: typeof node.position?.y === 'number' && !isNaN(node.position.y)
+                  ? node.position.y
+                  : 250
+              },
+              width: node.width || 200, // Ensure width is always set
+              height: node.height || 100 // Ensure height is always set
+            };
+          });
           setNodes(validatedNodes);
         }
 
@@ -1085,6 +1110,7 @@ if __name__ == "__main__":
       position: n.position,
       data: {
         label: n.data.label,
+        agentType: n.data.agentType, // CRITICAL: Save agentType to localStorage
         config: n.data.config
       }
     }))),
@@ -1136,12 +1162,43 @@ if __name__ == "__main__":
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // Find source node to check for control types
+      const sourceNode = nodes.find((n: Node) => n.id === params.source);
+      const agentType = sourceNode?.data?.agentType;
+      
+      // Determine default label based on existing edges from this node
+      let edgeLabel = undefined;
+      let edgeData = undefined;
+      
+      if (agentType === 'CONDITIONAL_NODE') {
+        const existingEdges = edges.filter((e: Edge) => e.source === params.source);
+        if (existingEdges.length === 0) {
+          edgeLabel = 'true';
+        } else if (existingEdges.length === 1) {
+          edgeLabel = 'false';
+        }
+      } else if (agentType === 'LOOP_NODE') {
+        const existingEdges = edges.filter((e: Edge) => e.source === params.source);
+        if (existingEdges.length === 0) {
+          edgeLabel = 'continue';
+        } else if (existingEdges.length === 1) {
+          edgeLabel = 'exit';
+        }
+      }
+
+      if (edgeLabel) {
+        edgeData = { label: edgeLabel };
+      }
+
       // Add edge with enhanced styling using theme colors
       const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
       const newEdge = {
         ...params,
+        id: `e-${params.source}-${params.target}-${Date.now()}`,
         type: 'smoothstep',
-        animated: false, // Don't animate by default
+        label: edgeLabel,
+        data: edgeData,
+        animated: false,
         style: {
           stroke: primaryColor || '#6366f1',
           strokeWidth: 2.5,
@@ -1150,11 +1207,29 @@ if __name__ == "__main__":
           type: 'arrowclosed' as const,
           color: primaryColor || '#6366f1',
         },
+        labelStyle: { fill: primaryColor || '#6366f1', fontWeight: 700 },
+        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.8 },
+        labelBgPadding: [8, 4],
+        labelBgBorderRadius: 4,
       };
-      setEdges((eds) => addEdge(newEdge, eds));
+      setEdges((eds: Edge[]) => addEdge(newEdge, eds));
     },
-    [setEdges]
+    [setEdges, nodes, edges]
   );
+
+  const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    const newLabel = prompt('Enter edge label (e.g., true, false, continue, exit):', edge.label as string || '');
+    if (newLabel !== null) {
+      setEdges((eds: Edge[]) => 
+        eds.map((e: Edge) => 
+          e.id === edge.id 
+            ? { ...e, label: newLabel, data: { ...e.data, label: newLabel } } 
+            : e
+        )
+      );
+      showSuccess('Edge label updated');
+    }
+  }, [setEdges, showSuccess]);
 
   // Handle node drag start - prevent auto-save during drag
   const onNodeDragStart = useCallback(() => {
@@ -1430,6 +1505,39 @@ if __name__ == "__main__":
     }
   }, [showExecutionDialog, activeProjectId]);
 
+  // Auto-reset execution status if task completes in backend (polling fallback)
+  useEffect(() => {
+    let interval: any;
+    if (executionStatus.state === 'running' && currentTaskId) {
+      interval = setInterval(async () => {
+        try {
+          const response = await apiClient.getTaskStatus(currentTaskId);
+          const backendStatus = response.data?.status || response.data?.state;
+          
+          if (['completed', 'failed', 'cancelled', 'error', 'success'].includes(backendStatus?.toLowerCase())) {
+            setExecutionStatus(prev => ({
+              ...prev,
+              state: 'idle',
+              progress: 0
+            }));
+            localStorage.removeItem('langconfig-current-task-id');
+            if (interval) clearInterval(interval);
+          }
+        } catch (error) {
+          // If task is not found (404), something went wrong or it was deleted - stop polling
+          if ((error as any).response?.status === 404) {
+             setExecutionStatus(prev => ({ ...prev, state: 'idle' }));
+             localStorage.removeItem('langconfig-current-task-id');
+             if (interval) clearInterval(interval);
+          }
+        }
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [executionStatus.state, currentTaskId]);
+
   // Handle Escape key to close dialog
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -1519,7 +1627,7 @@ if __name__ == "__main__":
 
     try {
       const configuration = {
-        nodes: nodes.map(n => {
+        nodes: nodes.map((n: Node) => {
           const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
           const normalizedConfig = {
             ...n.data.config,
@@ -1535,9 +1643,10 @@ if __name__ == "__main__":
             position: n.position
           };
         }),
-        edges: edges.map(e => ({
+        edges: edges.map((e: Edge) => ({
           source: e.source,
-          target: e.target
+          target: e.target,
+          data: e.data
         }))
       };
 
@@ -1599,14 +1708,28 @@ if __name__ == "__main__":
         // Backend saves nodes with: id, type (from agentType), config, position
         // Frontend needs: id, type='custom', data={label, agentType, model, config}, position
 
+        // Normalize agentType if it's missing or informal (e.g. from an old save)
+        let restoredAgentType = node.type || (node.data?.agentType) || 'default';
+        if (restoredAgentType.toLowerCase() === 'conditional') restoredAgentType = 'CONDITIONAL_NODE';
+        if (restoredAgentType.toLowerCase() === 'loop') restoredAgentType = 'LOOP_NODE';
+        if (restoredAgentType.toLowerCase() === 'start') restoredAgentType = 'START_NODE';
+        if (restoredAgentType.toLowerCase() === 'end') restoredAgentType = 'END_NODE';
+        if (restoredAgentType.toLowerCase() === 'approval') restoredAgentType = 'APPROVAL_NODE';
+        if (restoredAgentType.toLowerCase() === 'tool') restoredAgentType = 'TOOL_NODE';
+
         // If node already has data field (from a previous save), use it
         // Otherwise, reconstruct it from the saved type and config
         const nodeData = node.data || {
           label: node.type ? node.type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Node ${node.id}`,
-          agentType: node.type || 'default',
+          agentType: restoredAgentType,
           model: node.config?.model || 'gpt-4o-mini',
           config: node.config || {}
         };
+        
+        // Final fallback ensure agentType is set correctly in data if we are using existing node.data
+        if (nodeData && !nodeData.agentType) {
+          nodeData.agentType = restoredAgentType;
+        }
 
         return {
           ...node,
@@ -1625,9 +1748,31 @@ if __name__ == "__main__":
         };
       });
 
+      // Validate and theme edges correctly
+      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#6366f1';
+      const restoredEdges = (config.edges || []).map((e: any) => ({
+        ...e,
+        id: e.id || `e-${e.source}-${e.target}-${Date.now()}`,
+        type: 'smoothstep',
+        label: e.label || e.data?.label,
+        animated: false,
+        style: {
+          stroke: primaryColor,
+          strokeWidth: 2.5,
+        },
+        markerEnd: {
+          type: 'arrowclosed',
+          color: primaryColor,
+        },
+        labelStyle: { fill: primaryColor, fontWeight: 700 },
+        labelBgStyle: { fill: '#ffffff', fillOpacity: 0.8 },
+        labelBgPadding: [8, 4],
+        labelBgBorderRadius: 4,
+      }));
+
       // Always update the canvas state, even for empty workflows
       setNodes(validatedNodes);
-      setEdges(config.edges || []);
+      setEdges(restoredEdges);
       setWorkflowName(workflow.name || 'Untitled Workflow');
       setEditedName(workflow.name || 'Untitled Workflow');
       setCurrentWorkflowId(workflowId);
@@ -1805,6 +1950,7 @@ if __name__ == "__main__":
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onNodeClick={handleNodeClick}
+                  onEdgeDoubleClick={onEdgeDoubleClick}
                   onNodeDragStart={onNodeDragStart}
                   onNodeDragStop={onNodeDragStop}
                   onInit={(instance) => {

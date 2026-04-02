@@ -151,6 +151,7 @@ export function useWorkflowPersistence({
         const nativeTools = n.data.config?.native_tools || n.data.config?.nativeTools || [];
 
         const nodeConfig = {
+          ...n.data.config, // Preserve all existing config fields (important for CONDITIONAL_NODE, etc.)
           model: n.data.config?.model || 'gpt-4o-mini',
           temperature: n.data.config?.temperature ?? 0.7,
           system_prompt: n.data.config?.system_prompt || '',
@@ -180,8 +181,11 @@ export function useWorkflowPersistence({
         };
       }),
       edges: edges.map(e => ({
+        id: e.id,
         source: e.source,
-        target: e.target
+        target: e.target,
+        label: e.label,
+        data: e.data
       }))
     };
 

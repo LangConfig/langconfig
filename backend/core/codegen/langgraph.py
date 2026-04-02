@@ -103,7 +103,8 @@ class LangGraphCodeGenerator:
             blueprint_edge = {
                 'source_id': edge.get('source'),
                 'target_id': edge.get('target'),
-                'edge_type': edge.get('type', 'DIRECT').upper()
+                'edge_type': edge.get('type', 'DIRECT').upper(),
+                'label': edge.get('label') or edge.get('data', {}).get('label')
             }
 
             blueprint_edges.append(blueprint_edge)
@@ -241,13 +242,16 @@ class LangGraphCodeGenerator:
             '    workflow_status: str',
             '    iteration_count: int',
             '    step_history: Annotated[List[str], operator.add]',
+            '    conditional_route: Optional[str] # For conditional nodes'
         ]
 
         # Add artifact fields from nodes
         for node in nodes:
             node_id = node.get('node_id', 'unknown')
-            sanitized = self._sanitize_name(node_id)
-            state_lines.append(f'    {sanitized}_output: str')
+            node_type = node.get('node_type')
+            if node_type != 'CONDITIONAL_NODE': # Conditional nodes don't have direct output fields
+                sanitized = self._sanitize_name(node_id)
+                state_lines.append(f'    {sanitized}_output: str')
 
         return '\n'.join(state_lines)
 
@@ -296,12 +300,10 @@ class LangGraphCodeGenerator:
         """Generate a single node method."""
         node_id = node.get('node_id', 'unknown')
         display_name = node.get('display_name', node_id)
-        metadata = node.get('metadata', {})
-        model = metadata.get('model', 'gpt-4o')
-        system_prompt = metadata.get('system_prompt', 'You are a helpful AI assistant.')
+        node_type = node.get('node_type')
+        config = node.get('metadata', {})
 
         method_name = f'node_{self._sanitize_name(node_id)}'
-        output_field = f'{self._sanitize_name(node_id)}_output'
 
         lines = [
             f'async def {method_name}(self, state: WorkflowState, context: WorkflowContext) -> Dict[str, Any]:',
@@ -310,16 +312,41 @@ class LangGraphCodeGenerator:
             '    """',
             f'    logger.info(f"[{display_name}] Starting...")',
             '    ',
-            f'    # TODO: Implement {display_name} logic',
-            f'    output = f"Output from {display_name}"',
-            '    ',
-            '    return {',
-            f'        "{output_field}": output,',
-            f'        "workflow_status": "{display_name}",',
-            '        "iteration_count": state.get("iteration_count", 0) + 1,',
-            f'        "step_history": [f"{display_name} completed"],',
-            '    }',
         ]
+
+        if node_type == 'CONDITIONAL_NODE':
+            condition = config.get('condition', 'True')
+            lines.extend([
+                f'    # Evaluate condition: {condition}',
+                f'    condition_expr = "{condition}"',
+                '    try:',
+                '        # Safe evaluation of basic conditions',
+                '        result = eval(condition_expr, {"state": state, "len": len, "str": str, "int": int, "bool": bool})',
+                '        route = "true" if bool(result) else "false"',
+                '        logger.info(f"[{display_name}] Condition evaluated to: {{route}}")',
+                '    except Exception as e:',
+                '        logger.error(f"[{display_name}] Condition evaluation failed: {{e}}")',
+                '        route = "false"',
+                '    ',
+                '    return {',
+                '        "conditional_route": route,',
+                '        "iteration_count": state.get("iteration_count", 0) + 1,',
+                f'        "step_history": [f"{display_name} evaluated to {{route}}"],',
+                '    }',
+            ])
+        else:
+            output_field = f'{self._sanitize_name(node_id)}_output'
+            lines.extend([
+                f'    # TODO: Implement {display_name} logic using {config.get("model", "default model")}',
+                f'    output = f"Output from {display_name}"',
+                '    ',
+                '    return {',
+                f'        "{output_field}": output,',
+                f'        "workflow_status": "{display_name}",',
+                '        "iteration_count": state.get("iteration_count", 0) + 1,',
+                f'        "step_history": [f"{display_name} completed"],',
+                '    }',
+            ])
 
         return '\n'.join(lines)
 
@@ -350,14 +377,56 @@ class LangGraphCodeGenerator:
 
         lines.append('    ')
 
-        # Add edges
+        # Group edges by source to identify conditional routing
+        source_to_edges = {}
         for edge in edges:
             source = edge.get('source_id')
-            target = edge.get('target_id')
-            if target and target != '__END__':
-                lines.append(f'    workflow.add_edge("{source}", "{target}")')
+            if source not in source_to_edges:
+                source_to_edges[source] = []
+            source_to_edges[source].append(edge)
+
+        # Map nodes by ID for lookups
+        nodes_by_id = {n.get('node_id'): n for n in nodes}
+
+        # Add edges, handling conditional nodes specially
+        processed_sources = set()
+        for edge in edges:
+            source_id = edge.get('source_id')
+            if source_id in processed_sources:
+                continue
+            
+            source_node = nodes_by_id.get(source_id, {})
+            source_type = source_node.get('node_type')
+            
+            if source_type == 'CONDITIONAL_NODE':
+                # Create routing map
+                source_edges = source_to_edges.get(source_id, [])
+                routing_entries = []
+                for se in source_edges:
+                    label = se.get('label') or 'default'
+                    target = se.get('target_id')
+                    target_val = f'"{target}"' if target and target != '__END__' else 'END'
+                    routing_entries.append(f'            "{label}": {target_val}')
+                
+                routing_map_str = ',\n'.join(routing_entries)
+                lines.extend([
+                    f'    # Conditional routing for {source_id}',
+                    f'    def router_{self._sanitize_name(source_id)}(state: WorkflowState) -> str:',
+                    f'        route_key = state.get("conditional_route", "default")',
+                    f'        mapping = {{',
+                    f'{routing_map_str}',
+                    f'        }}',
+                    f'        return mapping.get(route_key, mapping.get("default", END))',
+                    '',
+                    f'    workflow.add_conditional_edges("{source_id}", router_{self._sanitize_name(source_id)})'
+                ])
+                processed_sources.add(source_id)
             else:
-                lines.append(f'    workflow.add_edge("{source}", END)')
+                target = edge.get('target_id')
+                if target and target != '__END__':
+                    lines.append(f'    workflow.add_edge("{source_id}", "{target}")')
+                else:
+                    lines.append(f'    workflow.add_edge("{source_id}", END)')
 
         lines.extend([
             '    ',

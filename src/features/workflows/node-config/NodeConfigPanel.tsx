@@ -169,7 +169,7 @@ const NodeConfigPanel = ({
   const [conditionExpression, setConditionExpression] = useState('');
   const [maxLoopIterations, setMaxLoopIterations] = useState(10);
   const [loopExitCondition, setLoopExitCondition] = useState('');
-  const [recursionLimit, setRecursionLimit] = useState(75);
+  const [recursionLimit, setRecursionLimit] = useState(50);
 
   // Context Window Management (LangChain 1.1)
   const [contextStrategy, setContextStrategy] = useState<'smart' | 'recent' | 'summary' | 'quarantine' | 'full'>('smart');
@@ -493,7 +493,7 @@ const NodeConfigPanel = ({
       setConditionExpression(selectedNode.condition || nodeConfig.condition || '');
       setMaxLoopIterations(selectedNode.max_iterations || nodeConfig.max_iterations || 10);
       setLoopExitCondition(selectedNode.exit_condition || nodeConfig.exit_condition || '');
-      setRecursionLimit(selectedNode.recursion_limit || nodeConfig.recursion_limit || 300);
+      setRecursionLimit(selectedNode?.recursion_limit || nodeConfig?.recursion_limit || 100);
       setEnableParallelTools((selectedNode as any).enable_parallel_tools ?? nodeConfig.enable_parallel_tools ?? true);
 
       // Context Window Management (LangChain 1.1)
@@ -1249,7 +1249,7 @@ const NodeConfigPanel = ({
                 }}
               />
               <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted, #6b7280)' }}>
-                {config.system_prompt.length} characters
+                {config?.system_prompt?.length || 0} characters
               </p>
 
               {/* Recursion Limit Slider */}
@@ -1262,9 +1262,9 @@ const NodeConfigPanel = ({
                 </label>
                 <input
                   type="range"
-                  min="10"
+                  min="1"
                   max="200"
-                  step="5"
+                  step="1"
                   value={recursionLimit}
                   onChange={(e) => {
                     const newLimit = parseInt(e.target.value);
@@ -1282,7 +1282,7 @@ const NodeConfigPanel = ({
                   style={{ accentColor: 'var(--color-primary)' }}
                 />
                 <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                  <span>10</span>
+                  <span>1</span>
                   <span>100</span>
                   <span>200</span>
                 </div>

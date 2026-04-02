@@ -412,14 +412,17 @@ def _is_retryable_error(error_message: str) -> bool:
         "permission denied",
         "authentication failed",
         "invalid configuration",
-        "malformed request"
+        "malformed request",
+        "recursion",
+        "recursionlimit",
+        "graphrecursionerror"
     ]
     
     for keyword in non_retryable_keywords:
         if keyword in error_lower:
             return False
     
-    # Retryable errors  
+    # Retryable errors (transient infrastructure issues)
     retryable_keywords = [
         "timeout",
         "connection",
@@ -427,7 +430,9 @@ def _is_retryable_error(error_message: str) -> bool:
         "temporary",
         "unavailable",
         "busy",
-        "overloaded"
+        "overloaded",
+        "rate limit",
+        "429"
     ]
     
     for keyword in retryable_keywords:
