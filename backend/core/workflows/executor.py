@@ -347,8 +347,6 @@ class SimpleWorkflowExecutor:
                 "custom_output_path": getattr(workflow, 'custom_output_path', None),
                 # Deferred node support: parallel branch outputs merged here
                 "branch_results": {},
-                # Critic output for conditional routing
-                "critic_output": None,
             }
 
             # 5. Create callback handler for detailed agent logging
