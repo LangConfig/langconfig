@@ -85,8 +85,8 @@ export default function WorkflowRunHistory({
   // Filter tasks
   const filteredTasks = tasks.filter(task => {
     if (filter === 'all') return true;
-    if (filter === 'completed') return task.status === 'COMPLETED';
-    if (filter === 'failed') return task.status === 'FAILED';
+    if (filter === 'completed') return task.status === 'completed';
+    if (filter === 'failed') return task.status === 'failed';
     return true;
   });
 
@@ -119,7 +119,7 @@ export default function WorkflowRunHistory({
   // Get status icon and color
   const getStatusDisplay = (status: string) => {
     switch (status) {
-      case 'COMPLETED':
+      case 'completed':
         return {
           icon: <CheckCircle className="w-5 h-5" />,
           color: 'text-green-600 dark:text-green-400',
@@ -127,7 +127,7 @@ export default function WorkflowRunHistory({
           border: 'border-green-200 dark:border-green-800/30',
           label: 'Completed'
         };
-      case 'FAILED':
+      case 'failed':
         return {
           icon: <XCircle className="w-5 h-5" />,
           color: 'text-red-600 dark:text-red-400',
@@ -135,7 +135,7 @@ export default function WorkflowRunHistory({
           border: 'border-red-200 dark:border-red-800/30',
           label: 'Failed'
         };
-      case 'IN_PROGRESS':
+      case 'in_progress':
         return {
           icon: <AlertCircle className="w-5 h-5 animate-pulse" />,
           color: 'text-blue-600 dark:text-blue-400',
@@ -213,7 +213,7 @@ export default function WorkflowRunHistory({
               : 'border-transparent text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
           }`}
         >
-          Completed ({tasks.filter(t => t.status === 'COMPLETED').length})
+          Completed ({tasks.filter(t => t.status === 'completed').length})
         </button>
         <button
           onClick={() => setFilter('failed')}
@@ -223,7 +223,7 @@ export default function WorkflowRunHistory({
               : 'border-transparent text-gray-600 dark:text-text-muted hover:text-gray-900 dark:hover:text-white'
           }`}
         >
-          Failed ({tasks.filter(t => t.status === 'FAILED').length})
+          Failed ({tasks.filter(t => t.status === 'failed').length})
         </button>
       </div>
 

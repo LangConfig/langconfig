@@ -14,12 +14,6 @@ interface UseUITogglesReturn {
   handleToggleWorkflowDropdown: () => void;
   handleCloseWorkflowDropdown: () => void;
 
-  // Settings modal
-  showSettingsModal: boolean;
-  setShowSettingsModal: React.Dispatch<React.SetStateAction<boolean>>;
-  handleToggleSettingsModal: () => void;
-  handleCloseSettingsModal: () => void;
-
   // Thinking stream
   showThinkingStream: boolean;
   setShowThinkingStream: React.Dispatch<React.SetStateAction<boolean>>;
@@ -61,15 +55,6 @@ export function useUIToggles(): UseUITogglesReturn {
   }, []);
   const handleCloseWorkflowDropdown = useCallback(() => {
     setShowWorkflowDropdown(false);
-  }, []);
-
-  // Settings modal
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const handleToggleSettingsModal = useCallback(() => {
-    setShowSettingsModal(prev => !prev);
-  }, []);
-  const handleCloseSettingsModal = useCallback(() => {
-    setShowSettingsModal(false);
   }, []);
 
   // Thinking stream
@@ -114,10 +99,6 @@ export function useUIToggles(): UseUITogglesReturn {
     setShowWorkflowDropdown,
     handleToggleWorkflowDropdown,
     handleCloseWorkflowDropdown,
-    showSettingsModal,
-    setShowSettingsModal,
-    handleToggleSettingsModal,
-    handleCloseSettingsModal,
     showThinkingStream,
     setShowThinkingStream,
     handleToggleThinkingStream,

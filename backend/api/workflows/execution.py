@@ -79,6 +79,7 @@ class WorkflowExecuteRequest(BaseModel):
     context_documents: Optional[list[int]] = None
     # File attachments (images, documents) as base64
     attachments: Optional[List[Dict[str, Any]]] = None
+    continue_from_task_id: Optional[int] = None  # Follow-up from a previous task
 
 
 class WorkflowExecuteResponse(BaseModel):
@@ -115,6 +116,16 @@ async def execute_workflow(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    # Validate continuation task if provided
+    if request.continue_from_task_id:
+        continuation_task = db.query(Task).filter(Task.id == request.continue_from_task_id).first()
+        if not continuation_task:
+            raise HTTPException(status_code=404, detail="Continuation task not found")
+        if continuation_task.status != TaskStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="Can only continue from a completed task")
+        if not continuation_task.result or not continuation_task.result.get("agent_messages"):
+            raise HTTPException(status_code=400, detail="Continuation task has no message history")
+
     # Create task record (project_id is optional for standalone workflows)
     # Extract user's actual input from the run workflow modal
     user_input = request.input_data.get("query") or request.input_data.get("task") or request.input_data.get("input") or f"Workflow: {workflow.name}"
@@ -139,7 +150,8 @@ async def execute_workflow(
         workflow_id=request.workflow_id,
         input_data=request.input_data,
         context_documents=request.context_documents,
-        attachments=request.attachments
+        attachments=request.attachments,
+        continue_from_task_id=request.continue_from_task_id
     )
 
     return WorkflowExecuteResponse(
@@ -155,7 +167,8 @@ async def execute_workflow_background(
     workflow_id: int,
     input_data: Dict[str, Any],
     context_documents: Optional[list[int]] = None,
-    attachments: Optional[List[Dict[str, Any]]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    continue_from_task_id: Optional[int] = None
 ):
     """
     Background task to execute a user-created workflow.
@@ -169,6 +182,13 @@ async def execute_workflow_background(
 
     # Register task for cancellation tracking
     cancellation_event = await registry.register_task(task_id)
+
+    # Load continuation messages if continuing from a previous task
+    if continue_from_task_id:
+        continuation_task = db.query(Task).filter(Task.id == continue_from_task_id).first()
+        if continuation_task and continuation_task.result:
+            input_data["continuation_messages"] = continuation_task.result.get("agent_messages", [])
+            logger.info(f"Loaded {len(input_data['continuation_messages'])} messages from task {continue_from_task_id} for continuation")
 
     try:
         # Get task and workflow

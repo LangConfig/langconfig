@@ -40,7 +40,7 @@ import SaveToLibraryModal from './dialogs/SaveToLibraryModal';
 import SaveVersionDialog from './dialogs/SaveVersionDialog';
 import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
 import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
-import WorkflowSettingsDialog from './dialogs/WorkflowSettingsDialog';
+import WorkflowSettingsTab from './settings/WorkflowSettingsTab';
 import ChatWarningModal from './dialogs/ChatWarningModal';
 import PresentationDialog from './dialogs/PresentationDialog';
 import WorkflowResults from './results/WorkflowResults';
@@ -137,6 +137,7 @@ interface WorkflowExecutionContext {
   max_retries: number;
   max_events?: number;  // Configurable event limit (default: 10k)
   timeout_seconds?: number;  // Configurable timeout (default: 10 min)
+  continue_from_task_id?: number;
 }
 
 // Ref interface for exposing methods to parent components
@@ -238,12 +239,13 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
-  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts'>(() => {
+  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts' | 'settings'>(() => {
     // Initialize from URL hash if present
     const hash = window.location.hash.replace('#', '');
     if (hash === 'results') return 'results';
     if (hash === 'files') return 'files';
     if (hash === 'artifacts') return 'artifacts';
+    if (hash === 'settings') return 'settings';
     return 'studio';
   });
   const [executionStatus, setExecutionStatus] = useState<{
@@ -405,9 +407,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     setShowWorkflowDropdown,
     handleToggleWorkflowDropdown,
     handleCloseWorkflowDropdown,
-    showSettingsModal,
-    handleToggleSettingsModal,
-    handleCloseSettingsModal,
     showThinkingStream,
     handleToggleThinkingStream,
     showLiveExecutionPanel,
@@ -646,12 +645,23 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   }, [nodeExecutionStatuses, nodeTokenCosts, nodeWarnings, setNodes]);
 
   // Update URL when tab changes - delegate to parent component
-  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts') => {
+  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts' | 'settings') => {
     setActiveTab(newTab);
     if (newTab === 'studio' || newTab === 'results') {
       onTabChange?.(newTab);
     }
   }, [onTabChange]);
+
+  // Handle "Follow Up" from a completed task — opens the execution dialog with continuation
+  const handleContinueFromTask = useCallback((taskId: number) => {
+    setExecutionConfig(prev => ({
+      ...prev,
+      directive: '',
+      prompt: '',
+      continue_from_task_id: taskId,
+    }));
+    setShowExecutionDialog(true);
+  }, []);
 
   // Re-center canvas when execution starts and animate edges
   useEffect(() => {
@@ -1901,7 +1911,6 @@ if __name__ == "__main__":
           versions={versions}
           loadingVersions={loadingVersions}
           handleLoadVersion={handleLoadVersion}
-          handleToggleSettingsModal={handleToggleSettingsModal}
           // Tab props (merged from TabNavigation)
           activeTab={activeTab}
           onTabChange={(tab) => {
@@ -2001,19 +2010,6 @@ if __name__ == "__main__":
                     onClear={handleClear}
                   />
 
-                  {/* Workflow Settings Modal */}
-                  <WorkflowSettingsDialog
-                    isOpen={showSettingsModal}
-                    onClose={handleCloseSettingsModal}
-                    workflowId={currentWorkflowId ?? undefined}
-                    checkpointerEnabled={checkpointerEnabled}
-                    onToggleCheckpointer={handleToggleCheckpointer}
-                    globalRecursionLimit={globalRecursionLimit}
-                    setGlobalRecursionLimit={setGlobalRecursionLimit}
-                    customOutputPath={customOutputPath}
-                    onOutputPathChange={handleOutputPathChange}
-                  />
-
                   {/* MiniMap with enhanced styling - only show when nodes have valid positions */}
                   {validatedNodes.length > 0 && (
                     <MiniMap
@@ -2041,6 +2037,7 @@ if __name__ == "__main__":
                   userPrompt={userPrompt}
                   workflowName={workflowName}
                   currentTaskId={currentTaskId}
+                  onContinueFromTask={handleContinueFromTask}
                 />
 
                 {/* Thinking Toasts - Rendered outside ReactFlow with screen coordinates */}
@@ -2104,6 +2101,7 @@ if __name__ == "__main__":
               nodeTokenCosts={nodeTokenCosts}
               expandedToolCalls={expandedToolCalls}
               setExpandedToolCalls={setExpandedToolCalls}
+              onContinueFromTask={handleContinueFromTask}
             />
           )}
 
@@ -2150,25 +2148,37 @@ if __name__ == "__main__":
             </div>
           )}
 
-          {/* Execution Configuration Dialog */}
-          {activeTab === 'studio' && (
-            <ExecutionConfigDialog
-              isOpen={showExecutionDialog}
-              onClose={() => setShowExecutionDialog(false)}
-              onExecute={executeWorkflow}
-              executionConfig={executionConfig}
-              setExecutionConfig={setExecutionConfig}
-              showAdvancedOptions={showAdvancedOptions}
-              setShowAdvancedOptions={setShowAdvancedOptions}
-              additionalContext={additionalContext}
-              setAdditionalContext={setAdditionalContext}
-              contextDocuments={contextDocuments}
-              setContextDocuments={setContextDocuments}
-              availableDocuments={availableDocuments}
-              attachments={workflowAttachments}
-              onAttachmentsChange={setWorkflowAttachments}
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <WorkflowSettingsTab
+              workflowId={currentWorkflowId ?? undefined}
+              checkpointerEnabled={checkpointerEnabled}
+              onToggleCheckpointer={handleToggleCheckpointer}
+              globalRecursionLimit={globalRecursionLimit}
+              setGlobalRecursionLimit={setGlobalRecursionLimit}
+              customOutputPath={customOutputPath}
+              onOutputPathChange={handleOutputPathChange}
             />
           )}
+
+          {/* Execution Configuration Dialog - available on all tabs for Follow Up */}
+          <ExecutionConfigDialog
+            isOpen={showExecutionDialog}
+            onClose={() => setShowExecutionDialog(false)}
+            onExecute={executeWorkflow}
+            executionConfig={executionConfig}
+            setExecutionConfig={setExecutionConfig}
+            showAdvancedOptions={showAdvancedOptions}
+            setShowAdvancedOptions={setShowAdvancedOptions}
+            additionalContext={additionalContext}
+            setAdditionalContext={setAdditionalContext}
+            contextDocuments={contextDocuments}
+            setContextDocuments={setContextDocuments}
+            availableDocuments={availableDocuments}
+            attachments={workflowAttachments}
+            onAttachmentsChange={setWorkflowAttachments}
+            continueFromTaskId={executionConfig.continue_from_task_id}
+          />
 
           {/* Save Workflow Modal */}
           <SaveWorkflowModal

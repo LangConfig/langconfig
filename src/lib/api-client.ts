@@ -329,6 +329,7 @@ class APIClient {
       data?: string;
       size?: number;
     }>;
+    continue_from_task_id?: number;  // Follow-up from a previous task
   }) {
     return this.client.post('/api/orchestration/execute', data);
   }

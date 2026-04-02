@@ -105,6 +105,9 @@ interface WorkflowResultsProps {
   nodeTokenCosts: Record<string, any>;
   expandedToolCalls: Set<number>;
   setExpandedToolCalls: (expanded: Set<number>) => void;
+
+  // Follow-up continuation
+  onContinueFromTask?: (taskId: number) => void;
 }
 
 /**
@@ -150,6 +153,7 @@ const WorkflowResults = memo(function WorkflowResults({
   nodeTokenCosts,
   expandedToolCalls,
   setExpandedToolCalls,
+  onContinueFromTask,
 }: WorkflowResultsProps) {
 
   // Get the task to display (selected or latest)
@@ -398,6 +402,22 @@ const WorkflowResults = memo(function WorkflowResults({
                                   <div>Duration: {Math.round(displayTask.duration_seconds)}s</div>
                                 )}
                               </div>
+                              {/* Continue Conversation Button */}
+                              {displayTask?.status === 'completed' && onContinueFromTask && (
+                                <button
+                                  onClick={() => onContinueFromTask(displayTask.id)}
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md transition-all hover:opacity-90 border"
+                                  style={{
+                                    borderColor: 'var(--color-primary)',
+                                    color: 'var(--color-primary)',
+                                  }}
+                                  title="Continue conversation from this task"
+                                >
+                                  <span className="material-symbols-outlined text-base">reply</span>
+                                  <span>Follow Up</span>
+                                </button>
+                              )}
+
                               {/* View Execution Log Button */}
                               <button
                                 onClick={() => {
@@ -581,6 +601,22 @@ const WorkflowResults = memo(function WorkflowResults({
                                   )}
                                 </button>
 
+                                {/* Continue Conversation Button */}
+                                {displayTask?.status === 'completed' && onContinueFromTask && (
+                                  <button
+                                    onClick={() => onContinueFromTask(displayTask.id)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all hover:opacity-90 border"
+                                    style={{
+                                      borderColor: 'var(--color-primary)',
+                                      color: 'var(--color-primary)',
+                                    }}
+                                    title="Continue conversation from this task's output"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">reply</span>
+                                    <span>Follow Up</span>
+                                  </button>
+                                )}
+
                                 {/* View Execution Log Button */}
                                 <button
                                   onClick={() => {
@@ -631,6 +667,43 @@ const WorkflowResults = memo(function WorkflowResults({
                                 <pre className="text-xs overflow-auto whitespace-pre-wrap" style={{ color: 'var(--color-text-primary)' }}>
                                   {JSON.stringify(taskOutput, null, 2)}
                                 </pre>
+                              </div>
+                            )}
+
+                            {/* Follow Up CTA - Prominent card at bottom of results */}
+                            {displayTask?.status === 'completed' && onContinueFromTask && (
+                              <div className="mt-10 mb-4 border-t pt-8" style={{ borderColor: 'var(--color-border-dark)' }}>
+                                <div
+                                  className="rounded-xl p-6 border cursor-pointer transition-all hover:shadow-lg group"
+                                  style={{
+                                    backgroundColor: 'var(--color-panel-dark)',
+                                    borderColor: 'var(--color-border-dark)',
+                                  }}
+                                  onClick={() => onContinueFromTask(displayTask.id)}
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div
+                                      className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                                      style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                                    >
+                                      <span className="material-symbols-outlined text-xl">reply</span>
+                                    </div>
+                                    <div className="flex-1">
+                                      <h4 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                                        Continue this conversation
+                                      </h4>
+                                      <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Send a follow-up prompt with full context from this run
+                                      </p>
+                                    </div>
+                                    <span
+                                      className="material-symbols-outlined text-2xl transition-transform group-hover:translate-x-1"
+                                      style={{ color: 'var(--color-primary)' }}
+                                    >
+                                      arrow_forward
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>

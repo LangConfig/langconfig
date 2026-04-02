@@ -355,8 +355,11 @@ export interface RealtimeExecutionPanelProps {
   /** Name of the workflow being executed */
   workflowName?: string;
 
-  /** Active task ID for direct cancellation (important after reload) */
+  /** Active task ID for direct cancellation and follow-up continuation */
   currentTaskId?: number | null;
+
+  /** Callback to continue conversation from a completed task */
+  onContinueFromTask?: (taskId: number) => void;
 }
 
 interface SectionItem {
@@ -533,6 +536,7 @@ export default function RealtimeExecutionPanel({
   userPrompt,
   workflowName,
   currentTaskId,
+  onContinueFromTask,
 }: RealtimeExecutionPanelProps) {
   // Removed visibleCharCount state - we now always show all content immediately
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1878,6 +1882,29 @@ export default function RealtimeExecutionPanel({
           </button>
         )
       }
+
+      {/* Follow Up Footer - Shows when execution completes */}
+      {executionStatus?.state === 'completed' && !isReplay && currentTaskId && onContinueFromTask && (
+        <div
+          className="flex-shrink-0 px-4 py-3 border-t"
+          style={{
+            borderColor: 'var(--color-border-dark)',
+            backgroundColor: 'var(--color-panel-dark)',
+          }}
+        >
+          <button
+            onClick={() => onContinueFromTask(currentTaskId)}
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'white',
+            }}
+          >
+            <span className="material-symbols-outlined text-lg">reply</span>
+            Continue this conversation
+          </button>
+        </div>
+      )}
 
       {/* Subagent Panels - Slide out from right when subagents are active */}
       {

@@ -41,6 +41,7 @@ interface ExecutionConfigDialogProps {
   availableDocuments: Document[];
   attachments?: Attachment[];
   onAttachmentsChange?: (attachments: Attachment[]) => void;
+  continueFromTaskId?: number;
 }
 
 /**
@@ -61,6 +62,7 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
   availableDocuments,
   attachments = [],
   onAttachmentsChange,
+  continueFromTaskId,
 }: ExecutionConfigDialogProps) {
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([]);
   const currentAttachments = onAttachmentsChange ? attachments : localAttachments;
@@ -88,7 +90,7 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
           <div className="flex items-center gap-3">
             <Play size={22} className="text-white" />
             <h2 className="text-lg font-semibold text-white">
-              Run Workflow
+              {continueFromTaskId ? 'Follow Up' : 'Run Workflow'}
             </h2>
           </div>
           <button
@@ -101,10 +103,33 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
 
         {/* Content - White Background */}
         <div className="p-6 overflow-y-auto bg-white" style={{ maxHeight: 'calc(90vh - 130px)' }}>
+          {/* Continuation Banner */}
+          {continueFromTaskId && (
+            <div className="mb-4 px-4 py-3 rounded-lg border flex items-center gap-3"
+              style={{
+                backgroundColor: 'rgba(99, 102, 241, 0.06)',
+                borderColor: 'rgba(99, 102, 241, 0.2)',
+              }}
+            >
+              <span className="material-symbols-outlined text-lg" style={{ color: 'var(--color-primary)' }}>
+                reply
+              </span>
+              <div>
+                <div className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>
+                  Following up on Task #{continueFromTaskId}
+                </div>
+                <div className="text-xs text-gray-500">
+                  The agent will have context from the previous run's conversation.
+                </div>
+              </div>
+            </div>
+          )}
           {/* Prompt Input */}
           <div className="mb-5">
             <label className="block text-sm font-medium mb-2 text-gray-700">
-              What should this workflow do?
+              {continueFromTaskId
+                ? 'What would you like to follow up on?'
+                : 'What should this workflow do?'}
             </label>
             <textarea
               className="w-full px-4 py-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-gray-800"
@@ -368,7 +393,7 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
             <Play size={16} />
-            Run Workflow
+            {continueFromTaskId ? 'Send Follow Up' : 'Run Workflow'}
           </button>
         </div>
       </div>
