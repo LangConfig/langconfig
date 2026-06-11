@@ -69,7 +69,7 @@ faster-whisper>=1.0.0
 
 # Security & Utilities
 cryptography>=48.0.1,<49
-python-dotenv==1.0.1
+python-dotenv>=1.2.2,<2  # GHSA-mf9w-mj56-hr94: symlink-following file overwrite in set_key (<1.2.2)
 httpx>=0.28.1
 aiofiles==24.1.0
 python-json-logger
