@@ -104,6 +104,16 @@ TOOL_NAME_MAP = {
     "audio_transcribe": "audio_transcribe",
     "generate_image": "generate_image",
     "image_generation": "generate_image",
+
+    # Network/utility tools
+    "http_request": "http_request",
+    "http": "http_request",
+    "fetch_api": "http_request",
+    "api_request": "http_request",
+    "get_current_time": "get_current_time",
+    "current_time": "get_current_time",
+    "datetime": "get_current_time",
+    "time": "get_current_time",
 }
 
 
@@ -1456,6 +1466,156 @@ async def generate_image(
 
 
 # =============================================================================
+# Network/Utility Tools
+# =============================================================================
+
+_HTTP_ALLOWED_SCHEMES = {"http", "https"}
+_HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
+
+
+def _get_http_client(timeout: float) -> httpx.AsyncClient:
+    """
+    Create the AsyncClient used by http_request.
+
+    Module-level factory so tests can monkeypatch it with an
+    httpx.MockTransport-backed client instead of hitting the network.
+    """
+    return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+
+
+@tool
+def get_current_time(timezone: str = "UTC") -> str:
+    """
+    Get the current date and time in a given timezone.
+
+    Use this whenever temporal accuracy matters (today's date, day of week,
+    scheduling, or resolving relative dates like "yesterday"). Never guess
+    the current date.
+
+    Args:
+        timezone: IANA timezone name, e.g. "UTC", "America/New_York",
+            "Europe/London", "Asia/Tokyo" (default: "UTC")
+
+    Returns:
+        ISO-8601 timestamp with UTC offset, plus weekday and timezone name,
+        e.g. "2026-06-10T09:15:00-04:00 (Wednesday, America/New_York)"
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    try:
+        tz = ZoneInfo(timezone)
+    except Exception:
+        return (
+            f"Error: unknown timezone '{timezone}'. Provide an IANA timezone "
+            f"name in Region/City format, e.g. 'UTC', 'America/New_York', "
+            f"'Europe/London', or 'Asia/Tokyo'."
+        )
+
+    now = datetime.now(tz)
+    return f"{now.isoformat(timespec='seconds')} ({now.strftime('%A')}, {timezone})"
+
+
+@tool
+async def http_request(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, str]] = None,
+    body: Optional[str] = None,
+    timeout: int = 30,
+    max_chars: int = 50000,
+) -> str:
+    """
+    Make an HTTP request to an API endpoint and return the response.
+
+    Use this for calling REST/JSON APIs with full control over method,
+    headers, and body. For reading regular web pages, prefer web_fetch.
+
+    Args:
+        url: Full URL including scheme. Only http:// and https:// are allowed.
+        method: HTTP method - one of GET, POST, PUT, PATCH, DELETE, HEAD
+            (default: GET)
+        headers: Optional request headers, e.g. {"Authorization": "Bearer ..."}
+        body: Optional request body as a string (serialize JSON yourself and
+            set a Content-Type header). Not allowed with GET or HEAD.
+        timeout: Request timeout in seconds (default: 30)
+        max_chars: Maximum characters of response body to return; longer
+            bodies are truncated with a notice (default: 50000)
+
+    Returns:
+        Status line, key response headers, and the response body.
+        JSON responses are pretty-printed. Errors are returned as strings.
+    """
+    import json as _json
+    from urllib.parse import urlparse
+
+    scheme = urlparse(url).scheme.lower()
+    if scheme not in _HTTP_ALLOWED_SCHEMES:
+        return (
+            f"Error: unsupported URL scheme '{scheme or '(none)'}'. "
+            f"Only http:// and https:// URLs are allowed."
+        )
+
+    method = method.upper()
+    if method not in _HTTP_ALLOWED_METHODS:
+        return (
+            f"Error: unsupported HTTP method '{method}'. "
+            f"Allowed methods: {', '.join(sorted(_HTTP_ALLOWED_METHODS))}."
+        )
+
+    if body and method in ("GET", "HEAD"):
+        return (
+            f"Error: a request body is not allowed with {method}. "
+            f"Use POST, PUT, or PATCH to send a body, or drop the body."
+        )
+
+    try:
+        logger.info(f"HTTP {method} {url}")
+        async with _get_http_client(timeout) as client:
+            response = await client.request(
+                method, url, headers=headers, content=body
+            )
+    except httpx.TimeoutException:
+        return f"Error: request to {url} timed out after {timeout}s"
+    except httpx.HTTPError as e:
+        return f"Error making request to {url}: {e}"
+    except Exception as e:
+        logger.error(f"http_request failed for {url}: {e}")
+        return f"Error: {e}"
+
+    content_type = response.headers.get("content-type", "")
+    text = response.text
+
+    if "json" in content_type:
+        try:
+            text = _json.dumps(response.json(), indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Not valid JSON despite the content-type; return as-is
+
+    truncated = len(text) > max_chars
+    if truncated:
+        text = text[:max_chars]
+
+    header_lines = []
+    for key in ("content-type", "content-length", "date", "server"):
+        value = response.headers.get(key)
+        if value:
+            header_lines.append(f"{key}: {value}")
+
+    result = f"HTTP {response.status_code} {response.reason_phrase}".rstrip()
+    if header_lines:
+        result += "\n" + "\n".join(header_lines)
+    result += f"\n\n{text}"
+    if truncated:
+        result += (
+            f"\n\n[Response truncated: showing first {max_chars:,} characters "
+            f"of the response body]"
+        )
+
+    return result
+
+
+# =============================================================================
 # Tool Loading Functions
 # =============================================================================
 
@@ -1509,6 +1669,12 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
         "delegate": task,  # Alias for task
         # Image generation
         "generate_image": generate_image,
+        # Network/utility tools
+        "http_request": http_request,
+        "fetch_api": http_request,  # Alias for http_request
+        "get_current_time": get_current_time,
+        "current_time": get_current_time,  # Alias for get_current_time
+        "datetime": get_current_time,  # Alias for get_current_time
         # Note: Playwright tools are loaded separately via get_playwright_tools()
         # because they require async initialization
     }
@@ -1600,6 +1766,9 @@ def get_available_tool_names() -> List[str]:
         "pii_detect",
         "audio_transcribe",
         "generate_image",
+        # Network/utility tools
+        "http_request",
+        "get_current_time",
     ]
 
 
