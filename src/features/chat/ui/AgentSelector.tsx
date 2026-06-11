@@ -100,9 +100,10 @@ export default function AgentSelector({
         className="flex items-center gap-2 border-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-[transform,box-shadow,background-color] hover:translate-x-0.5 hover:translate-y-0.5"
         style={{
           borderColor: 'var(--color-border-dark)',
-          backgroundColor: 'white',
+          backgroundColor: 'var(--surface-1)',
           color: 'var(--color-text-primary)',
-          boxShadow: '3px 3px 0 var(--color-border-dark)',
+          boxShadow: 'var(--shadow-card-sm)',
+          borderRadius: 'var(--radius-control)',
         }}
       >
         <span>
@@ -118,10 +119,12 @@ export default function AgentSelector({
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="absolute left-0 z-50 mt-2 flex max-h-[32rem] w-96 flex-col overflow-hidden border-2 shadow-[4px_4px_0_var(--color-border-dark)]"
+            className="absolute left-0 z-50 mt-2 flex max-h-[32rem] w-96 flex-col overflow-hidden border-2"
             style={{
-              backgroundColor: 'white',
+              backgroundColor: 'var(--surface-1)',
               borderColor: 'var(--color-border-dark)',
+              boxShadow: 'var(--shadow-card)',
+              borderRadius: 'var(--radius-card)',
             }}
           >
             {/* Search */}
@@ -157,7 +160,7 @@ export default function AgentSelector({
                     className="whitespace-nowrap border-2 px-2 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
                     style={{
                       backgroundColor: !selectedCategory ? 'var(--color-primary)' : 'transparent',
-                      color: !selectedCategory ? 'white' : 'var(--color-text-muted)',
+                      color: !selectedCategory ? 'var(--color-on-accent)' : 'var(--color-text-muted)',
                       borderColor: 'var(--color-border-dark)',
                     }}
                   >
@@ -170,7 +173,7 @@ export default function AgentSelector({
                       className="whitespace-nowrap border-2 px-2 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
                       style={{
                         backgroundColor: selectedCategory === category ? 'var(--color-primary)' : 'transparent',
-                        color: selectedCategory === category ? 'white' : 'var(--color-text-muted)',
+                        color: selectedCategory === category ? 'var(--color-on-accent)' : 'var(--color-text-muted)',
                         borderColor: 'var(--color-border-dark)',
                       }}
                     >
@@ -269,7 +272,7 @@ function AgentItem({ agent, isSelected, onClick }: AgentItemProps) {
           <div
               className="flex items-center gap-2 truncate text-sm font-medium"
             style={{
-              color: isHovered ? 'white' : isSelected ? 'var(--color-primary)' : 'var(--color-text-primary)',
+              color: isHovered ? 'var(--color-on-accent)' : isSelected ? 'var(--color-primary)' : 'var(--color-text-primary)',
             }}
           >
             {agent.name}
@@ -277,7 +280,7 @@ function AgentItem({ agent, isSelected, onClick }: AgentItemProps) {
           {agent.description && (
             <div
               className="text-xs mt-1 line-clamp-2"
-              style={{ color: isHovered ? 'white' : 'var(--color-text-muted)' }}
+              style={{ color: isHovered ? 'var(--color-on-accent)' : 'var(--color-text-muted)' }}
             >
               {agent.description}
             </div>

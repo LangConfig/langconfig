@@ -88,16 +88,16 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
   };
 
   return (
-    <div className="border border-purple-300/30 dark:border-purple-700/30 rounded-lg bg-purple-50/50 dark:bg-purple-900/20 mt-2 mb-2">
+    <div className="border border-purple-700/30 rounded-lg bg-purple-900/20 mt-2 mb-2">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-100/50 dark:hover:bg-purple-800/30 rounded-t-lg transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-300 hover:bg-purple-800/30 rounded-t-lg transition-colors"
       >
         {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         <Settings className="w-4 h-4" />
         <span>Agent Context</span>
-        <span className="text-xs text-purple-500 dark:text-purple-400 ml-auto">
+        <span className="text-xs text-purple-400 ml-auto">
           {context.tools.length} tools • {context.attachments.length} attachments
         </span>
       </button>
@@ -106,49 +106,49 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
       {expanded && (
         <div className="px-3 pb-3 space-y-3">
           {/* Model Config */}
-          <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+          <div className="bg-gray-800/50 rounded p-2">
+            <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
               <Settings className="w-3 h-3" /> Model
             </div>
-            <div className="text-sm text-gray-800 dark:text-gray-200 flex flex-wrap gap-2">
-              <span className="bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded text-xs">{context.model_config.model}</span>
-              <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">temp: {context.model_config.temperature}</span>
+            <div className="text-sm text-gray-200 flex flex-wrap gap-2">
+              <span className="bg-blue-900/40 px-2 py-0.5 rounded text-xs">{context.model_config.model}</span>
+              <span className="bg-gray-700 px-2 py-0.5 rounded text-xs">temp: {context.model_config.temperature}</span>
               {context.model_config.enable_memory && (
-                <span className="bg-green-100 dark:bg-green-900/40 px-2 py-0.5 rounded text-xs">Memory</span>
+                <span className="bg-green-900/40 px-2 py-0.5 rounded text-xs">Memory</span>
               )}
               {context.model_config.enable_rag && (
-                <span className="bg-green-100 dark:bg-green-900/40 px-2 py-0.5 rounded text-xs">RAG</span>
+                <span className="bg-green-900/40 px-2 py-0.5 rounded text-xs">RAG</span>
               )}
             </div>
           </div>
 
           {/* System Prompt */}
-          <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1 justify-between">
+          <div className="bg-gray-800/50 rounded p-2">
+            <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1 justify-between">
               <span className="flex items-center gap-1">
                 <FileText className="w-3 h-3" /> System Prompt ({context.system_prompt.length} chars)
               </span>
               <button
                 onClick={() => handleCopy(context.system_prompt.preview, 'prompt')}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-gray-400 hover:text-gray-300"
               >
                 {copiedSection === 'prompt' ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
               </button>
             </div>
-            <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
+            <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto bg-gray-900/50 p-2 rounded">
               {context.system_prompt.preview}
             </pre>
           </div>
 
           {/* Tools */}
           {context.tools.length > 0 && (
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+            <div className="bg-gray-800/50 rounded p-2">
+              <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
                 <Wrench className="w-3 h-3" /> Tools ({context.tools.length})
               </div>
               <div className="flex flex-wrap gap-1">
                 {context.tools.map((tool, i) => (
-                  <span key={i} className="bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200 px-2 py-0.5 rounded text-xs">
+                  <span key={i} className="bg-orange-900/40 text-orange-200 px-2 py-0.5 rounded text-xs">
                     {tool}
                   </span>
                 ))}
@@ -158,17 +158,17 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
 
           {/* Attachments */}
           {context.attachments.length > 0 && (
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+            <div className="bg-gray-800/50 rounded p-2">
+              <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
                 <Image className="w-3 h-3" /> Attachments ({context.attachments.length})
               </div>
               <div className="space-y-1">
                 {context.attachments.map((att, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
-                    <span className={att.hasData ? 'text-green-600 dark:text-green-400' : 'text-red-500'}>
+                  <div key={i} className="flex items-center gap-2 text-xs bg-gray-900/50 px-2 py-1 rounded">
+                    <span className={att.hasData ? 'text-green-400' : 'text-red-500'}>
                       {att.hasData ? '✓' : '✗'}
                     </span>
-                    <span className="text-gray-700 dark:text-gray-300">{att.name}</span>
+                    <span className="text-gray-300">{att.name}</span>
                     <span className="text-gray-500">{att.mimeType}</span>
                     {att.dataSize && <span className="text-gray-400">{formatBytes(att.dataSize)}</span>}
                   </div>
@@ -179,26 +179,26 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
 
           {/* Messages Preview */}
           {context.messages.length > 0 && visibleMessages.length === 0 && (
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+            <div className="bg-gray-800/50 rounded p-2">
+              <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
                 <MessageSquare className="w-3 h-3" /> Input Messages
               </div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 italic px-2 py-1">
+              <div className="text-xs text-gray-500 italic px-2 py-1">
                 {context.messages.length} internal tool handoff message{context.messages.length === 1 ? '' : 's'} hidden
               </div>
             </div>
           )}
           {visibleMessages.length > 0 && (
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+            <div className="bg-gray-800/50 rounded p-2">
+              <div className="text-xs font-medium text-gray-400 mb-1 flex items-center gap-1">
                 <MessageSquare className="w-3 h-3" /> Input Messages ({visibleMessages.length}
                 {visibleMessages.length < context.messages.length ? ` of ${context.messages.length}` : ''})
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto">
                 {visibleMessages.map((msg, i) => (
-                  <div key={i} className="text-xs bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
-                    <span className="font-medium text-gray-600 dark:text-gray-400">{msg.type}: </span>
-                    <span className="text-gray-700 dark:text-gray-300">
+                  <div key={i} className="text-xs bg-gray-900/50 px-2 py-1 rounded">
+                    <span className="font-medium text-gray-400">{msg.type}: </span>
+                    <span className="text-gray-300">
                       {typeof msg.content === 'string'
                         ? msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
                         : typeof msg.content === 'object' && msg.content?.preview

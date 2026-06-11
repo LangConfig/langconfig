@@ -64,11 +64,11 @@ export default function ModernHeader({
           <img
             src="/langconfignewlogo.png"
             alt="LangConfig"
+            className="header-wordmark"
             style={{
               height: '100px',
               width: 'auto',
               display: 'block',
-              filter: 'brightness(0) saturate(100%) invert(15%) sepia(47%) saturate(923%) hue-rotate(166deg) brightness(90%) contrast(94%)',
               margin: '0',
               marginTop: '15px', // Shift logo down slightly
             }}

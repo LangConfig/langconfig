@@ -12,6 +12,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   banked?: boolean;
+  /** Model reasoning (Anthropic adaptive thinking summary) — separate from content */
+  thinking?: string;
   /** Structured content blocks from tool results (multimodal support) */
   content_blocks?: ContentBlock[];
   /** Artifacts for UI display only (not sent to LLM) */
@@ -83,7 +85,7 @@ export interface DeepAgent {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'complete' | 'error' | 'tool_start' | 'tool_end' | 'tool_artifact' | 'custom_event';
+  type: 'chunk' | 'thinking' | 'complete' | 'error' | 'tool_start' | 'tool_end' | 'tool_artifact' | 'custom_event';
   content?: string;
   message?: string;
   tool_name?: string;

@@ -7,10 +7,11 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from 'reactflow';
-import { Activity, ArrowUp, Ban, Bot, CheckCircle2, ChevronDown, CornerDownRight, FileImage, Loader2, MessageSquare, PanelRightClose, PanelRightOpen, Play, RotateCcw, Send, Sparkles, Square, Trash2, Wrench } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Activity, Ban, Bot, ChevronDown, CornerDownRight, FileImage, Loader2, MessageSquare, PanelRightClose, PanelRightOpen, Play, RotateCcw, Send, Sparkles, Square, Trash2, Wrench } from 'lucide-react';
 import ContentBlockRenderer from '@/components/common/ContentBlockRenderer';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Markdown } from '@/components/ui/Markdown';
 import { useChatStreaming } from '@/features/chat/hooks/useChatStreaming';
 import { useChat } from '@/features/chat/state/ChatContext';
 import type { ChatMessage, ChatStreamEvent } from '@/features/chat/types/chat';
@@ -164,22 +165,6 @@ function deepAgentIdFromNode(node: Node): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-const markdownComponents = {
-  p: ({ children }: any) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
-  ul: ({ children }: any) => <ul className="mb-3 list-disc pl-5 leading-relaxed">{children}</ul>,
-  ol: ({ children }: any) => <ol className="mb-3 list-decimal pl-5 leading-relaxed">{children}</ol>,
-  code: ({ children }: any) => (
-    <code className="border border-border-dark bg-background-light px-1 py-0.5 font-mono text-[0.85em]">
-      {children}
-    </code>
-  ),
-  pre: ({ children }: any) => (
-    <pre className="mb-3 overflow-x-auto border-2 border-border-dark bg-background-dark p-3 font-mono text-xs text-text-primary shadow-[3px_3px_0_var(--color-border-dark)]">
-      {children}
-    </pre>
-  ),
-};
-
 function WorkflowProgressRail({
   nodes,
   nodeStatuses,
@@ -192,6 +177,14 @@ function WorkflowProgressRail({
   const workflowNodes = nodes.filter(isWorkflowNode);
   if (workflowNodes.length === 0) return null;
 
+  const entries = workflowNodes.map((node) => {
+    const label = nodeDisplayLabel(node);
+    const status = nodeStatuses[label] || (node.data as any)?.executionStatus;
+    const rawState = status?.state || 'idle';
+    const state = !isRunning && ['running', 'thinking'].includes(rawState) ? 'completed' : rawState;
+    return { node, label, status, state };
+  });
+
   return (
     <aside className="hidden w-56 flex-none overflow-y-auto border-r-2 border-border-dark bg-panel-dark px-3 py-4 lg:block">
       <div className="mb-3 flex items-center gap-2 font-mono text-[11px] font-black uppercase tracking-[0.14em] text-text-muted">
@@ -199,27 +192,34 @@ function WorkflowProgressRail({
         Progress
       </div>
       <div className="space-y-1">
-        {workflowNodes.map((node, index) => {
-          const label = nodeDisplayLabel(node);
-          const status = nodeStatuses[label] || (node.data as any)?.executionStatus;
-          const rawState = status?.state || 'idle';
-          const state = !isRunning && ['running', 'thinking'].includes(rawState) ? 'completed' : rawState;
+        {entries.map(({ node, label, status, state }, index) => {
           const active = state === 'running' || state === 'thinking';
           const completed = state === 'completed';
           const errored = state === 'error';
+          const prevCompleted = index > 0 && entries[index - 1].state === 'completed';
 
           return (
             <div key={node.id}>
-              {index > 0 && <div className="ml-[13px] h-3 w-0.5 bg-border-dark" />}
-              <div className="border-2 border-border-dark bg-background-light px-2.5 py-2 shadow-[2px_2px_0_var(--color-border-dark)]">
+              {index > 0 && (
+                <div
+                  className="ml-[17px] h-3 w-0.5 transition-colors duration-300"
+                  style={{ background: prevCompleted ? 'var(--color-primary)' : 'var(--border-subtle)' }}
+                />
+              )}
+              <div className={`surface-card-sm px-2.5 py-2 ${active ? 'streaming-pulse' : ''}`}>
                 <div className="flex items-start gap-2">
                   <span
-                    className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center border border-border-dark ${
-                      completed ? 'bg-primary text-white' : errored ? 'bg-red-600 text-white' : active ? 'bg-accent-light text-text-primary' : 'bg-panel-dark'
-                    }`}
-                  >
-                    {completed ? <CheckCircle2 className="h-3 w-3" /> : active ? <Loader2 className="h-3 w-3 animate-spin" /> : errored ? <Ban className="h-3 w-3" /> : null}
-                  </span>
+                    className={`mt-1 h-3 w-3 flex-none rounded-full ${active ? 'animate-pulse' : ''}`}
+                    style={
+                      completed
+                        ? { background: 'var(--color-success)' }
+                        : errored
+                          ? { background: 'var(--color-error)' }
+                          : active
+                            ? { background: 'var(--color-primary)', boxShadow: 'var(--glow-accent)' }
+                            : { background: 'transparent', border: '2px solid var(--border-strong)' }
+                    }
+                  />
                   <div className="min-w-0">
                     <div className="truncate text-xs font-black text-text-primary">{label}</div>
                     <div className="mt-0.5 truncate font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-text-muted">
@@ -263,27 +263,22 @@ function MessageBubble({
                 onDelete();
               }
             }}
-            className="mt-1 border-2 border-border-dark bg-background-light p-1.5 text-text-muted opacity-0 shadow-[2px_2px_0_var(--color-border-dark)] transition-opacity hover:text-red-700 group-hover:opacity-100"
+            className="btn-ghost mt-1 !p-1.5 opacity-0 transition-opacity hover:!text-[var(--color-error)] group-hover:opacity-100"
             title="Delete message"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         )}
         <div
-          className={
-            isUser
-              ? 'border-2 border-border-dark bg-primary px-4 py-3 text-white shadow-[4px_4px_0_var(--color-border-dark)]'
-              : 'border-2 border-border-dark bg-panel-dark px-4 py-3 text-text-primary shadow-[4px_4px_0_var(--color-border-dark)]'
-          }
+          className={`surface-card px-4 py-3 ${isUser ? 'chat-bubble-user' : 'text-text-primary'}`}
+          style={isUser ? { background: 'var(--color-primary)', color: 'var(--color-on-accent)' } : undefined}
         >
           <div className="mb-1 font-mono text-[11px] font-black uppercase tracking-[0.14em] opacity-75">
             {isUser ? 'You' : 'Agent'}
           </div>
-          <div className="prose prose-sm max-w-none text-inherit">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content || (message.artifacts?.length ? '' : 'Working...')}
-            </ReactMarkdown>
-          </div>
+          <Markdown compact className="max-w-none text-inherit">
+            {message.content || (message.artifacts?.length ? '' : 'Working...')}
+          </Markdown>
           {message.artifacts && message.artifacts.length > 0 && (
             <div className="mt-3 border-t-2 border-border-dark pt-3">
               <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-text-muted">
@@ -348,22 +343,22 @@ function WorkflowChatSidePanel({
         </button>
       </div>
       <div className="space-y-4 p-4">
-        <section className="border-2 border-border-dark bg-background-light p-3 shadow-[3px_3px_0_var(--color-border-dark)]">
+        <section className="surface-card-sm p-3">
           <div className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-text-muted">Workflow</div>
           <div className="mt-1 text-sm font-black text-text-primary">{workflowName}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <div className="border border-border-dark bg-panel-dark px-2 py-1.5">
+            <div className="surface-inset px-2 py-1.5">
               <div className="font-mono text-[10px] font-bold uppercase text-text-muted">Runs</div>
               <div className="font-black text-text-primary">{taskCount}</div>
             </div>
-            <div className="border border-border-dark bg-panel-dark px-2 py-1.5">
+            <div className="surface-inset px-2 py-1.5">
               <div className="font-mono text-[10px] font-bold uppercase text-text-muted">Traces</div>
               <div className="font-black text-text-primary">{capturedCount}</div>
             </div>
           </div>
         </section>
 
-        <section className="border-2 border-border-dark bg-background-light p-3 shadow-[3px_3px_0_var(--color-border-dark)]">
+        <section className="surface-card-sm p-3">
           <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-text-muted">
             <Bot className="h-3.5 w-3.5 text-primary" />
             Chat Agent
@@ -377,9 +372,8 @@ function WorkflowChatSidePanel({
                   key={agent.id}
                   type="button"
                   onClick={() => onAgentChange(agent.id)}
-                  className={`w-full border-2 border-border-dark px-3 py-2 text-left shadow-[2px_2px_0_var(--color-border-dark)] transition-transform active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${
-                    selectedAgentId === agent.id ? 'bg-accent-light' : 'bg-panel-dark'
-                  }`}
+                  className="surface-card-sm surface-card-interactive w-full px-3 py-2 text-left"
+                  style={selectedAgentId === agent.id ? { background: 'var(--color-accent-wash)' } : undefined}
                 >
                   <div className="truncate text-xs font-black text-text-primary">{agent.name}</div>
                   {agent.description && <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-text-muted">{agent.description}</div>}
@@ -653,7 +647,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
 
   return (
     <div className="flex h-full flex-col bg-background-light">
-      <div className="border-b-2 border-border-dark bg-panel-dark px-5 py-4 shadow-[0_4px_0_var(--color-border-dark)]">
+      <div className="border-b-2 border-border-dark bg-panel-dark px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-text-muted">
@@ -662,29 +656,27 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
             </div>
             <h2 className="mt-1 text-xl font-black text-text-primary">{workflowName}</h2>
           </div>
-          <div className="flex items-center gap-2 border-2 border-border-dark bg-background-light px-3 py-2 font-mono text-xs font-bold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)]">
-            {executionStatus.state === 'running' ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                Task #{currentTaskId || 'new'}
-              </>
-            ) : workflowId ? (
-              <>Workflow #{workflowId}</>
-            ) : (
-              <>Unsaved workflow</>
-            )}
-          </div>
+          {executionStatus.state === 'running' ? (
+            <Badge tone="accent" dot pulse className="!text-xs">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Task #{currentTaskId || 'new'}
+            </Badge>
+          ) : (
+            <Badge tone="neutral" className="!text-xs">
+              {workflowId ? `Workflow #${workflowId}` : 'Unsaved workflow'}
+            </Badge>
+          )}
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
         <WorkflowProgressRail nodes={nodes} nodeStatuses={nodeStatuses} isRunning={executionStatus.state === 'running'} />
 
-        <div className="min-w-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="mx-auto flex max-w-5xl flex-col gap-5">
+        <div className="chat-atmosphere min-w-0 flex-1 overflow-y-auto px-5 py-5">
+        <div className="relative mx-auto flex max-w-5xl flex-col gap-5">
           {orderedTasks.length === 0 && chatMessages.length === 0 && executionStatus.state !== 'running' && (
-            <div className="border-2 border-border-dark bg-panel-dark p-6 shadow-[5px_5px_0_var(--color-border-dark)]">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center border-2 border-border-dark bg-background-light shadow-[3px_3px_0_var(--color-border-dark)]">
+            <div className="surface-card p-6">
+              <div className="surface-card-sm mb-3 flex h-10 w-10 items-center justify-center">
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <h3 className="text-lg font-black text-text-primary">Start with a prompt.</h3>
@@ -704,27 +696,31 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
           ))}
 
           {activeToolCalls.map((tool, index) => (
-            <div
+            <Badge
               key={`${tool.name}-${index}`}
-              className="w-fit border-2 border-border-dark bg-panel-dark px-3 py-2 font-mono text-xs font-black uppercase tracking-[0.12em] text-text-primary shadow-[3px_3px_0_var(--color-border-dark)]"
+              tone={tool.status === 'running' ? 'accent' : tool.status === 'error' ? 'error' : 'success'}
+              dot
+              pulse={tool.status === 'running'}
+              className="w-fit !text-xs"
             >
-              <span className="inline-flex items-center gap-2">
-                {tool.status === 'running' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
-                {tool.name} {tool.status}
-              </span>
-            </div>
+              <Wrench className="h-3.5 w-3.5" />
+              {tool.name} {tool.status}
+            </Badge>
           ))}
 
           {orderedTasks.map((task) => (
             <div key={task.id} className="space-y-3">
-              <div className="ml-auto max-w-3xl border-2 border-border-dark bg-primary px-4 py-3 text-white shadow-[4px_4px_0_var(--color-border-dark)]">
+              <div
+                className="surface-card ml-auto max-w-3xl px-4 py-3"
+                style={{ background: 'var(--color-primary)', color: 'var(--color-on-accent)' }}
+              >
                 <div className="mb-1 font-mono text-[11px] font-black uppercase tracking-[0.14em] opacity-80">
                   You
                 </div>
                 <div className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">{getTaskPrompt(task)}</div>
               </div>
 
-              <div className="max-w-4xl border-2 border-border-dark bg-panel-dark p-4 text-text-primary shadow-[4px_4px_0_var(--color-border-dark)]">
+              <div className="surface-card max-w-4xl p-4 text-text-primary">
                 {(() => {
                   const executionSnapshot = executionByTaskId.get(task.id);
                   const traceEvents = executionSnapshot?.events || [];
@@ -732,33 +728,36 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                   return (
                     <>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 font-mono text-[11px] font-black uppercase tracking-[0.14em] text-text-muted">
-                    {task.status === 'completed' || task.status === 'success' ? (
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    )}
+                  <Badge
+                    tone={
+                      task.status === 'completed' || task.status === 'success'
+                        ? 'success'
+                        : task.status === 'failed' || task.status === 'error'
+                          ? 'error'
+                          : 'accent'
+                    }
+                    dot
+                    pulse={!['completed', 'success', 'failed', 'error'].includes(task.status)}
+                  >
                     Task #{task.id} · {task.status}
-                  </div>
+                  </Badge>
                   {(task.status === 'completed' || task.status === 'success') && (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={() => {
                         setManualContinuationTaskId(task.id);
                         setContinuationDisabled(false);
                       }}
-                      className="inline-flex items-center gap-1.5 border-2 border-border-dark bg-background-light px-2.5 py-1.5 font-mono text-xs font-bold text-text-primary shadow-[2px_2px_0_var(--color-border-dark)] transition-transform hover:-translate-y-0.5 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                      icon={<CornerDownRight className="h-3.5 w-3.5" />}
                     >
-                      <CornerDownRight className="h-3.5 w-3.5" />
                       Continue
-                      </button>
+                    </Button>
                   )}
                 </div>
-                <div className="prose prose-sm max-w-none text-text-primary">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                    {getTaskOutput(task)}
-                  </ReactMarkdown>
-                </div>
+                <Markdown compact className="max-w-none text-text-primary">
+                  {getTaskOutput(task)}
+                </Markdown>
                 {getTaskArtifacts(task).length > 0 && (
                   <div className="mt-4 border-t-2 border-border-dark pt-3">
                     <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-text-muted">
@@ -773,7 +772,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                     <button
                       type="button"
                       onClick={() => toggleTrace(task.id)}
-                      className="flex w-full items-center justify-between border-2 border-border-dark bg-background-light px-3 py-2 font-mono text-xs font-black uppercase tracking-[0.12em] text-text-primary shadow-[2px_2px_0_var(--color-border-dark)] transition-transform hover:-translate-y-0.5 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                      className="btn-brutal flex w-full items-center justify-between"
                     >
                       <span className="flex items-center gap-2">
                         <Activity className="h-4 w-4 text-primary" />
@@ -786,7 +785,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                         {executionSnapshot.metrics && (
                           <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                             {Object.entries(executionSnapshot.metrics).slice(0, 4).map(([key, value]) => (
-                              <div key={key} className="border border-border-dark bg-background-light px-2 py-1.5">
+                              <div key={key} className="surface-inset px-2 py-1.5">
                                 <div className="font-mono font-bold uppercase tracking-[0.1em] text-text-muted">{key}</div>
                                 <div className="mt-1 truncate font-semibold text-text-primary">{String(value)}</div>
                               </div>
@@ -794,7 +793,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                           </div>
                         )}
                         {traceEvents.length === 0 ? (
-                          <div className="border border-border-dark bg-background-light px-3 py-2 text-xs text-text-muted">
+                          <div className="surface-inset px-3 py-2 text-xs text-text-muted">
                             No stream events captured for this run.
                           </div>
                         ) : (
@@ -804,7 +803,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                             .map((event: WorkflowEvent, index: number) => (
                               <div
                                 key={`${event.idempotency_key || event.event_id || event.type}-trace-${index}`}
-                                className="flex items-start gap-2 border border-border-dark bg-background-light px-3 py-2 text-xs text-text-primary"
+                                className="surface-inset flex items-start gap-2 px-3 py-2 text-xs text-text-primary"
                               >
                                 <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-primary" />
                                 <span className="font-mono font-semibold">{eventLabel(event)}</span>
@@ -823,14 +822,14 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
           ))}
 
           {executionStatus.state === 'running' && (
-            <div className="max-w-4xl border-2 border-border-dark bg-panel-dark p-4 text-text-primary shadow-[4px_4px_0_var(--color-border-dark)]">
+            <div className="surface-card streaming-pulse max-w-4xl p-4 text-text-primary">
               <div className="mb-3 flex items-center gap-2 font-mono text-[11px] font-black uppercase tracking-[0.14em] text-text-muted">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 Running {executionStatus.currentNode ? `· ${executionStatus.currentNode}` : ''}
               </div>
 
               {liveText && (
-                <div className="mb-4 border-2 border-border-dark bg-background-light p-3 text-sm leading-relaxed shadow-[3px_3px_0_var(--color-border-dark)]">
+                <div className="surface-card-sm terminal-caret mb-4 p-3 text-sm leading-relaxed">
                   {liveText}
                 </div>
               )}
@@ -839,7 +838,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
                 {visibleEvents.map((event, index) => (
                   <div
                     key={`${event.idempotency_key || event.event_id || event.type}-${index}`}
-                    className="flex items-start gap-2 border border-border-dark bg-background-light px-3 py-2 text-xs text-text-primary"
+                    className="surface-inset flex items-start gap-2 px-3 py-2 text-xs text-text-primary"
                   >
                     <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none text-primary" />
                     <span className="font-mono font-semibold">{eventLabel(event)}</span>
@@ -867,12 +866,12 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
       <div className="border-t-2 border-border-dark bg-panel-dark px-5 py-4">
         <div className="mx-auto max-w-5xl">
           {streamError && (
-            <div className="mb-2 w-fit border-2 border-border-dark bg-red-50 px-3 py-1.5 font-mono text-xs font-bold text-red-700 shadow-[2px_2px_0_var(--color-border-dark)]">
+            <div className="surface-card-sm tone-error mb-2 w-fit px-3 py-1.5 font-mono text-xs font-bold">
               {streamError}
             </div>
           )}
           {completedExecutions.length > 0 && executionStatus.state !== 'running' && (
-            <div className="mb-2 flex w-fit items-center gap-2 border-2 border-border-dark bg-background-light px-3 py-1.5 font-mono text-xs font-bold text-text-primary shadow-[2px_2px_0_var(--color-border-dark)]">
+            <div className="surface-card-sm mb-2 flex w-fit items-center gap-2 px-3 py-1.5 font-mono text-xs font-bold text-text-primary">
               <Activity className="h-3.5 w-3.5 text-primary" />
               {completedExecutions.length} captured execution{completedExecutions.length === 1 ? '' : 's'}
               <button
@@ -886,7 +885,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
             </div>
           )}
           {continuationTaskId && executionStatus.state !== 'running' && (
-            <div className="mb-2 flex w-fit items-center gap-2 border-2 border-border-dark bg-background-light px-3 py-1.5 font-mono text-xs font-bold text-text-primary shadow-[2px_2px_0_var(--color-border-dark)]">
+            <div className="surface-card-sm mb-2 flex w-fit items-center gap-2 px-3 py-1.5 font-mono text-xs font-bold text-text-primary">
               <RotateCcw className="h-3.5 w-3.5 text-primary" />
               Continuing from task #{continuationTaskId}
               <button
@@ -905,7 +904,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {agents.length > 0 && (
-              <label className="flex items-center gap-2 border-2 border-border-dark bg-background-light px-3 py-1.5 shadow-[2px_2px_0_var(--color-border-dark)]">
+              <label className="surface-card-sm flex items-center gap-2 px-3 py-1.5">
                 <Bot className="h-3.5 w-3.5 text-primary" />
                 <select
                   value={selectedAgentId ?? ''}
@@ -919,7 +918,7 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
               </label>
             )}
             {selectedAgent && (
-              <div className="max-w-md truncate border-2 border-border-dark bg-panel-dark px-3 py-1.5 font-mono text-xs font-bold text-text-muted shadow-[2px_2px_0_var(--color-border-dark)]">
+              <div className="surface-card-sm max-w-md truncate px-3 py-1.5 font-mono text-xs font-bold text-text-muted">
                 Chatting with {selectedAgent.name}
               </div>
             )}
@@ -939,46 +938,49 @@ const WorkflowChatTab = memo(function WorkflowChatTab({
               disabled={executionStatus.state === 'running' || isStreaming}
               rows={3}
               placeholder={selectedAgent ? 'Chat with the agent, or run the workflow from this prompt...' : 'Run or continue this workflow...'}
-              className="min-h-[82px] flex-1 resize-none border-2 border-border-dark bg-input-background px-4 py-3 text-sm font-semibold leading-relaxed text-text-primary shadow-[4px_4px_0_var(--color-border-dark)] outline-none placeholder:text-text-muted focus:border-primary disabled:opacity-60"
+              className="surface-card-sm min-h-[82px] flex-1 resize-none px-4 py-3 text-sm font-semibold leading-relaxed text-text-primary outline-none placeholder:text-text-muted focus:border-primary disabled:opacity-60"
+              style={{ background: 'var(--color-input-background, var(--surface-1))' }}
             />
             {executionStatus.state === 'running' ? (
-              <button
+              <Button
                 type="button"
+                variant="danger"
                 onClick={onStop}
-                className="flex h-[82px] w-24 items-center justify-center border-2 border-border-dark bg-background-light font-mono text-xs font-black uppercase tracking-wide text-text-primary shadow-[4px_4px_0_var(--color-border-dark)] transition-transform hover:-translate-y-0.5 active:translate-x-[4px] active:translate-y-[4px] active:shadow-none"
+                className="h-[82px] w-24 justify-center"
+                icon={<Ban className="h-4 w-4" />}
               >
-                <Ban className="mr-1 h-4 w-4" />
                 Stop
-              </button>
+              </Button>
             ) : isStreaming ? (
-              <button
+              <Button
                 type="button"
                 disabled
-                className="flex h-[82px] w-24 items-center justify-center border-2 border-border-dark bg-background-light font-mono text-xs font-black uppercase tracking-wide text-text-primary opacity-80 shadow-[4px_4px_0_var(--color-border-dark)]"
+                className="h-[82px] w-24 justify-center"
+                icon={<Square className="h-4 w-4" />}
               >
-                <Square className="mr-1 h-4 w-4" />
                 Chat
-              </button>
+              </Button>
             ) : (
               <div className="flex flex-col gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="primary"
                   onClick={() => void handleChatSubmit()}
                   disabled={!draft.trim() || !canChat}
-                  className="flex h-[37px] w-28 items-center justify-center border-2 border-border-dark bg-primary font-mono text-xs font-black uppercase tracking-wide text-white shadow-[3px_3px_0_var(--color-border-dark)] transition-transform hover:-translate-y-0.5 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-[37px] w-28 justify-center disabled:cursor-not-allowed"
+                  icon={<Send className="h-4 w-4" />}
                 >
-                  <Send className="mr-1 h-4 w-4" />
                   Chat
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={handleRunSubmit}
                   disabled={!canRunWorkflow}
-                  className="flex h-[37px] w-28 items-center justify-center border-2 border-border-dark bg-accent-light font-mono text-xs font-black uppercase tracking-wide text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-transform hover:-translate-y-0.5 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-[37px] w-28 justify-center disabled:cursor-not-allowed"
+                  icon={<Play className="h-4 w-4" />}
                 >
-                  <Play className="mr-1 h-4 w-4" />
                   Run
-                </button>
+                </Button>
               </div>
             )}
           </div>

@@ -91,18 +91,19 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
     }
   }, [thinkingContent, toolCalls, isAutoScroll]);
 
-  const statusColor = status === 'error' ? '#ef4444' : status === 'completed' ? '#6ee7b7' : 'var(--color-primary)';
+  const statusColor = status === 'error' ? 'var(--color-error)' : status === 'completed' ? 'var(--color-success)' : 'var(--color-primary)';
 
   return (
     <div
-      className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 ${isExpanded ? 'flex-1' : ''
-        }`}
+      className={`flex flex-col overflow-hidden transition-all duration-300 ${isExpanded ? 'flex-1' : ''
+        } ${status === 'running' ? 'streaming-pulse' : ''}`}
       style={{
         backgroundColor: 'transparent',
-        border: `3px solid ${statusColor}`,
+        border: `var(--border-w) solid ${statusColor}`,
+        borderRadius: 'var(--radius-card)',
         minHeight: isExpanded ? '100%' : '180px',
         maxHeight: isExpanded ? '100%' : '300px',
-        boxShadow: status === 'running' ? `0 0 12px ${statusColor}40` : 'none'
+        boxShadow: status === 'running' ? 'var(--glow-accent)' : 'var(--shadow-card-sm)'
       }}
     >
       {/* Header - styled like RealtimeExecutionPanel */}
@@ -113,22 +114,22 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
           borderBottomColor: 'var(--color-border-dark)'
         }}
       >
-        <div className="p-1.5 rounded-md" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
+        <div className="p-1.5" style={{ backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 20%, transparent)', borderRadius: 'var(--radius-control)' }}>
           {status === 'running' ? (
-            <Loader2 className="w-4 h-4 text-white animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--color-on-accent)' }} />
           ) : status === 'completed' ? (
-            <CheckCircle className="w-4 h-4 text-white" />
+            <CheckCircle className="w-4 h-4" style={{ color: 'var(--color-on-accent)' }} />
           ) : (
-            <XCircle className="w-4 h-4 text-white" />
+            <XCircle className="w-4 h-4" style={{ color: 'var(--color-on-accent)' }} />
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-white truncate flex items-center gap-2">
+          <div className="font-semibold text-sm font-mono uppercase tracking-wider truncate flex items-center gap-2" style={{ color: 'var(--color-on-accent)' }}>
             <Bot className="w-4 h-4" />
             {subagentLabel}
           </div>
-          <div className="text-xs text-white/70">
+          <div className="text-xs" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 70%, transparent)' }}>
             {status === 'running' ? 'Working...' : status === 'completed' ? 'Complete' : 'Error'}
             {toolCalls.length > 0 && ` • ${toolCalls.length} tool calls`}
           </div>
@@ -137,7 +138,8 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
         <div className="flex items-center gap-1">
           <button
             onClick={onToggleExpand}
-            className="p-1.5 rounded-md hover:bg-white/20 transition-colors text-white"
+            className="p-1.5 transition-colors hover:bg-[color-mix(in_srgb,var(--color-on-accent)_20%,transparent)]"
+            style={{ color: 'var(--color-on-accent)', borderRadius: 'var(--radius-control)' }}
             title={isExpanded ? 'Minimize' : 'Expand'}
           >
             {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -145,7 +147,8 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md hover:bg-white/20 transition-colors text-white"
+              className="p-1.5 transition-colors hover:bg-[color-mix(in_srgb,var(--color-on-accent)_20%,transparent)]"
+              style={{ color: 'var(--color-on-accent)', borderRadius: 'var(--radius-control)' }}
               title="Close"
             >
               <X className="w-4 h-4" />
@@ -158,7 +161,7 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
       <div
         ref={contentRef}
         className="flex-1 overflow-auto custom-scrollbar p-4"
-        style={{ color: 'var(--color-text-primary)', backgroundColor: 'white' }}
+        style={{ color: 'var(--color-text-primary)', backgroundColor: 'var(--surface-1)' }}
         onScroll={() => {
           if (contentRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = contentRef.current;
@@ -176,7 +179,7 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
               </span>
             </div>
             <div className="pl-6">
-              <div className="bg-white rounded-md p-2">
+              <div className="p-2" style={{ backgroundColor: 'var(--surface-1)', borderRadius: 'var(--radius-control)' }}>
                 <AgentOutputRenderer content={thinkingContent} compact />
               </div>
             </div>
@@ -185,21 +188,21 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
 
         {/* Tool calls section */}
         {toolCalls.map((tool, idx) => (
-          <div key={idx} className="mb-3 rounded-lg overflow-hidden" style={{ backgroundColor: 'white' }}>
-            <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
+          <div key={idx} className="mb-3 surface-inset overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
               {tool.status === 'running' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--color-primary)' }} />
               ) : tool.status === 'complete' ? (
-                <Wrench className="w-3.5 h-3.5" style={{ color: '#10b981' }} />
+                <Wrench className="w-3.5 h-3.5" style={{ color: 'var(--color-success)' }} />
               ) : (
-                <XCircle className="w-3.5 h-3.5 text-red-500" />
+                <XCircle className="w-3.5 h-3.5" style={{ color: 'var(--color-error)' }} />
               )}
-              <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                {tool.name}
+              <span className="text-xs font-mono uppercase tracking-wider" style={{ color: 'var(--color-text-primary)' }}>
+                TOOL ▸ {tool.name}
               </span>
-              <span className={`text-xs ml-auto px-1.5 py-0.5 rounded ${tool.status === 'running' ? 'bg-blue-500/20 text-blue-400' :
-                tool.status === 'complete' ? 'bg-green-500/20 text-green-400' :
-                  'bg-red-500/20 text-red-400'
+              <span className={`badge-mono ml-auto ${tool.status === 'running' ? 'tone-info' :
+                tool.status === 'complete' ? 'tone-success' :
+                  'tone-error'
                 }`}>
                 {tool.status}
               </span>
@@ -211,7 +214,7 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
               </div>
             )}
             {tool.output && (
-              <div className="px-3 py-2 text-xs border-t" style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-secondary)' }}>
+              <div className="px-3 py-2 text-xs border-t" style={{ borderColor: 'var(--border-subtle)', color: 'var(--color-text-muted)' }}>
                 <div className="font-medium mb-1">Output:</div>
                 <pre className="whitespace-pre-wrap font-mono text-xs opacity-80">{tool.output.slice(0, 300)}{tool.output.length > 300 ? '...' : ''}</pre>
               </div>
@@ -265,7 +268,7 @@ export const SubAgentPanelStack: React.FC<SubAgentPanelStackProps> = ({
   if (visibleSubagents.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3 p-4 h-full overflow-auto custom-scrollbar" style={{ backgroundColor: 'white' }}>
+    <div className="flex flex-col gap-3 p-4 h-full overflow-auto custom-scrollbar" style={{ backgroundColor: 'var(--surface-1)' }}>
 
 
       {visibleSubagents.slice(0, 3).map((subagent) => (

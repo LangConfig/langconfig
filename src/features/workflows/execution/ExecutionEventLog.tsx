@@ -55,7 +55,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Brain className="w-5 h-5" />,
-          iconColor: 'text-blue-600 dark:text-blue-400',
+          iconColor: 'var(--color-info)',
           title: `Started: ${event.data?.name || 'Agent Node'}`,
           description: 'Initializing agent execution',
           type: 'info' as const,
@@ -65,7 +65,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <CheckCircle className="w-5 h-5" />,
-          iconColor: 'text-green-600 dark:text-green-400',
+          iconColor: 'var(--color-success)',
           title: `Completed: ${event.data?.name || 'Agent Node'}`,
           description: 'Node execution finished successfully',
           type: 'success' as const,
@@ -77,7 +77,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Wrench className="w-5 h-5" />,
-          iconColor: 'text-purple-600 dark:text-purple-400',
+          iconColor: 'var(--color-primary)',
           title: `Tool Call: ${toolName}`,
           description: toolInput,
           details: event.data?.arguments,
@@ -88,7 +88,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <CheckCircle className="w-5 h-5" />,
-          iconColor: 'text-green-600 dark:text-green-400',
+          iconColor: 'var(--color-success)',
           title: `Tool Completed: ${event.data?.tool_name || event.data?.name}`,
           description: typeof event.data?.output === 'string'
             ? event.data.output.slice(0, 500) + (event.data.output.length > 500 ? '...' : '')
@@ -102,7 +102,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <MessageSquare className="w-5 h-5" />,
-          iconColor: 'text-cyan-600 dark:text-cyan-400',
+          iconColor: 'var(--color-info)',
           title: `${agentName}: Reasoning`,
           description: thought,
           type: 'info' as const,
@@ -145,7 +145,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Zap className="w-5 h-5" />,
-          iconColor: 'text-yellow-600 dark:text-yellow-400',
+          iconColor: 'var(--color-warning)',
           title: 'LLM Response Generated',
           description,
           type: 'info' as const,
@@ -156,7 +156,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <ListChecks className="w-5 h-5" />,
-          iconColor: 'text-indigo-600 dark:text-indigo-400',
+          iconColor: 'var(--color-info)',
           title: '✅ Created Todo',
           description: event.data?.todo_text,
           type: 'info' as const,
@@ -166,7 +166,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <CheckCircle className="w-5 h-5" />,
-          iconColor: 'text-green-600 dark:text-green-400',
+          iconColor: 'var(--color-success)',
           title: '✓ Completed Todo',
           description: event.data?.todo_text,
           type: 'success' as const,
@@ -176,7 +176,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Users className="w-5 h-5" />,
-          iconColor: 'text-purple-600 dark:text-purple-400',
+          iconColor: 'var(--color-primary)',
           title: `Spawned Subagent: ${event.data?.subagent_name}`,
           description: event.data?.subagent_task,
           type: 'info' as const,
@@ -186,7 +186,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <FileText className="w-5 h-5" />,
-          iconColor: 'text-orange-600 dark:text-orange-400',
+          iconColor: 'var(--color-warning)',
           title: `File Operation: ${event.data?.operation}`,
           description: event.data?.file_path,
           type: 'info' as const,
@@ -200,7 +200,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Users className="w-5 h-5" />,
-          iconColor: 'text-purple-600 dark:text-purple-400',
+          iconColor: 'var(--color-primary)',
           title: `🤖 Subagent Started: ${event.data?.subagent_name || 'Subagent'}`,
           description: startDescription.slice(0, 500) + (startDescription.length > 500 ? '...' : ''),
           type: 'info' as const,
@@ -214,7 +214,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: event.data?.success ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />,
-          iconColor: event.data?.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400',
+          iconColor: event.data?.success ? 'var(--color-success)' : 'var(--color-error)',
           title: `${event.data?.success ? '✅' : '❌'} Subagent Completed: ${event.data?.subagent_name || 'Subagent'}`,
           description: endOutput.slice(0, 500) + (endOutput.length > 500 ? '...' : ''),
           type: event.data?.success ? 'success' as const : 'error' as const,
@@ -224,7 +224,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <XCircle className="w-5 h-5" />,
-          iconColor: 'text-red-600 dark:text-red-400',
+          iconColor: 'var(--color-error)',
           title: 'Error Occurred',
           description: event.data?.error || event.data?.message,
           type: 'error' as const,
@@ -234,7 +234,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <Clock className="w-5 h-5" />,
-          iconColor: 'text-gray-600 dark:text-gray-400',
+          iconColor: 'var(--color-text-muted)',
           title: 'Status Update',
           description: event.data?.message,
           type: 'info' as const,
@@ -249,7 +249,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
         return {
           timestamp,
           icon: <ChevronRight className="w-5 h-5" />,
-          iconColor: 'text-gray-600 dark:text-gray-400',
+          iconColor: 'var(--color-text-muted)',
           title: event.type,
           description: event.data?.message || JSON.stringify(event.data || {}),
           type: 'info' as const,
@@ -260,11 +260,11 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
   if (logEntries.length === 0) {
     return (
       <div className={`flex flex-col items-center justify-center py-12 text-center ${className}`}>
-        <Clock className="w-16 h-16 text-gray-300 dark:text-text-muted/30 mb-4" />
-        <p className="text-lg font-medium text-gray-600 dark:text-text-muted">
+        <Clock className="w-16 h-16 mb-4 opacity-30" style={{ color: 'var(--color-text-muted)' }} />
+        <p className="text-lg font-medium" style={{ color: 'var(--color-text-muted)' }}>
           No execution events yet
         </p>
-        <p className="text-sm text-gray-500 dark:text-text-muted/70 mt-2">
+        <p className="text-sm mt-2 opacity-70" style={{ color: 'var(--color-text-muted)' }}>
           Events will appear here as the workflow executes
         </p>
       </div>
@@ -276,15 +276,21 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
       {logEntries.map((entry, idx) => (
         <div
           key={idx}
-          className="relative flex gap-4 p-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-l-2 border-gray-200 dark:border-border-dark ml-6"
+          className="relative flex gap-4 p-4 hover:bg-[var(--color-accent-wash)] transition-colors border-l-2 ml-6"
+          style={{ borderColor: 'var(--border-subtle)' }}
         >
           {/* Timeline icon */}
-          <div className={`absolute left-[-25px] top-4 w-10 h-10 rounded-full flex items-center justify-center ${entry.type === 'success' ? 'bg-green-100 dark:bg-green-900/30' :
-            entry.type === 'error' ? 'bg-red-100 dark:bg-red-900/30' :
-              entry.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
-                'bg-blue-100 dark:bg-blue-900/30'
-            }`}>
-            <div className={entry.iconColor}>
+          <div
+            className="absolute left-[-25px] top-4 w-10 h-10 rounded-full flex items-center justify-center"
+            style={{
+              backgroundColor: entry.type === 'success' ? 'var(--color-success-wash)' :
+                entry.type === 'error' ? 'var(--color-error-wash)' :
+                  entry.type === 'warning' ? 'var(--color-warning-wash)' :
+                    'var(--color-info-wash)',
+              border: '1px solid var(--border-subtle)'
+            }}
+          >
+            <div style={{ color: entry.iconColor }}>
               {entry.icon}
             </div>
           </div>
@@ -292,18 +298,18 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
           {/* Content */}
           <div className="flex-1 min-w-0 pt-1">
             {/* Timestamp */}
-            <div className="text-xs font-mono text-gray-500 dark:text-text-muted/70 mb-1">
+            <div className="text-xs font-mono mb-1 opacity-70" style={{ color: 'var(--color-text-muted)' }}>
               {new Date(entry.timestamp).toLocaleTimeString()}
             </div>
 
             {/* Title */}
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            <div className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
               {entry.title}
             </div>
 
             {/* Description */}
             {entry.description && (
-              <div className="text-sm text-gray-700 dark:text-text-muted mt-1.5 whitespace-pre-wrap">
+              <div className="text-sm mt-1.5 whitespace-pre-wrap" style={{ color: 'var(--color-text-muted)' }}>
                 {entry.description}
               </div>
             )}
@@ -311,10 +317,10 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
             {/* Details (collapsed by default) */}
             {entry.details && Object.keys(entry.details).length > 0 && (
               <details className="mt-2">
-                <summary className="text-xs text-gray-500 dark:text-text-muted/70 cursor-pointer hover:text-gray-700 dark:hover:text-text-muted">
+                <summary className="text-xs cursor-pointer opacity-70 hover:opacity-100" style={{ color: 'var(--color-text-muted)' }}>
                   View details
                 </summary>
-                <pre className="text-xs text-gray-600 dark:text-text-muted/70 mt-1 font-mono bg-gray-50 dark:bg-white/5 p-2 rounded overflow-x-auto">
+                <pre className="text-xs mt-1 font-mono surface-inset p-2 overflow-x-auto" style={{ color: 'var(--color-text-muted)' }}>
                   {JSON.stringify(entry.details, null, 2)}
                 </pre>
               </details>

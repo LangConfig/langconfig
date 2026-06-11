@@ -124,6 +124,15 @@ select {
   box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.1), inset -1px -1px 0px rgba(0, 0, 0, 0.3);
 }
 
+/* Header wordmark: deep navy in light themes, warm parchment in dark themes */
+.header-wordmark {
+  filter: brightness(0) saturate(100%) invert(15%) sepia(47%) saturate(923%) hue-rotate(166deg) brightness(90%) contrast(94%);
+}
+
+.dark .header-wordmark {
+  filter: brightness(0) saturate(100%) invert(93%) sepia(8%) saturate(255%) hue-rotate(353deg) brightness(101%) contrast(92%);
+}
+
 .button-90s {
   border: 1px solid black;
   box-shadow: inset -1px -1px 0px #000000, inset 1px 1px 0px #ffffff, inset -2px -2px 0px #808080, inset 2px 2px 0px #dddddd;
@@ -813,6 +822,25 @@ select {
   color: var(--color-info);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Markdown inside accent-filled user bubbles: keep on-accent contrast for
+   links, inline code, and blockquotes (theme link/code colors are tuned for
+   surface backgrounds, not the accent fill). */
+.chat-bubble-user .chat-markdown a {
+  color: inherit;
+  font-weight: 600;
+}
+
+.chat-bubble-user .chat-markdown :not(pre) > code {
+  background: color-mix(in srgb, var(--color-on-accent) 14%, transparent);
+  color: inherit;
+  border-color: color-mix(in srgb, var(--color-on-accent) 30%, transparent);
+}
+
+.chat-bubble-user .chat-markdown blockquote {
+  border-left-color: var(--color-on-accent);
+  color: inherit;
 }
 
 /* --- Code blocks: classed Prism tokens, colors from theme vars --- */

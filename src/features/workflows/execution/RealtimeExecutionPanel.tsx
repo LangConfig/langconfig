@@ -22,11 +22,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import type { WorkflowEvent } from '@/types/events';
 // import { ErrorDiagnosis } from '../utils/workflowErrorDetector';
-import { PenLine, Wrench, CheckCircle, XCircle, X, ChevronDown, Copy, Check, Search, Activity, ArrowDown, History as HistoryIcon, Maximize2, Minimize2, DollarSign } from 'lucide-react';
+import { Wrench, CheckCircle, XCircle, X, ChevronDown, Search, Activity, ArrowDown, History as HistoryIcon, Maximize2, Minimize2, DollarSign } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '@/components/ui/CodeBlock';
+import { Badge } from '@/components/ui/Badge';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { calculateAndFormatCost } from '@/utils/modelPricing';
 import { apiClient } from '@/lib/api-client';
 import { SubAgentPanelStack } from './SubagentPanel';
@@ -35,39 +36,6 @@ import { AgentContextViewer } from './AgentContextViewer';
 import { ProgressCard, StatusBadge, FileOperationCard } from './CustomEventCards';
 import type { ProgressEvent, StatusEvent, FileStatusEvent } from '@/hooks/useCustomEvents';
 import type { ContentBlock } from '@/types/content-blocks';
-
-// Helper component for code blocks with copy button
-const CodeBlock = ({ language, children }: { language: string, children: string }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="relative group rounded-md overflow-hidden my-2">
-      <div className="absolute right-2 top-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={handleCopy}
-          className="p-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
-          title="Copy code"
-        >
-          {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-        </button>
-      </div>
-      <SyntaxHighlighter
-        language={language}
-        style={vscDarkPlus}
-        customStyle={{ margin: 0, borderRadius: '0.375rem', fontSize: '0.85em' }}
-        wrapLongLines={true}
-      >
-        {children}
-      </SyntaxHighlighter>
-    </div>
-  );
-};
 
 // Helper component for collapsible tool calls - River Flow Style
 // File icon helper
@@ -90,10 +58,11 @@ const FileCreatedCard = ({ filename, result }: { filename: string; result: strin
 
   return (
     <div
-      className="flex items-center gap-3 p-3 rounded-lg border-2 mt-2"
+      className="flex items-center gap-3 p-3 mt-2"
       style={{
-        backgroundColor: 'rgba(16, 185, 129, 0.08)',
-        borderColor: 'rgba(16, 185, 129, 0.3)'
+        backgroundColor: 'color-mix(in srgb, var(--color-success) 10%, var(--surface-1))',
+        border: '1px solid var(--color-success-border)',
+        borderRadius: 'var(--radius-control)'
       }}
     >
       <div className="text-2xl">{getFileIcon(filename)}</div>
@@ -105,7 +74,7 @@ const FileCreatedCard = ({ filename, result }: { filename: string; result: strin
           {charCount ? `${parseInt(charCount).toLocaleString()} characters written` : 'File created successfully'}
         </div>
       </div>
-      <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+      <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
     </div>
   );
 };
@@ -158,37 +127,41 @@ const ToolCallItem = ({
 
   return (
     <div
-      className="group border-2 rounded-lg overflow-hidden transition-all duration-200 mb-2 shadow-md hover:shadow-lg"
+      className="group overflow-hidden transition-all duration-200 mb-2"
       style={{
-        borderColor: status === 'error' ? '#ef4444' : status === 'completed' ? '#6ee7b7' : '#f59e0b',
+        borderRadius: 'var(--radius-card)',
+        border: `1px solid ${status === 'error' ? 'var(--color-error-border)' : status === 'completed' ? 'var(--color-success-border)' : 'var(--color-warning-border)'}`,
         background: status === 'error'
-          ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.03) 100%)'
+          ? 'color-mix(in srgb, var(--color-error) 10%, var(--surface-1))'
           : status === 'completed'
-            ? 'linear-gradient(135deg, rgba(110, 231, 183, 0.08) 0%, rgba(110, 231, 183, 0.03) 100%)'
-            : 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.03) 100%)',
-        boxShadow: status === 'running' ? '0 0 20px rgba(245, 158, 11, 0.15)' : undefined
+            ? 'color-mix(in srgb, var(--color-success) 10%, var(--surface-1))'
+            : 'color-mix(in srgb, var(--color-warning) 10%, var(--surface-1))',
+        boxShadow: status === 'running' ? 'var(--glow-warning)' : undefined
       }}
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 transition-all duration-200 text-left"
+        className="w-full flex items-center gap-2 p-2 hover:bg-[var(--color-accent-wash)] transition-all duration-200 text-left"
       >
         <div className="flex-shrink-0 p-1 rounded" style={{
-          backgroundColor: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : status === 'completed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'
+          backgroundColor: status === 'error' ? 'var(--color-error-wash)' : status === 'completed' ? 'var(--color-success-wash)' : 'var(--color-warning-wash)'
         }}>
-          {status === 'running' && <Wrench className="w-3 h-3 animate-spin text-amber-600" />}
-          {status === 'completed' && <CheckCircle className="w-3 h-3 text-emerald-600" />}
-          {status === 'error' && <XCircle className="w-3 h-3 text-red-600" />}
+          {status === 'running' && <Wrench className="w-3 h-3 animate-spin" style={{ color: 'var(--color-warning)' }} />}
+          {status === 'completed' && <CheckCircle className="w-3 h-3" style={{ color: 'var(--color-success)' }} />}
+          {status === 'error' && <XCircle className="w-3 h-3" style={{ color: 'var(--color-error)' }} />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-xs uppercase tracking-wider" style={{ color: '#000000' }}>Tool</span>
-            <span className={`text-xs font-medium ${status === 'running' ? 'text-amber-500' : status === 'completed' ? 'text-emerald-500' : 'text-red-500'}`}>
-              {status === 'running' ? 'Running' : status === 'completed' ? 'Done' : 'Failed'}
+            <span className="font-mono text-xs uppercase tracking-wider truncate" style={{ color: 'var(--color-text-primary)' }}>
+              TOOL ▸ {renderedHeader}
             </span>
-          </div>
-          <div className="font-medium text-xs truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {renderedHeader}
+            <Badge
+              tone={status === 'running' ? 'warning' : status === 'completed' ? 'success' : 'error'}
+              dot
+              pulse={status === 'running'}
+            >
+              {status === 'running' ? 'Running' : status === 'completed' ? 'Done' : 'Failed'}
+            </Badge>
           </div>
         </div>
         <ChevronDown
@@ -198,27 +171,25 @@ const ToolCallItem = ({
       </button>
 
       {isOpen && (
-        <div className="px-2 pb-2 space-y-2 animate-in slide-in-from-top-1 duration-200 border-t border-white/5 pt-2">
+        <div className="px-2 pb-2 space-y-2 animate-in slide-in-from-top-1 duration-200 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
           {/* Progress indicator for long-running tools */}
           {status === 'running' && (progressMessage || progressPercent !== undefined) && (
-            <div className="text-xs bg-amber-50 dark:bg-amber-950/30 rounded-md p-2 border border-amber-200 dark:border-amber-800">
-              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+            <div className="text-xs rounded-md p-2" style={{ background: 'var(--color-warning-wash)', border: '1px solid var(--color-warning-border)' }}>
+              <div className="flex items-center gap-2" style={{ color: 'var(--color-warning)' }}>
                 <div className="flex-1 min-w-0">
                   {progressMessage && (
                     <div className="text-xs truncate">{progressMessage}</div>
                   )}
                   {(progressPercent !== undefined || (progressStep !== undefined && progressTotal !== undefined)) && (
                     <div className="mt-1">
-                      <div className="w-full bg-amber-200 dark:bg-amber-900 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-amber-500 h-1.5 rounded-full transition-all duration-300 ease-out"
-                          style={{
-                            width: `${progressPercent ?? ((progressStep ?? 0) / (progressTotal ?? 1) * 100)}%`
-                          }}
-                        />
-                      </div>
+                      <ProgressBar
+                        value={progressPercent ?? ((progressStep ?? 0) / (progressTotal ?? 1) * 100)}
+                        tone="warning"
+                        animated
+                        height={6}
+                      />
                       {progressStep !== undefined && progressTotal !== undefined && (
-                        <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 text-right">
+                        <div className="text-[10px] mt-0.5 text-right" style={{ color: 'var(--color-warning)' }}>
                           Step {progressStep} of {progressTotal}
                         </div>
                       )}
@@ -234,13 +205,13 @@ const ToolCallItem = ({
 
           {renderedInput && (
             <div className="text-xs">
-              <div className="font-medium mb-0.5 text-xs" style={{ color: '#000000' }}>Input</div>
+              <div className="font-mono uppercase tracking-wider mb-0.5 text-xs" style={{ color: 'var(--color-text-primary)' }}>Input</div>
               <div className="relative">
                 <pre
-                  className="code-snippet p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
+                  className="surface-inset p-2 overflow-x-auto custom-scrollbar text-xs"
                   style={{
                     fontFamily: 'var(--font-family-mono)',
-                    color: '#000000'
+                    color: 'var(--color-text-primary)'
                   }}
                 >
                   {renderedInput}
@@ -253,11 +224,9 @@ const ToolCallItem = ({
             <div className="text-xs">
               <div className="flex items-center gap-1 mb-0.5">
                 <ArrowDown className="w-3 h-3 opacity-30" />
-                <span className="font-medium text-xs" style={{ color: '#000000' }}>Result</span>
+                <span className="font-mono uppercase tracking-wider text-xs" style={{ color: 'var(--color-text-primary)' }}>Result</span>
                 {hasMultimodal && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 ml-1">
-                    Multimodal
-                  </span>
+                  <Badge tone="info" className="ml-1">Multimodal</Badge>
                 )}
               </div>
 
@@ -270,8 +239,8 @@ const ToolCallItem = ({
 
               {/* Render artifacts (UI-only content) */}
               {artifacts && artifacts.length > 0 && (
-                <div className="my-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 font-medium">Generated Content:</p>
+                <div className="my-2 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                  <p className="text-xs mb-1 font-medium" style={{ color: 'var(--color-text-muted)' }}>Generated Content:</p>
                   <ContentBlockRenderer blocks={artifacts} />
                 </div>
               )}
@@ -293,13 +262,14 @@ const ToolCallItem = ({
               ) : renderedResult && !hasMultimodal ? (
                 <div className="relative">
                   <pre
-                    className="p-2 rounded-md overflow-x-auto custom-scrollbar text-xs"
+                    className="p-2 overflow-x-auto custom-scrollbar text-xs"
                     style={{
-                      backgroundColor: status === 'error' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)',
-                      color: '#000000',
+                      backgroundColor: status === 'error' ? 'var(--color-error-wash)' : 'var(--color-success-wash)',
+                      color: 'var(--color-text-primary)',
                       fontFamily: 'var(--font-family-mono)',
                       border: '1px solid',
-                      borderColor: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                      borderColor: status === 'error' ? 'var(--color-error-border)' : 'var(--color-success-border)',
+                      borderRadius: 'var(--radius-control)',
                       maxHeight: '300px'
                     }}
                   >
@@ -1249,32 +1219,34 @@ export default function RealtimeExecutionPanel({
       }}>
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg" style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.3)'
+            <div className="p-2" style={{
+              backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 20%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--color-on-accent) 30%, transparent)',
+              borderRadius: 'var(--radius-control)'
             }}>
-              {isReplay ? <HistoryIcon className="w-5 h-5 text-white" /> : <Activity className="w-5 h-5 text-white" />}
+              {isReplay ? <HistoryIcon className="w-5 h-5" style={{ color: 'var(--color-on-accent)' }} /> : <Activity className="w-5 h-5" style={{ color: 'var(--color-on-accent)' }} />}
             </div>
             <div>
-              <h2 className="text-lg font-bold flex items-center gap-2 text-white font-display" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)' }}>
+              <h2 className="text-lg font-bold flex items-center gap-2 font-display" style={{ color: 'var(--color-on-accent)', textShadow: '0 1px 2px rgba(0, 0, 0, 0.25)' }}>
                 {workflowName || (isReplay ? 'Execution History' : 'Live Execution')}
-                {isFullScreen && <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
+                {isFullScreen && <span className="badge-mono" style={{
+                  backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--color-on-accent) 30%, transparent)',
+                  color: 'var(--color-on-accent)'
                 }}>First Person View</span>}
               </h2>
-              <div className="text-sm flex items-center gap-2 text-white/90" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}>
+              <div className="text-sm flex items-center gap-2" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 90%, transparent)', textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}>
                 {isReplay ? (
                   <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white/60"></span>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 60%, transparent)' }}></span>
                     Historical View
                   </span>
                 ) : (
                   executionStatus?.state === 'running' ? (
                     <>
                       <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-white"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: 'var(--color-on-accent)' }}></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: 'var(--color-on-accent)' }}></span>
                       </span>
                       {latestEvent?.type === 'on_tool_start' ? `Running tool: ${latestEvent.data.tool_name}...` :
                         latestEvent?.type === 'on_chat_model_stream' ? 'Thinking...' :
@@ -1282,7 +1254,7 @@ export default function RealtimeExecutionPanel({
                     </>
                   ) : (
                     <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-300"></span>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--color-success)' }}></span>
                       Completed
                     </span>
                   )
@@ -1295,18 +1267,18 @@ export default function RealtimeExecutionPanel({
           {isFullScreen && workflowMetrics && (
             <div className="hidden md:flex items-center gap-6 px-8 animate-in fade-in duration-300">
               <div className="flex flex-col items-center">
-                <span className="text-xs uppercase tracking-wider text-white/60">Duration</span>
-                <span className="text-xl font-mono font-bold text-white">{workflowMetrics.duration}</span>
+                <span className="text-xs uppercase tracking-wider" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 60%, transparent)' }}>Duration</span>
+                <span className="text-xl font-mono font-bold" style={{ color: 'var(--color-on-accent)' }}>{workflowMetrics.duration}</span>
               </div>
-              <div className="w-px h-8 bg-white/20" />
+              <div className="w-px h-8" style={{ backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 20%, transparent)' }} />
               <div className="flex flex-col items-center">
-                <span className="text-xs uppercase tracking-wider text-white/60">Tokens</span>
-                <span className="text-xl font-mono font-bold text-white">{workflowMetrics.totalTokens.toLocaleString()}</span>
+                <span className="text-xs uppercase tracking-wider" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 60%, transparent)' }}>Tokens</span>
+                <span className="text-xl font-mono font-bold" style={{ color: 'var(--color-on-accent)' }}>{workflowMetrics.totalTokens.toLocaleString()}</span>
               </div>
-              <div className="w-px h-8 bg-white/20" />
+              <div className="w-px h-8" style={{ backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 20%, transparent)' }} />
               <div className="flex flex-col items-center">
-                <span className="text-xs uppercase tracking-wider text-white/60">Est. Cost</span>
-                <span className="text-xl font-mono font-bold text-white">
+                <span className="text-xs uppercase tracking-wider" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 60%, transparent)' }}>Est. Cost</span>
+                <span className="text-xl font-mono font-bold" style={{ color: 'var(--color-on-accent)' }}>
                   {(() => {
                     // Estimate 75% prompt, 25% completion tokens
                     const promptTokens = Math.round(workflowMetrics.totalTokens * 0.75);
@@ -1315,10 +1287,10 @@ export default function RealtimeExecutionPanel({
                   })()}
                 </span>
               </div>
-              <div className="w-px h-8 bg-white/20" />
+              <div className="w-px h-8" style={{ backgroundColor: 'color-mix(in srgb, var(--color-on-accent) 20%, transparent)' }} />
               <div className="flex flex-col items-center">
-                <span className="text-xs uppercase tracking-wider text-white/60">Tools</span>
-                <span className="text-xl font-mono font-bold text-white">{workflowMetrics.toolCalls}</span>
+                <span className="text-xs uppercase tracking-wider" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 60%, transparent)' }}>Tools</span>
+                <span className="text-xl font-mono font-bold" style={{ color: 'var(--color-on-accent)' }}>{workflowMetrics.toolCalls}</span>
               </div>
             </div>
           )}
@@ -1344,7 +1316,12 @@ export default function RealtimeExecutionPanel({
                     }
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-white text-red-600 hover:bg-red-50 transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold font-mono uppercase tracking-wider transition-all hover:opacity-90 shadow-sm"
+                style={{
+                  backgroundColor: 'var(--color-on-accent)',
+                  color: 'var(--color-error)',
+                  borderRadius: 'var(--radius-control)'
+                }}
                 title="Stop Execution"
               >
                 <XCircle className="w-4 h-4" />
@@ -1355,8 +1332,8 @@ export default function RealtimeExecutionPanel({
             {/* Full Screen Toggle */}
             <button
               onClick={() => setIsFullScreen(!isFullScreen)}
-              className="p-2 rounded-md transition-colors text-white/90 hover:text-white hover:bg-white/15"
-              style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}
+              className="p-2 transition-all opacity-90 hover:opacity-100 hover:bg-[color-mix(in_srgb,var(--color-on-accent)_15%,transparent)]"
+              style={{ color: 'var(--color-on-accent)', borderRadius: 'var(--radius-control)', textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}
               title={isFullScreen ? "Exit Full Screen" : "First Person View"}
             >
               {isFullScreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -1366,7 +1343,7 @@ export default function RealtimeExecutionPanel({
               <div className="flex items-center gap-2">
                 {workflowMetrics.totalTokens > 0 && (
                   <>
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Estimated Cost">
+                    <div className="badge-mono" style={{ background: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--color-on-accent) 30%, transparent)', color: 'var(--color-on-accent)' }} title="Estimated Cost">
                       <DollarSign className="w-3 h-3" />
                       <span>{(() => {
                         const promptTokens = Math.round(workflowMetrics.totalTokens * 0.75);
@@ -1374,26 +1351,26 @@ export default function RealtimeExecutionPanel({
                         return calculateAndFormatCost(promptTokens, completionTokens, 'gpt-5.4');
                       })()}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Total Tokens">
+                    <div className="badge-mono" style={{ background: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--color-on-accent) 30%, transparent)', color: 'var(--color-on-accent)' }} title="Total Tokens">
                       <span>💬</span>
                       <span>{workflowMetrics.totalTokens.toLocaleString()}</span>
                     </div>
                   </>
                 )}
                 {workflowMetrics.toolCalls > 0 && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Tool Calls">
+                  <div className="badge-mono" style={{ background: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--color-on-accent) 30%, transparent)', color: 'var(--color-on-accent)' }} title="Tool Calls">
                     <Wrench className="w-3 h-3" />
                     <span>{workflowMetrics.toolCalls}</span>
                   </div>
                 )}
                 {workflowMetrics.duration !== '0s' && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Duration">
+                  <div className="badge-mono" style={{ background: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--color-on-accent) 30%, transparent)', color: 'var(--color-on-accent)' }} title="Duration">
                     <span>⏱️</span>
                     <span>{workflowMetrics.duration}</span>
                   </div>
                 )}
                 {workflowMetrics.errors > 0 && (
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs" style={{ backgroundColor: 'rgba(220,38,38,0.3)', color: '#fca5a5' }} title="Errors">
+                  <div className="badge-mono tone-error" title="Errors">
                     <XCircle className="w-3 h-3" />
                     <span>{workflowMetrics.errors}</span>
                   </div>
@@ -1402,17 +1379,17 @@ export default function RealtimeExecutionPanel({
             )}
 
             {/* Memory Indicator */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Memory Usage">
+            <div className="badge-mono" style={{ background: 'color-mix(in srgb, var(--color-on-accent) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--color-on-accent) 30%, transparent)', color: 'var(--color-on-accent)' }} title="Memory Usage">
               <Activity className="w-3 h-3" />
               <span>{memoryProfile.currentMemoryMB.toFixed(1)} MB</span>
-              {memoryProfile.memoryTrend === 'increasing' && <span className="text-yellow-300">↑</span>}
+              {memoryProfile.memoryTrend === 'increasing' && <span style={{ color: 'var(--color-warning)' }}>↑</span>}
             </div>
 
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-2 rounded-md transition-colors text-white/90 hover:text-white hover:bg-white/15"
-                style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}
+                className="p-2 transition-all opacity-90 hover:opacity-100 hover:bg-[color-mix(in_srgb,var(--color-on-accent)_15%,transparent)]"
+                style={{ color: 'var(--color-on-accent)', borderRadius: 'var(--radius-control)', textShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }}
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -1444,24 +1421,26 @@ export default function RealtimeExecutionPanel({
               placeholder="Search execution logs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm rounded-md focus:outline-none focus:ring-1"
+              className="w-full pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1"
               style={{
                 backgroundColor: 'var(--color-input-background, rgba(0,0,0,0.2))',
                 border: '1px solid var(--color-border-dark)',
                 color: 'var(--color-text-primary)',
                 borderColor: 'var(--color-border-dark)',
+                borderRadius: 'var(--radius-control)',
               }}
             />
           </div>
-          <div className="flex items-center rounded-md p-0.5 border" style={{ backgroundColor: 'var(--color-input-background, rgba(0,0,0,0.2))', borderColor: 'var(--color-border-dark)' }}>
+          <div className="flex items-center p-0.5 border" style={{ backgroundColor: 'var(--color-input-background, rgba(0,0,0,0.2))', borderColor: 'var(--color-border-dark)', borderRadius: 'var(--radius-control)' }}>
             {(['all', 'tool_call', 'thinking', 'output'] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
-                className={`px-2.5 py-1 text-xs font-medium rounded-sm transition-colors`}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors`}
                 style={{
                   backgroundColor: filterType === type ? 'var(--color-primary)' : 'transparent',
-                  color: filterType === type ? 'white' : 'var(--color-text-muted)',
+                  color: filterType === type ? 'var(--color-on-accent)' : 'var(--color-text-muted)',
+                  borderRadius: 'var(--radius-control)',
                 }}
               >
                 {type === 'all' ? 'All' : type === 'tool_call' ? 'Tools' : type.charAt(0).toUpperCase() + type.slice(1)}
@@ -1473,19 +1452,19 @@ export default function RealtimeExecutionPanel({
 
       {/* Error Banner - Prominent dismissable error display */}
       {workflowErrors.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-3 space-y-2" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid rgba(239, 68, 68, 0.3)' }}>
+        <div className="flex-shrink-0 px-4 py-3 space-y-2" style={{ backgroundColor: 'var(--color-error-wash)', borderBottom: '1px solid var(--color-error-border)' }}>
           {workflowErrors.map((error) => (
             <div
               key={error.id}
-              className="flex items-start gap-3 p-3 rounded-lg"
+              className="flex items-start gap-3 p-3 tone-error"
               style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.4)'
+                border: '1px solid var(--color-error-border)',
+                borderRadius: 'var(--radius-card)'
               }}
             >
-              <XCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
+              <XCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-error)' }} />
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm" style={{ color: '#fca5a5' }}>
+                <div className="font-semibold text-sm" style={{ color: 'var(--color-error)' }}>
                   Workflow {error.errorType}
                 </div>
                 <div className="text-sm mt-1 break-words" style={{ color: 'var(--color-text-primary)' }}>
@@ -1494,10 +1473,10 @@ export default function RealtimeExecutionPanel({
               </div>
               <button
                 onClick={() => setDismissedErrors(prev => new Set([...prev, error.id]))}
-                className="p-1 rounded hover:bg-red-500/20 transition-colors flex-shrink-0"
+                className="p-1 rounded hover:bg-[var(--color-error-wash)] transition-colors flex-shrink-0"
                 title="Dismiss error"
               >
-                <X className="w-4 h-4" style={{ color: '#fca5a5' }} />
+                <X className="w-4 h-4" style={{ color: 'var(--color-error)' }} />
               </button>
             </div>
           ))}
@@ -1506,16 +1485,16 @@ export default function RealtimeExecutionPanel({
 
       {/* Workflow Failed Banner - Shows when workflow completed with error status */}
       {workflowFailed && workflowErrors.length === 0 && (
-        <div className="flex-shrink-0 px-4 py-3" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderBottom: '1px solid rgba(239, 68, 68, 0.3)' }}>
+        <div className="flex-shrink-0 px-4 py-3" style={{ backgroundColor: 'var(--color-error-wash)', borderBottom: '1px solid var(--color-error-border)' }}>
           <div
-            className="flex items-center gap-3 p-3 rounded-lg"
+            className="flex items-center gap-3 p-3 tone-error"
             style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.4)'
+              border: '1px solid var(--color-error-border)',
+              borderRadius: 'var(--radius-card)'
             }}
           >
-            <XCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#ef4444' }} />
-            <div className="text-sm font-medium" style={{ color: '#fca5a5' }}>
+            <XCircle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--color-error)' }} />
+            <div className="text-sm font-medium" style={{ color: 'var(--color-error)' }}>
               Workflow execution failed. Check the logs above for details.
             </div>
           </div>
@@ -1558,7 +1537,7 @@ export default function RealtimeExecutionPanel({
                   </div>
 
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-panel-dark)', border: '1px solid var(--color-border-dark)' }}>
+                    <div className="p-4 surface-card-sm">
                       <h4 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
                         <span className="material-symbols-outlined text-base" style={{ color: 'var(--color-primary)' }}>help</span>
                         What does this panel show?
@@ -1568,7 +1547,7 @@ export default function RealtimeExecutionPanel({
                       </p>
                     </div>
 
-                    <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-panel-dark)', border: '1px solid var(--color-border-dark)' }}>
+                    <div className="p-4 surface-card-sm">
                       <h4 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
                         <span className="material-symbols-outlined text-base" style={{ color: 'var(--color-primary)' }}>play_circle</span>
                         How do I start?
@@ -1578,7 +1557,7 @@ export default function RealtimeExecutionPanel({
                       </p>
                     </div>
 
-                    <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-panel-dark)', border: '1px solid var(--color-border-dark)' }}>
+                    <div className="p-4 surface-card-sm">
                       <h4 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
                         <span className="material-symbols-outlined text-base" style={{ color: 'var(--color-primary)' }}>psychology</span>
                         Thinking vs Panel
@@ -1597,11 +1576,7 @@ export default function RealtimeExecutionPanel({
                       </p>
                       <div
                         key={currentTipIndex}
-                        className="p-4 rounded-lg animate-in fade-in slide-in-from-bottom-2 duration-500"
-                        style={{
-                          backgroundColor: 'var(--color-background-light)',
-                          border: '1px solid var(--color-border-dark)'
-                        }}
+                        className="p-4 surface-card-sm animate-in fade-in slide-in-from-bottom-2 duration-500"
                       >
                         <div>
                           <h5 className="text-sm font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>
@@ -1643,47 +1618,32 @@ export default function RealtimeExecutionPanel({
                 return (
                   <div
                     key={`${section.nodeId}-${sectionIdx}`}
-                    className="space-y-2 p-3 mb-3 rounded-lg last:mb-0 transition-all duration-200 shadow-sm"
-                    style={{
-                      backgroundColor: 'white',
-                      border: '1px solid var(--color-border-dark)'
-                    }}
+                    className={`terminal-block mb-3 last:mb-0 transition-all duration-200 ${!section.endTime && !isReplay && executionStatus?.state === 'running' ? 'streaming-pulse' : ''}`}
                   >
                     {/* Agent Header */}
-                    <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--color-border-dark)' }}>
-                      <div
-                        className="w-7 h-7 rounded-md flex items-center justify-center"
-                        style={{
-                          background: section.endTime ? '#10b981' : 'var(--color-primary)'
-                        }}
-                      >
-                        <PenLine className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm truncate" style={{
-                          color: 'var(--color-text-primary)',
-                          fontFamily: 'var(--font-family-display)'
-                        }}>
-                          {(() => {
-                            const headerText = section.agentLabel;
-                            const result = renderTextWithLimit(headerText, charIndex);
-                            charIndex += result.charsUsed;
-                            return result.rendered;
-                          })()}
-                        </h3>
-                        <p className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--color-text-muted)' }}>
-                          <span className="inline-block w-1 h-1 rounded-full" style={{
-                            backgroundColor: section.endTime ? '#10b981' : 'var(--color-primary)',
-                            animation: section.endTime ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                          }}></span>
-                          {new Date(section.startTime).toLocaleTimeString()}
-                        </p>
-                      </div>
-                      {section.endTime && (
-                        <CheckCircle className="w-4 h-4" style={{ color: '#10b981' }} />
-                      )}
+                    <div className="terminal-block-header">
+                      <span className="terminal-dots">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <span className="font-mono uppercase tracking-wider truncate flex-1 min-w-0" style={{ color: 'var(--code-text)' }}>
+                        {(() => {
+                          const headerText = section.agentLabel;
+                          const result = renderTextWithLimit(headerText, charIndex);
+                          charIndex += result.charsUsed;
+                          return result.rendered;
+                        })()}
+                      </span>
+                      <span className="font-mono flex-shrink-0" style={{ color: 'var(--code-comment)' }}>
+                        {new Date(section.startTime).toLocaleTimeString()}
+                      </span>
+                      <Badge tone={section.endTime ? 'success' : 'warning'} dot pulse={!section.endTime} className="flex-shrink-0">
+                        {section.endTime ? 'Done' : 'Running'}
+                      </Badge>
                     </div>
 
+                    <div className="space-y-2 p-3">
                     {/* Agent Context Viewer (for debugging) */}
                     {section.context && (
                       <AgentContextViewer context={section.context} />
@@ -1703,15 +1663,16 @@ export default function RealtimeExecutionPanel({
 
                           // Always render markdown - modern browsers handle re-parsing well
                           // This gives a much better live preview experience
+                          const isLiveThinking = item.type === 'thinking' && !item.finalized && !isReplay;
                           return (
-                            <div
-                              key={item.id}
-                              className="prose prose-slate max-w-none"
-                              style={{
-                                color: 'var(--color-text-primary)',
-                                fontFamily: 'var(--font-family-sans)'
-                              }}
-                            >
+                            <div key={item.id}>
+                              <div
+                                className="prose prose-invert chat-markdown max-w-none"
+                                style={{
+                                  color: 'var(--code-text)',
+                                  fontFamily: 'var(--font-family-sans)'
+                                }}
+                              >
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 components={{
@@ -1723,53 +1684,53 @@ export default function RealtimeExecutionPanel({
                                     }
                                     return (
                                       <code className="px-1.5 py-0.5 rounded text-sm font-mono" style={{
-                                        backgroundColor: 'var(--color-background-light)',
-                                        color: 'var(--color-primary)'
+                                        backgroundColor: 'color-mix(in srgb, var(--code-text) 10%, transparent)',
+                                        color: 'var(--code-keyword)'
                                       }} {...props}>
                                         {children}
                                       </code>
                                     );
                                   },
                                   h1: ({ children }: any) => (
-                                    <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-dark)' }}>
+                                    <h1 className="text-3xl font-bold mt-8 mb-4 border-b-2 pb-2" style={{ color: 'var(--code-text)', borderColor: 'color-mix(in srgb, var(--code-text) 20%, transparent)' }}>
                                       {children}
                                     </h1>
                                   ),
                                   h2: ({ children }: any) => (
-                                    <h2 className="text-2xl font-bold mt-6 mb-3" style={{ color: 'var(--color-text-primary)' }}>
+                                    <h2 className="text-2xl font-bold mt-6 mb-3" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </h2>
                                   ),
                                   h3: ({ children }: any) => (
-                                    <h3 className="text-xl font-bold mt-4 mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                                    <h3 className="text-xl font-bold mt-4 mb-2" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </h3>
                                   ),
                                   p: ({ children }: any) => (
-                                    <p className="mb-4 leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
+                                    <p className="mb-4 leading-relaxed" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </p>
                                   ),
                                   ul: ({ children }: any) => (
-                                    <ul className="list-disc mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
+                                    <ul className="list-disc mb-4 space-y-1.5 pl-6" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </ul>
                                   ),
                                   ol: ({ children }: any) => (
-                                    <ol className="list-decimal mb-4 space-y-1.5 pl-6" style={{ color: 'var(--color-text-primary)' }}>
+                                    <ol className="list-decimal mb-4 space-y-1.5 pl-6" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </ol>
                                   ),
                                   li: ({ children }: any) => (
-                                    <li className="pl-1" style={{ color: 'var(--color-text-primary)' }}>
+                                    <li className="pl-1" style={{ color: 'var(--code-text)' }}>
                                       {children}
                                     </li>
                                   ),
                                   blockquote: ({ children }: any) => (
                                     <blockquote className="border-l-4 pl-4 py-2 my-4 italic" style={{
                                       borderColor: 'var(--color-primary)',
-                                      backgroundColor: 'var(--color-panel-dark)',
-                                      color: 'var(--color-text-primary)'
+                                      backgroundColor: 'color-mix(in srgb, var(--code-text) 6%, transparent)',
+                                      color: 'var(--code-text)'
                                     }}>
                                       {children}
                                     </blockquote>
@@ -1778,6 +1739,12 @@ export default function RealtimeExecutionPanel({
                               >
                                 {result.rendered}
                               </ReactMarkdown>
+                              </div>
+                              {isLiveThinking && (
+                                <div className="terminal-prompt mt-1">
+                                  <span className="thinking-shimmer terminal-caret">Thinking</span>
+                                </div>
+                              )}
                             </div>
                           );
                         }
@@ -1857,6 +1824,7 @@ export default function RealtimeExecutionPanel({
                         return null;
                       })}
                     </div>
+                    </div>
                   </div>
                 );
               })}
@@ -1870,11 +1838,12 @@ export default function RealtimeExecutionPanel({
         isScrollable && (
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-6 right-6 p-2.5 rounded-full shadow-md text-white transition-all hover:scale-110 hover:shadow-lg"
+            className="absolute bottom-6 right-6 p-2.5 rounded-full shadow-md transition-all hover:scale-110 hover:shadow-lg"
             title="Scroll to bottom"
             style={{
               zIndex: 50,
               backgroundColor: 'var(--color-primary)',
+              color: 'var(--color-on-accent)',
               opacity: isAutoScroll ? 0.3 : 1
             }}
           >
@@ -1894,10 +1863,11 @@ export default function RealtimeExecutionPanel({
         >
           <button
             onClick={() => onContinueFromTask(currentTaskId)}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all hover:opacity-90"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 font-medium text-sm transition-all hover:opacity-90"
             style={{
               backgroundColor: 'var(--color-primary)',
-              color: 'white',
+              color: 'var(--color-on-accent)',
+              borderRadius: 'var(--radius-control)',
             }}
           >
             <span className="material-symbols-outlined text-lg">reply</span>

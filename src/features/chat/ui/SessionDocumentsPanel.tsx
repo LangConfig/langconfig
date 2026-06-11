@@ -9,9 +9,38 @@ import { useState, useEffect } from 'react';
 import { File, Trash2, Loader2, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import type { SessionDocument } from '../types/chat';
 import apiClient from '../../../lib/api-client';
+import { Surface } from '@/components/ui/Surface';
+import { Badge } from '@/components/ui/Badge';
+import type { BadgeTone } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 
 interface SessionDocumentsPanelProps {
   sessionId: string | null;
+}
+
+const STATUS_TONE: Record<string, BadgeTone> = {
+  ready: 'success',
+  indexing: 'info',
+  failed: 'error',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  ready: 'Ready',
+  indexing: 'Indexing...',
+  failed: 'Failed',
+};
+
+function statusIcon(status: string) {
+  switch (status) {
+    case 'ready':
+      return <CheckCircle className="w-3 h-3" />;
+    case 'indexing':
+      return <Loader2 className="w-3 h-3 animate-spin" />;
+    case 'failed':
+      return <AlertCircle className="w-3 h-3" />;
+    default:
+      return <Clock className="w-3 h-3" />;
+  }
 }
 
 export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPanelProps) {
@@ -52,38 +81,12 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'ready':
-        return <CheckCircle className="w-4 h-4" style={{ color: '#10b981' }} />;
-      case 'indexing':
-        return <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--color-primary)' }} />;
-      case 'failed':
-        return <AlertCircle className="w-4 h-4" style={{ color: '#ef4444' }} />;
-      default:
-        return <Clock className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'ready':
-        return 'Ready';
-      case 'indexing':
-        return 'Indexing...';
-      case 'failed':
-        return 'Failed';
-      default:
-        return 'Pending';
-    }
-  };
-
   if (!sessionId || documents.length === 0) return null;
 
   return (
     <div
       className="border-t-2 p-4"
-      style={{ borderColor: 'var(--color-border-dark)' }}
+      style={{ borderColor: 'var(--border-strong)' }}
     >
       <h3
         className="text-sm font-semibold mb-3"
@@ -99,13 +102,10 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
       ) : (
         <div className="space-y-2 max-h-48 overflow-y-auto">
           {documents.map(doc => (
-            <div
+            <Surface
               key={doc.id}
-              className="flex items-center justify-between border-2 p-3"
-              style={{
-                backgroundColor: 'white',
-                borderColor: 'var(--color-border-dark)'
-              }}
+              variant="inset"
+              className="flex items-center justify-between p-3"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <File className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
@@ -125,15 +125,10 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
                       {(doc.file_size / 1024).toFixed(1)} KB
                     </span>
                     <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>•</span>
-                    <div className="flex items-center gap-1">
-                      {getStatusIcon(doc.indexing_status)}
-                      <span
-                        className="text-xs"
-                        style={{ color: 'var(--color-text-muted)' }}
-                      >
-                        {getStatusLabel(doc.indexing_status)}
-                      </span>
-                    </div>
+                    <Badge tone={STATUS_TONE[doc.indexing_status] ?? 'neutral'}>
+                      {statusIcon(doc.indexing_status)}
+                      {STATUS_LABEL[doc.indexing_status] ?? 'Pending'}
+                    </Badge>
                     {doc.indexed_chunks_count && (
                       <>
                         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>•</span>
@@ -148,15 +143,16 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
                   </div>
                 </div>
               </div>
-              <button
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => handleDelete(doc.id)}
-                className="flex-shrink-0 border-2 p-2 transition-colors hover:bg-red-50"
                 title="Delete document"
-                style={{ borderColor: 'var(--color-border-dark)', color: '#ef4444' }}
+                className="flex-shrink-0"
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+              </Button>
+            </Surface>
           ))}
         </div>
       )}
