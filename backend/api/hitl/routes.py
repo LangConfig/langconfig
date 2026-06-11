@@ -9,7 +9,7 @@ Human-in-the-Loop (HITL) API for Workflow Approval
 Provides endpoints for human approval/rejection of workflows paused at APPROVAL_NODEs.
 Works with SSE streaming - approval events are published to event bus for real-time updates.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -23,6 +23,72 @@ from services.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/hitl", tags=["hitl"])
 logger = logging.getLogger(__name__)
+
+
+def _find_awaiting_task(db: Session, workflow_id: int) -> Optional[Task]:
+    """
+    Locate the most recent task paused at an APPROVAL_NODE for this workflow.
+
+    The executor persists {"workflow_status": "AWAITING_APPROVAL", ...} under
+    execution_logs["state"] when the graph stops on a pending interrupt().
+    """
+    candidates = db.query(Task).filter(
+        Task.workflow_profile_id == workflow_id
+    ).order_by(Task.created_at.desc()).limit(20).all()
+
+    for task in candidates:
+        task_state = (task.execution_logs or {}).get("state", {})
+        if task_state.get("workflow_status") == "AWAITING_APPROVAL":
+            return task
+    return None
+
+
+def _schedule_resume(
+    background_tasks: BackgroundTasks,
+    db: Session,
+    task: Task,
+    workflow_id: int,
+    decision: str,
+    comment: Optional[str]
+) -> None:
+    """
+    Schedule a background resume of a paused workflow via the same execution
+    service used by POST /api/workflows/execute, so SSE events flow to the
+    same workflow:{id} channel.
+
+    Marks the task state as RESUMING first so duplicate approve/reject calls
+    cannot schedule a second resume for the same pause.
+    """
+    from api.workflows.execution import execute_workflow_background
+
+    # Reuse the original run's input_data so the graph re-enters with the same
+    # settings (recursion_limit, timeouts, etc.) and the same thread_id (task_id)
+    input_data = dict((task.execution_logs or {}).get("input_data") or {})
+    input_data["checkpointer_enabled"] = True
+    input_data["resume_command"] = {"decision": decision, "comment": comment}
+
+    # Guard against double-resume: flip the persisted state before scheduling
+    logs = dict(task.execution_logs or {})
+    logs["state"] = {
+        "workflow_status": "RESUMING",
+        "decision": decision,
+        "resumed_at": datetime.utcnow().isoformat()
+    }
+    task.execution_logs = logs
+    task.updated_at = datetime.utcnow()
+    db.commit()
+
+    background_tasks.add_task(
+        execute_workflow_background,
+        task_id=task.id,
+        project_id=task.project_id,
+        workflow_id=workflow_id,
+        input_data=input_data
+    )
+    logger.info(
+        f"Scheduled HITL resume for workflow {workflow_id} task {task.id} "
+        f"with decision='{decision}'"
+    )
 
 
 # Pydantic Schemas
@@ -46,18 +112,21 @@ class HITLResponse(BaseModel):
 async def approve_hitl(
     workflow_id: int,
     approval: HITLApprovalRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Approve HITL checkpoint and resume workflow execution.
 
     This endpoint is called by frontend when user clicks "Approve" button
-    in HITLApprovalPanel. The approval is published to event bus which
-    LangGraph workflow can consume to resume execution.
+    in HITLApprovalPanel. The approval is published to the event bus, and the
+    paused workflow is resumed in the background via Command(resume="approve")
+    through the LangGraph checkpointer (same thread_id as the original run).
 
     Args:
         workflow_id: Workflow ID waiting for approval
         approval: Approval details (approved=True, optional comment)
+        background_tasks: FastAPI background scheduler for the resume
         db: Database session
 
     Returns:
@@ -76,11 +145,8 @@ async def approve_hitl(
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        # Find associated task (if executing)
-        task = db.query(Task).filter(
-            Task.workflow_profile_id == workflow_id,
-            Task.status == TaskStatus.IN_PROGRESS
-        ).order_by(Task.created_at.desc()).first()
+        # Find the task paused at an APPROVAL_NODE
+        task = _find_awaiting_task(db, workflow_id)
 
         if not approval.approved:
             logger.warning(
@@ -111,14 +177,22 @@ async def approve_hitl(
             f"Comment: {approval.comment or 'None'}"
         )
 
-        # TODO: Integrate with LangGraph interrupt_after/interrupt_before resume
-        # For now, just publish event - workflow executor needs to listen for it
+        # Resume the paused graph with Command(resume="approve")
+        if task:
+            _schedule_resume(background_tasks, db, task, workflow_id, "approve", approval.comment)
+            message = f"Workflow {workflow.name} approved - resuming execution"
+        else:
+            logger.warning(
+                f"HITL approve for workflow {workflow_id}: no task awaiting approval found - "
+                f"event published but nothing to resume"
+            )
+            message = f"Workflow {workflow.name} approved, but no paused execution was found to resume"
 
         return HITLResponse(
             workflow_id=workflow_id,
             task_id=task.id if task else None,
             status="approved",
-            message=f"Workflow {workflow.name} approved and will resume execution",
+            message=message,
             timestamp=datetime.utcnow().isoformat()
         )
 
@@ -133,18 +207,22 @@ async def approve_hitl(
 async def reject_hitl(
     workflow_id: int,
     approval: HITLApprovalRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Reject HITL checkpoint and terminate workflow execution.
 
     This endpoint is called by frontend when user clicks "Reject" button
-    in HITLApprovalPanel. The rejection is published to event bus and
-    workflow execution is terminated.
+    in HITLApprovalPanel. The rejection is published to the event bus, and the
+    paused workflow is resumed with Command(resume="reject") so the graph's
+    APPROVAL_NODE reject branch runs and the workflow terminates cleanly
+    through the graph.
 
     Args:
         workflow_id: Workflow ID waiting for approval
         approval: Rejection details (approved=False, required comment)
+        background_tasks: FastAPI background scheduler for the resume
         db: Database session
 
     Returns:
@@ -163,12 +241,6 @@ async def reject_hitl(
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        # Find associated task (if executing)
-        task = db.query(Task).filter(
-            Task.workflow_profile_id == workflow_id,
-            Task.status == TaskStatus.IN_PROGRESS
-        ).order_by(Task.created_at.desc()).first()
-
         # Require comment for rejection
         if not approval.comment:
             raise HTTPException(
@@ -176,12 +248,24 @@ async def reject_hitl(
                 detail="Comment required for rejection"
             )
 
-        # Update task status if found
+        # Find the task paused at an APPROVAL_NODE
+        task = _find_awaiting_task(db, workflow_id)
+
         if task:
-            task.status = TaskStatus.FAILED  # Mark as failed when rejected
-            task.error_message = f"Rejected by user: {approval.comment}"
-            task.updated_at = datetime.utcnow()
-            db.commit()
+            # Resume through the graph so the reject branch executes
+            _schedule_resume(background_tasks, db, task, workflow_id, "reject", approval.comment)
+        else:
+            # No checkpointed pause found - fall back to marking the latest
+            # in-progress task as failed (legacy behavior)
+            task = db.query(Task).filter(
+                Task.workflow_profile_id == workflow_id,
+                Task.status == TaskStatus.IN_PROGRESS
+            ).order_by(Task.created_at.desc()).first()
+            if task:
+                task.status = TaskStatus.FAILED
+                task.error_message = f"Rejected by user: {approval.comment}"
+                task.updated_at = datetime.utcnow()
+                db.commit()
 
         # Publish rejection event to event bus
         event_bus = get_event_bus()
@@ -246,18 +330,15 @@ async def get_hitl_status(
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        # Find associated running task
-        task = db.query(Task).filter(
-            Task.workflow_profile_id == workflow_id,
-            Task.status == TaskStatus.RUNNING
-        ).order_by(Task.created_at.desc()).first()
+        # Find the task paused at an APPROVAL_NODE (executor persists pause
+        # state under execution_logs["state"] when interrupt() fires)
+        task = _find_awaiting_task(db, workflow_id)
 
         waiting_for_approval = False
         checkpoint_context = None
 
-        if task and task.configuration:
-            # Check if task state indicates AWAITING_APPROVAL
-            task_state = task.configuration.get("state", {})
+        if task:
+            task_state = (task.execution_logs or {}).get("state", {})
             waiting_for_approval = task_state.get("workflow_status") == "AWAITING_APPROVAL"
             checkpoint_context = task_state.get("approval_context")
 

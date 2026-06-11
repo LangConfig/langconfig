@@ -68,6 +68,33 @@ def pick_last(left: Any, right: Any) -> Any:
     return right if right is not None else left
 
 
+def detect_pending_interrupt(state_snapshot: Any) -> Optional[Dict[str, Any]]:
+    """
+    Return the first pending interrupt payload from a LangGraph StateSnapshot.
+
+    A graph paused on a node-internal interrupt() (e.g. APPROVAL_NODE) has a
+    non-empty `.next` and at least one task carrying `.interrupts`. Non-dict
+    interrupt values are wrapped as {"value": ...} so callers always get a dict.
+
+    Args:
+        state_snapshot: Result of `await compiled_graph.aget_state(config)` (or None)
+
+    Returns:
+        The interrupt payload dict, or None if the graph is not paused
+    """
+    if state_snapshot is None or not getattr(state_snapshot, "next", None):
+        return None
+
+    for graph_task in getattr(state_snapshot, "tasks", ()) or ():
+        for pending_interrupt in getattr(graph_task, "interrupts", ()) or ():
+            value = getattr(pending_interrupt, "value", None)
+            if isinstance(value, dict):
+                return value
+            return {"value": value}
+
+    return None
+
+
 class SimpleWorkflowState(TypedDict):
     """
     State for user-created workflows from the frontend.
@@ -147,6 +174,46 @@ class SimpleWorkflowExecutor:
 
     def __init__(self):
         self.node_metadata = {}  # Will be populated during graph building
+        self._has_approval_node = False  # Set during graph building (HITL checkpointer auto-enable)
+
+    def _persist_task_hitl_state(self, task_id: int, state: Optional[Dict[str, Any]]) -> None:
+        """
+        Persist (or clear) HITL pause state on the Task row.
+
+        Stored under execution_logs["state"] (the Task model has no dedicated
+        configuration column). The /api/hitl status and approve/reject endpoints
+        read this to locate executions paused at an APPROVAL_NODE.
+
+        Args:
+            task_id: Task ID to update
+            state: State dict (e.g. {"workflow_status": "AWAITING_APPROVAL", ...})
+                   or None to remove the state marker entirely
+        """
+        from db.database import SessionLocal
+        from models.core import Task
+
+        db = SessionLocal()
+        try:
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if not task:
+                logger.warning(f"Cannot persist HITL state - task {task_id} not found")
+                return
+
+            # Reassign the JSON column so SQLAlchemy detects the change
+            logs = dict(task.execution_logs or {})
+            if state is None:
+                logs.pop("state", None)
+            else:
+                logs["state"] = state
+            task.execution_logs = logs
+            task.updated_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Persisted HITL state for task {task_id}: {state.get('workflow_status') if state else 'cleared'}")
+        except Exception as e:
+            logger.error(f"Failed to persist HITL state for task {task_id}: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
     async def execute_workflow(
         self,
@@ -273,10 +340,19 @@ class SimpleWorkflowExecutor:
                     logger.warning(f"Failed to build swarm graph, falling back to standard: {e}")
 
             # 2. Get checkpointer for state persistence
-            # Only use checkpointer if explicitly enabled in input_data
-            checkpointer_enabled = input_data.get("checkpointer_enabled", False)
+            # Enabled explicitly via input_data, or automatically when the workflow
+            # contains an APPROVAL_NODE (interrupt()-based HITL requires a checkpointer)
+            has_approval_node = getattr(self, "_has_approval_node", False)
+            checkpointer_enabled = input_data.get("checkpointer_enabled", False) or has_approval_node
             from core.workflows.checkpointing.manager import get_checkpointer
             checkpointer = get_checkpointer() if checkpointer_enabled else None
+
+            if has_approval_node and checkpointer is None:
+                logger.error(
+                    f"Workflow '{workflow.name}' contains an APPROVAL_NODE but no checkpointer "
+                    f"is available - HITL pause/resume disabled (approval will be informational only). "
+                    f"Ensure setup_checkpointing() ran during application startup."
+                )
 
             # 3. Compile the graph with checkpointer and optional cache backend
             # Official patterns (supervisor/swarm) return pre-compiled graphs
@@ -289,10 +365,11 @@ class SimpleWorkflowExecutor:
                     logger.info(f"[CACHE] Cache backend enabled for workflow '{workflow.name}'")
 
                 if checkpointer:
+                    # HITL pausing is driven by node-internal interrupt() calls
+                    # (APPROVAL_NODE), so no interrupt_before configuration is needed
                     logger.info(f"Compiling workflow '{workflow.name}' with checkpointing enabled")
                     compiled_graph = graph.compile(
                         checkpointer=checkpointer,
-                        interrupt_before=[],  # Can add APPROVAL_NODE here for HITL
                         **compile_kwargs,
                     )
                 else:
@@ -408,6 +485,37 @@ class SimpleWorkflowExecutor:
                 }
             })
 
+            # HITL resume: when resume_command is present, re-enter the paused graph
+            # with Command(resume=...) instead of seeding fresh initial state.
+            # The checkpointer restores state from the same thread_id config.
+            stream_input: Any = initial_state
+            resume_command = input_data.get("resume_command")
+            if resume_command:
+                if checkpointer is None or not INTERRUPT_AVAILABLE:
+                    error_msg = (
+                        f"Cannot resume workflow '{workflow.name}' (task {task_id}): "
+                        f"checkpointer unavailable or langgraph.types.Command not importable"
+                    )
+                    logger.error(error_msg)
+                    await event_bus.publish(channel, {
+                        "type": "error",
+                        "data": {
+                            "error": error_msg,
+                            "error_type": "ResumeUnavailable",
+                            "workflow_id": workflow.id,
+                            "task_id": task_id,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                    })
+                    raise ValueError(error_msg)
+
+                decision = "reject" if resume_command.get("decision") == "reject" else "approve"
+                stream_input = Command(resume=decision)
+                logger.info(
+                    f"Resuming workflow '{workflow.name}' (task {task_id}) from APPROVAL_NODE "
+                    f"with decision='{decision}'"
+                )
+
             # ========================================================================
             # CRITICAL: WORKFLOW EXECUTION LOOP - DO NOT MODIFY WITHOUT TESTING
             # ========================================================================
@@ -464,7 +572,7 @@ class SimpleWorkflowExecutor:
             # This is the official LangGraph approach for real-time subagent monitoring.
             # ========================================================================
             async for event in compiled_graph.astream_events(
-                initial_state,
+                stream_input,
                 config=config,
                 version="v2",
                 include_subgraphs=True  # Stream events from nested subgraphs (subagents)
@@ -1033,6 +1141,76 @@ class SimpleWorkflowExecutor:
                     except Exception as e:
                         logger.error(f"Error processing tool call reasoning: {e}")
 
+            # ========================================================================
+            # HITL PAUSE DETECTION
+            # ========================================================================
+            # If the graph stopped on a pending interrupt() (APPROVAL_NODE), the
+            # stream exits naturally but the workflow is NOT complete - it's paused
+            # in the checkpointer waiting for /api/hitl approve/reject to resume it.
+            # ========================================================================
+            if checkpointer is not None and not use_official_pattern:
+                state_snapshot = None
+                try:
+                    state_snapshot = await compiled_graph.aget_state(config)
+                except Exception as e:
+                    logger.error(f"Failed to read checkpoint state for HITL pause detection: {e}")
+
+                interrupt_payload = detect_pending_interrupt(state_snapshot)
+                if interrupt_payload is not None:
+                    thread_id = config["configurable"]["thread_id"]
+                    logger.info(
+                        f"Workflow '{workflow.name}' (task {task_id}) paused at APPROVAL_NODE - "
+                        f"awaiting human approval via /api/hitl"
+                    )
+
+                    approval_event = {
+                        **interrupt_payload,
+                        "workflow_id": workflow.id,
+                        "task_id": task_id,
+                        "thread_id": thread_id,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    await event_bus.publish(channel, {
+                        "type": "approval_required",
+                        "data": approval_event
+                    })
+
+                    # Persist pause state on the Task row so /api/hitl/{id}/status and
+                    # the approve/reject endpoints can locate the paused execution
+                    self._persist_task_hitl_state(task_id, {
+                        "workflow_status": "AWAITING_APPROVAL",
+                        "approval_context": approval_event
+                    })
+
+                    # Flush pending event persists and clean up execution context
+                    await callback_handler.flush_pending_persists(timeout=10.0)
+                    clear_execution_context()
+
+                    return {
+                        "status": "awaiting_approval",
+                        "workflow_id": workflow.id,
+                        "task_id": task_id,
+                        "thread_id": thread_id,
+                        "approval_context": approval_event,
+                        "formatted_output": {
+                            "formatted_content": (
+                                "Workflow paused at an approval gate - awaiting human "
+                                "approval before continuing."
+                            ),
+                            "output_type": "plain_text"
+                        },
+                        "messages": []
+                    }
+
+                # Resume run finished without a new pending interrupt - clear the
+                # AWAITING_APPROVAL marker so the task no longer reads as paused
+                if resume_command:
+                    self._persist_task_hitl_state(task_id, {
+                        "workflow_status": "APPROVAL_RESOLVED",
+                        "decision": resume_command.get("decision"),
+                        "resolved_at": datetime.utcnow().isoformat()
+                    })
+
             # If no state captured (shouldn't happen but defensive), fall back to initial state
             if final_state is None:
                 logger.warning("No final state from astream_events - using initial state")
@@ -1396,6 +1574,9 @@ class SimpleWorkflowExecutor:
         entry_point_override = None  # Track if user specified START_NODE
         terminal_nodes = []  # Track END_NODEs for special handling
 
+        # Reset HITL detection - set True below if any APPROVAL_NODE is present
+        self._has_approval_node = False
+
         # Build node metadata map for callback handler (for proper event labeling)
         node_metadata = {}
 
@@ -1413,6 +1594,11 @@ class SimpleWorkflowExecutor:
             # 1. Try node data label (saved by frontend when user creates node)
             # 2. Fallback to type with underscores replaced by spaces and title cased
             agent_label = node_data.get("label") or agent_type.replace('_', ' ').title()
+
+            # APPROVAL_NODE requires a checkpointer for interrupt()-based HITL pause/resume
+            if agent_type == 'APPROVAL_NODE':
+                self._has_approval_node = True
+                logger.info(f"Detected APPROVAL_NODE: {node_id} - checkpointer will be auto-enabled for HITL")
 
             # Skip non-executable control nodes (START and END are handled specially)
             if agent_type not in ['START_NODE', 'END_NODE']:

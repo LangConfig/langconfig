@@ -284,6 +284,11 @@ async def execute_workflow_background(
         if result and "error" in result:
             task.status = TaskStatus.FAILED
             logger.error(f"Task {task_id} failed: {result['error']}")
+        elif result and result.get("status") == "awaiting_approval":
+            # Paused at an APPROVAL_NODE - the graph is checkpointed and will be
+            # resumed via /api/hitl approve/reject; the task is still in flight
+            task.status = TaskStatus.IN_PROGRESS
+            logger.info(f"Task {task_id} paused at approval gate - awaiting HITL decision")
         else:
             task.status = TaskStatus.COMPLETED
             logger.info(f"Task {task_id} completed successfully")
