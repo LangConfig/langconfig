@@ -593,9 +593,13 @@ async def send_message_stream(
                 new_message = HumanMessage(content=request.message)
 
                 # Use astream_events for token-by-token streaming.
-                # version="v3" is safe here: DeepAgentFactory always returns a
-                # LangGraph-compiled (Pregel) graph — both the deepagents path and
-                # the AgentFactory fallback — and Pregel implements the v3 protocol.
+                # MUST be v2: Pregel's v3 stream API is experimental and returns
+                # an awaitable AsyncGraphRunStream, not an async iterator -
+                # `async for` over it raises "'async for' requires an object
+                # with __aiter__ method, got coroutine" on every chat prompt.
+                # v2 yields the StreamEvent dicts that normalize_stream_event
+                # and the SSE handlers below consume.
+                # Guarded by tests/test_chat_stream_contract.py.
                 async for event in agent_instance.astream_events(
                     {"messages": [new_message]},
                     config={
@@ -604,7 +608,7 @@ async def send_message_stream(
                         "callbacks": [event_handler],
                         "recursion_limit": 500  # Increased from default 25 for complex tool chains
                     },
-                    version="v3"
+                    version="v2"
                 ):
                     kind = event.get("event")
                     normalized_event = normalize_stream_event(event)
