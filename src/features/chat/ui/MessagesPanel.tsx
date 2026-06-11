@@ -6,8 +6,8 @@
  */
 
 import { useRef, useEffect, useState } from 'react';
-import { Copy, CheckCircle, AlertCircle, X, Trash2 } from 'lucide-react';
-import type { ChatMessage, CustomEventPayload } from '../types/chat';
+import { Copy, CheckCircle, AlertCircle, X, Trash2, Wrench } from 'lucide-react';
+import type { ChatMessage, ChatToolCallRecord, CustomEventPayload } from '../types/chat';
 import MessageInput from './MessageInput';
 import SessionDocumentsPanel from './SessionDocumentsPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
@@ -28,8 +28,71 @@ interface MessagesPanelProps {
   onDeleteMessage?: (messageIndex: number) => Promise<void>;
   disabled?: boolean;
   sessionId?: string | null;
+  /** @deprecated tool calls now render in-flow via message.tool_calls */
   activeToolCalls?: string[];
   customEvents?: Map<string, CustomEventPayload>;
+}
+
+/** Pretty-print tool input/output payloads for the chip detail view. */
+function formatToolPayload(payload: any): string {
+  if (payload == null) return '';
+  if (typeof payload === 'string') return payload;
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
+/** Collapsible status chip for one tool invocation inside a message. */
+function ToolCallChip({ call }: { call: ChatToolCallRecord }) {
+  const tone = call.status === 'running' ? 'accent' : call.status === 'error' ? 'error' : 'success';
+  const input = formatToolPayload(call.input);
+  const output = formatToolPayload(call.error ?? call.output);
+  const hasDetail = Boolean(input || output);
+
+  return (
+    <details className="group">
+      <summary
+        className={`cursor-pointer list-none inline-flex items-center gap-1.5 ${hasDetail ? '' : 'pointer-events-none'}`}
+      >
+        <Badge tone={tone} dot pulse={call.status === 'running'}>
+          <Wrench className="mr-1 inline h-3 w-3" />
+          {call.tool_name}
+          {call.status === 'error' ? ' — failed' : ''}
+        </Badge>
+        {hasDetail && (
+          <span
+            className="opacity-50 transition-transform group-open:rotate-90 text-[10px]"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            ▸
+          </span>
+        )}
+      </summary>
+      {hasDetail && (
+        <div
+          className="surface-inset mt-1 px-3 py-2 font-mono text-xs space-y-2"
+          style={{ color: 'var(--color-text-muted)', maxHeight: '12rem', overflowY: 'auto' }}
+        >
+          {input && (
+            <div>
+              <div className="uppercase tracking-[0.12em] text-[10px] mb-0.5">Input</div>
+              <pre className="whitespace-pre-wrap break-words">{input.slice(0, 2000)}</pre>
+            </div>
+          )}
+          {output && (
+            <div>
+              <div className="uppercase tracking-[0.12em] text-[10px] mb-0.5">
+                {call.status === 'error' ? 'Error' : 'Result'}
+              </div>
+              <pre className="whitespace-pre-wrap break-words">{output.slice(0, 2000)}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </details>
+  );
 }
 
 export default function MessagesPanel({
@@ -45,11 +108,23 @@ export default function MessagesPanel({
   customEvents = new Map()
 }: MessagesPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
-  // Auto-scroll to bottom when messages change
+  // Track whether the user is reading at the bottom; if they scroll up to
+  // re-read something, streaming must not yank the view back down.
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    pinnedToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  };
+
+  // Auto-scroll only when pinned to the bottom. 'auto' during streaming:
+  // overlapping smooth-scroll animations on every batched flush cause jank.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!pinnedToBottomRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' });
   }, [messages, isStreaming]);
 
   const copyToClipboard = (text: string, index: number) => {
@@ -61,7 +136,11 @@ export default function MessagesPanel({
   return (
     <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--color-background-light)' }}>
       {/* Messages Area */}
-      <div className="chat-atmosphere flex-1 overflow-y-auto px-4 py-6">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="chat-atmosphere flex-1 overflow-y-auto px-4 py-6"
+      >
         {messages.length === 0 && !disabled ? (
           <div
             className="flex items-center justify-center h-full min-h-full"
@@ -160,6 +239,15 @@ export default function MessagesPanel({
                           variant="card-sm"
                           className={`px-5 py-3 ${isActivelyStreaming ? 'streaming-pulse' : ''}`}
                         >
+                          {/* Tool calls made while producing this message */}
+                          {message.tool_calls && message.tool_calls.length > 0 && (
+                            <div className="mb-2 flex flex-col gap-1.5">
+                              {message.tool_calls.map((call, callIdx) => (
+                                <ToolCallChip key={`${call.tool_name}-${callIdx}`} call={call} />
+                              ))}
+                            </div>
+                          )}
+
                           <div style={{ color: 'var(--color-text-primary)' }}>
                             <Markdown compact>{message.content}</Markdown>
                           </div>
@@ -248,26 +336,9 @@ export default function MessagesPanel({
             </div>
           )}
 
-          {/* Active Tool Calls Indicator */}
-          {activeToolCalls.length > 0 && (
-            <div className="flex gap-4">
-              <AvatarOrb kind="agent" state="streaming" size={32} />
-              <div className="flex-1">
-                <Surface variant="card-sm" className="inline-block px-5 py-3">
-                  <div style={{ color: 'var(--color-text-primary)' }}>
-                    <div className="text-sm font-medium mb-1">Running tools:</div>
-                    <div className="flex flex-wrap gap-2">
-                      {activeToolCalls.map((tool, idx) => (
-                        <Badge key={idx} tone="accent" dot pulse>
-                          {tool}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </Surface>
-              </div>
-            </div>
-          )}
+          {/* Tool calls render in-flow inside each assistant message
+              (message.tool_calls -> ToolCallChip); the old floating
+              activeToolCalls strip was removed as redundant. */}
 
           {/* Custom Events (LangGraph-style progress, status, file operations) */}
           {customEvents.size > 0 && (

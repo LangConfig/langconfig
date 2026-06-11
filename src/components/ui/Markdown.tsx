@@ -21,8 +21,12 @@ interface MarkdownProps {
  * Shared markdown renderer. Tables, inline code, blockquotes and links are
  * styled by the `.chat-markdown` CSS (theme-token driven); fenced code routes
  * to the terminal-styled CodeBlock.
+ *
+ * Memoized: during streaming only the growing message's text changes; without
+ * memo every completed message re-parses its full markdown on every batched
+ * token flush, which makes streaming feel choppy.
  */
-export function Markdown({ children, compact = false, className = '' }: MarkdownProps) {
+export const Markdown = React.memo(function Markdown({ children, compact = false, className = '' }: MarkdownProps) {
   return (
     <div className={`chat-markdown ${compact ? 'text-sm' : ''} ${className}`}>
       <ReactMarkdown
@@ -46,6 +50,6 @@ export function Markdown({ children, compact = false, className = '' }: Markdown
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 export default Markdown;

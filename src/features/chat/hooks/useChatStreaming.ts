@@ -6,10 +6,18 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import type { ChatMessage, ChatStreamEvent } from '../types/chat';
+import type { ChatMessage, ChatStreamEvent, ChatToolCallRecord } from '../types/chat';
 import type { ContentBlock } from '@/types/content-blocks';
 import apiClient from '../../../lib/api-client';
 import { normalizeChatStreamEvent } from '../stream/chatStreamAdapter';
+
+/**
+ * Batching interval for streamed token updates. Without batching every
+ * text_delta triggers a setState -> full markdown re-parse -> scroll, which
+ * reads as choppy. ~45ms keeps perceived smoothness (~22fps) at a fraction
+ * of the renders.
+ */
+const STREAM_FLUSH_MS = 45;
 
 interface UseChatStreamingResult {
   sendMessage: (
@@ -92,6 +100,8 @@ export function useChatStreaming(
         let assistantMessageAdded = false;
         let streamedArtifacts: ContentBlock[] = [];
         let streamedContentBlocks: ContentBlock[] = [];
+        const streamedToolCalls: ChatToolCallRecord[] = [];
+        let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
         const ensureAssistantMessage = () => {
           if (assistantMessageAdded) return;
@@ -108,13 +118,27 @@ export function useChatStreaming(
           assistantMessageAdded = true;
         };
 
+        // Flush all accumulated stream state into the assistant message.
         const patchAssistantMessage = () => {
+          if (flushTimer) {
+            clearTimeout(flushTimer);
+            flushTimer = null;
+          }
           ensureAssistantMessage();
           onMessageUpdate(accumulatedContent, {
+            ...(accumulatedThinking ? { thinking: accumulatedThinking } : {}),
+            ...(streamedToolCalls.length ? { tool_calls: [...streamedToolCalls] } : {}),
             artifacts: streamedArtifacts,
             content_blocks: streamedContentBlocks,
             has_multimodal: streamedContentBlocks.length > 0,
           });
+        };
+
+        // Token deltas arrive far faster than the UI needs to repaint;
+        // coalesce them and flush on a short timer.
+        const scheduleFlush = () => {
+          if (flushTimer) return;
+          flushTimer = setTimeout(patchAssistantMessage, STREAM_FLUSH_MS);
         };
 
         while (true) {
@@ -138,18 +162,12 @@ export function useChatStreaming(
                   // separate from content; surfaced via message.thinking
                   accumulatedThinking += part.text;
                   ensureAssistantMessage();
-                  onMessageUpdate(accumulatedContent, { thinking: accumulatedThinking });
+                  scheduleFlush();
                 } else if (part.type === 'text_delta') {
-                  // Stream individual tokens as they arrive
+                  // Stream tokens batched on a short timer (smoothness)
                   accumulatedContent += part.text;
-
-                  // Add assistant message on first chunk
                   ensureAssistantMessage();
-                  onMessageUpdate(accumulatedContent, {
-                    artifacts: streamedArtifacts,
-                    content_blocks: streamedContentBlocks,
-                    has_multimodal: streamedContentBlocks.length > 0,
-                  });
+                  scheduleFlush();
                 } else if (part.type === 'complete') {
                   // Final content - use accumulated or provided
                   const finalContent = part.text || accumulatedContent;
@@ -161,8 +179,30 @@ export function useChatStreaming(
                   patchAssistantMessage();
                 } else if (part.type === 'error') {
                   setError(part.message);
-                } else if (part.type === 'tool_started' || part.type === 'tool_completed') {
-                  // Pass tool events to callback
+                } else if (part.type === 'tool_started') {
+                  // Surface the call inside the assistant message flow
+                  streamedToolCalls.push({
+                    tool_name: part.toolName || 'unknown',
+                    status: 'running',
+                    input: part.data?.input,
+                    timestamp: new Date().toISOString(),
+                  });
+                  patchAssistantMessage();
+                  if (onToolEvent) {
+                    onToolEvent(data);
+                  }
+                } else if (part.type === 'tool_completed') {
+                  // Resolve the most recent running call with this tool name
+                  for (let i = streamedToolCalls.length - 1; i >= 0; i--) {
+                    const call = streamedToolCalls[i];
+                    if (call.status === 'running' && call.tool_name === (part.toolName || 'unknown')) {
+                      call.status = part.data?.error ? 'error' : 'completed';
+                      call.output = part.data?.output;
+                      call.error = part.data?.error;
+                      break;
+                    }
+                  }
+                  patchAssistantMessage();
                   if (onToolEvent) {
                     onToolEvent(data);
                   }
@@ -184,6 +224,13 @@ export function useChatStreaming(
               }
             }
           }
+        }
+
+        // Final flush so no batched tokens are left behind
+        if (assistantMessageAdded) {
+          patchAssistantMessage();
+        } else if (flushTimer) {
+          clearTimeout(flushTimer);
         }
 
         // Streaming complete

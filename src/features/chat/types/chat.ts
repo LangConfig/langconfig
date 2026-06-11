@@ -20,6 +20,18 @@ export interface ChatMessage {
   artifacts?: ContentBlock[];
   /** Whether the message contains multimodal content */
   has_multimodal?: boolean;
+  /** Tool calls made while producing this message (session-local; not persisted) */
+  tool_calls?: ChatToolCallRecord[];
+}
+
+/** A tool invocation surfaced in the chat message flow. */
+export interface ChatToolCallRecord {
+  tool_name: string;
+  status: 'running' | 'completed' | 'error';
+  input?: any;
+  output?: any;
+  error?: string;
+  timestamp: string;
 }
 
 export interface ChatSession {
