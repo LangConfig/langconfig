@@ -900,6 +900,100 @@ async def handle_execute_triggered_workflow(payload: dict, task_id: int) -> dict
 
 
 # =============================================================================
+# Git Repository Handlers
+# =============================================================================
+
+@register_handler("clone_git_repo")
+async def handle_clone_git_repo(payload: dict, task_id: int) -> dict:
+    """
+    Clone a git repository for read-only browsing.
+
+    Payload:
+        repo_id: int - GitRepository record to clone
+
+    Returns:
+        dict with clone results
+    """
+    repo_id = payload.get("repo_id")
+
+    logger.info(
+        f"Task {task_id}: Cloning git repository {repo_id}",
+        extra={"task_id": task_id, "repo_id": repo_id}
+    )
+
+    try:
+        from services import git_repository_service as git_svc
+
+        # Clone the repo
+        clone_result = await git_svc.clone_repo(repo_id)
+
+        logger.info(
+            f"Task {task_id}: Cloned repo {repo_id} "
+            f"({clone_result.get('files_count', 0)} browsable files)",
+            extra={"task_id": task_id, "repo_id": repo_id}
+        )
+
+        return {
+            "success": True,
+            "repo_id": repo_id,
+            **clone_result,
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Task {task_id}: Failed to clone repo {repo_id}: {e}",
+            exc_info=True,
+            extra={"task_id": task_id, "repo_id": repo_id}
+        )
+        raise
+
+
+@register_handler("sync_git_repo")
+async def handle_sync_git_repo(payload: dict, task_id: int) -> dict:
+    """
+    Pull latest changes for a cloned repository.
+
+    Payload:
+        repo_id: int - GitRepository record to sync
+
+    Returns:
+        dict with pull results
+    """
+    repo_id = payload.get("repo_id")
+
+    logger.info(
+        f"Task {task_id}: Syncing git repository {repo_id}",
+        extra={"task_id": task_id, "repo_id": repo_id}
+    )
+
+    try:
+        from services import git_repository_service as git_svc
+
+        # Pull latest
+        pull_result = await git_svc.pull_repo(repo_id)
+
+        logger.info(
+            f"Task {task_id}: Synced repo {repo_id} "
+            f"({pull_result.get('files_count', 0)} browsable files)",
+            extra={"task_id": task_id, "repo_id": repo_id}
+        )
+
+        return {
+            "success": True,
+            "repo_id": repo_id,
+            **pull_result,
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Task {task_id}: Failed to sync repo {repo_id}: {e}",
+            exc_info=True,
+            extra={"task_id": task_id, "repo_id": repo_id}
+        )
+        raise
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 
@@ -926,5 +1020,7 @@ __all__ = [
     "handle_generate_workflow_code",
     "handle_execute_scheduled_workflow",
     "handle_execute_triggered_workflow",
+    "handle_clone_git_repo",
+    "handle_sync_git_repo",
     "get_registered_handlers"
 ]

@@ -88,6 +88,7 @@ class Project(Base):
     # Relationships
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
     documents = relationship("ContextDocument", back_populates="project", cascade="all, delete-orphan")
+    git_repositories = relationship("GitRepository", back_populates="project", cascade="all, delete-orphan")
 
 # Task Model (Simplified)
 class Task(Base):

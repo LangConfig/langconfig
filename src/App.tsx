@@ -21,7 +21,7 @@ const WorkflowCanvas = lazy(() => import('./features/workflows/canvas/WorkflowCa
 const WorkflowLibraryView = lazy(() => import('./features/workflows/library/WorkflowLibraryView'));
 const NodeConfigPanel = lazy(() => import('./features/workflows/node-config/NodeConfigPanel'));
 const SettingsView = lazy(() => import('./pages/SettingsPage'));
-const KnowledgeBaseView = lazy(() => import('./features/knowledge/ui/KnowledgeBaseView'));
+const KnowledgeView = lazy(() => import('./features/knowledge/ui/KnowledgeView'));
 const AgentLoadouts = lazy(() => import('./features/agents/ui/AgentLoadouts'));
 const SkillLibrary = lazy(() => import('./features/skills/ui/SkillLibrary'));
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -455,7 +455,7 @@ function AppContent() {
             )}
             {currentView === 'agents' && <AgentLoadouts />}
             {currentView === 'skills' && <SkillLibrary />}
-            {currentView === 'knowledge' && <KnowledgeBaseView />}
+            {currentView === 'knowledge' && <KnowledgeView />}
             {currentView === 'community' && <CommunityPage />}
             {currentView === 'settings' && <SettingsView />}
           </Suspense>

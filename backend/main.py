@@ -287,6 +287,7 @@ from api.triggers import router as triggers
 from api.webhooks import router as webhooks
 from api.audio import routes as audio
 from api.pii_profiles import routes as pii_profiles
+from api.repositories import routes as repositories
 
 # Health check endpoints
 app.include_router(health.router)
@@ -324,6 +325,7 @@ app.include_router(triggers)  # Workflow event triggers (file watch, etc.)
 app.include_router(webhooks)  # Webhook receiver endpoints
 app.include_router(audio.router)  # Local audio upload/transcription
 app.include_router(pii_profiles.router)  # PII redaction profiles
+app.include_router(repositories.router)  # Git repository browser (read-only) + knowledge-base ingestion
 
 if __name__ == "__main__":
     import sys

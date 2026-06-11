@@ -523,6 +523,48 @@ class APIClient {
     return this.client.get(`/api/rag/projects/${projectId}/storage-stats`);
   }
 
+  // =============================================================================
+  // Git Repositories (Knowledge)
+  // =============================================================================
+
+  async listRepositories(projectId?: number, config?: { signal?: AbortSignal }) {
+    return this.client.get('/api/repositories/', {
+      params: projectId != null ? { project_id: projectId } : undefined,
+      signal: config?.signal,
+    });
+  }
+
+  async createRepository(data: { clone_url: string; branch?: string; project_id: number }) {
+    return this.client.post('/api/repositories/', data);
+  }
+
+  async getRepository(id: number) {
+    return this.client.get(`/api/repositories/${id}`);
+  }
+
+  async syncRepository(id: number) {
+    return this.client.post(`/api/repositories/${id}/sync`);
+  }
+
+  async deleteRepository(id: number) {
+    return this.client.delete(`/api/repositories/${id}`);
+  }
+
+  async listRepositoryFiles(id: number, config?: { signal?: AbortSignal }) {
+    return this.client.get(`/api/repositories/${id}/files`, { signal: config?.signal });
+  }
+
+  async getRepositoryFile(id: number, path: string, config?: { signal?: AbortSignal }) {
+    return this.client.get(`/api/repositories/${id}/file`, {
+      params: { path },
+      signal: config?.signal,
+    });
+  }
+
+  async ingestRepositoryPath(id: number, path: string) {
+    return this.client.post(`/api/repositories/${id}/ingest`, { path });
+  }
+
   // Settings
   async getSettings() {
     return this.client.get('/api/settings/');

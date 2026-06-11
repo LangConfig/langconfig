@@ -43,6 +43,7 @@ from .presentation_job import PresentationJob, PresentationJobStatus, Presentati
 from .workflow_schedule import WorkflowSchedule, ScheduledRunLog, ScheduleRunStatus
 from .workflow_trigger import WorkflowTrigger, TriggerLog, TriggerType, TriggerStatus
 from .pii_profile import PIIProfile
+from .git_repository import GitRepository, RepoSyncStatus
 
 __all__ = [
     "Project",
@@ -90,5 +91,7 @@ __all__ = [
     "TriggerLog",
     "TriggerType",
     "TriggerStatus",
-    "PIIProfile"
+    "PIIProfile",
+    "GitRepository",
+    "RepoSyncStatus"
 ]
