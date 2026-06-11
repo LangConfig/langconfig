@@ -22,7 +22,7 @@ Create custom tools using LangChain's middleware system, or use prebuilt templat
 
 When you're ready to share or deploy, export your workflow as a JSON config that anyone with LangConfig can import instantly. Or download a complete Python package—LangChain/LangGraph code, execution scripts, and a Streamlit web UI—ready to run anywhere.
 
-LangConfig includes workflow templates for research and content creation. We're actively building new features and templates to make it easy to pick up and start experimenting with agentic AI.
+LangConfig ships with 8 out-of-box workflow templates spanning research, coding, code review, privacy, and content production — including parallel multi-provider review panels, evaluator-optimizer loops with human approval gates, and deterministic PII-safe tool pipelines. We're actively building new features and templates to make it easy to pick up and start experimenting with agentic AI.
 
 ---
 
@@ -96,6 +96,15 @@ This automated script will:
 - Install backend Python dependencies
 - Start PostgreSQL via Docker
 - Initialize the database and seed agent templates
+- Seed **8 ready-to-run template workflows** (Deep Research, Learning Research, Research & Content Editor, Code Review Panel, Plan-Build-Verify Coder, Privacy-First Document Analyst, Competitive Intel Sweep, Content Studio Pipeline)
+
+After upgrading LangConfig, re-sync the seeded template workflows with the latest recipe definitions:
+
+```bash
+python backend/db/seed_langconfig_dev.py --refresh-templates
+```
+
+This only updates rows marked as templates (`is_template = true`) — your own workflows are never touched.
 
 **4. Add Your API Keys**
 

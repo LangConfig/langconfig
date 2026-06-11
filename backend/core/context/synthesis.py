@@ -26,7 +26,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
 
-from .graph_state import WorkflowState, HandoffSummary
+from core.workflows.state import WorkflowState, HandoffSummary
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -401,7 +401,7 @@ async def update_context_with_handoff(
     Returns:
         Updated workflow state
     """
-    from .graph_state import create_handoff_summary, add_handoff_to_state
+    from core.workflows.state import create_handoff_summary, add_handoff_to_state
 
     # Create structured handoff summary
     handoff = create_handoff_summary(

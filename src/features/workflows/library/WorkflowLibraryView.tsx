@@ -9,6 +9,7 @@ import { useState, useEffect, useMemo } from 'react';
 import apiClient from "@/lib/api-client";
 import { useProject } from "@/contexts/ProjectContext";
 import ProjectSection from './ProjectSection';
+import TemplatesSection from './TemplatesSection';
 import LibraryContentPanel from './LibraryContentPanel';
 import RenameModal from './RenameModal';
 import ChangeProjectModal from './ChangeProjectModal';
@@ -41,6 +42,7 @@ export default function WorkflowLibraryView({
   const [workflowToChangeProject, setWorkflowToChangeProject] = useState<Workflow | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
+  const [forkingTemplateId, setForkingTemplateId] = useState<number | null>(null);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -82,7 +84,8 @@ export default function WorkflowLibraryView({
       }
 
       // Auto-expand uncategorized section if there are workflows without projects
-      const hasUncategorized = loadedWorkflows.some((w: Workflow) => !w.project_id);
+      // (templates live in their own section, so they don't count)
+      const hasUncategorized = loadedWorkflows.some((w: Workflow) => !w.project_id && !w.is_template);
       if (hasUncategorized) {
         setExpandedProjects(prev => new Set([...prev, -1]));
       }
@@ -99,11 +102,24 @@ export default function WorkflowLibraryView({
     }
   };
 
-  // Group workflows by project
+  // Seeded templates surface in their own section above the project listing
+  const templates = useMemo(() => {
+    return workflows.filter(w => w.is_template);
+  }, [workflows]);
+
+  // Templates respect the search box too
+  const filteredTemplates = useMemo(() => {
+    if (!searchQuery.trim()) return templates;
+    const lowerQuery = searchQuery.toLowerCase();
+    return templates.filter(t => t.name.toLowerCase().includes(lowerQuery));
+  }, [templates, searchQuery]);
+
+  // Group workflows by project (templates excluded — they have their own section)
   const workflowsByProject = useMemo(() => {
     const grouped = new Map<number | null, Workflow[]>();
 
     workflows.forEach(workflow => {
+      if (workflow.is_template) return;
       const projectId = workflow.project_id || null;
       if (!grouped.has(projectId)) {
         grouped.set(projectId, []);
@@ -230,6 +246,28 @@ export default function WorkflowLibraryView({
     } catch (error) {
       console.error('Failed to duplicate workflow:', error);
       alert('Failed to duplicate workflow');
+    }
+  };
+
+  const handleUseTemplate = async (template: Workflow) => {
+    if (forkingTemplateId !== null) return;
+
+    try {
+      setForkingTemplateId(template.id);
+      // Fork the template into an editable workflow (backend uniquifies the name on conflict)
+      const response = await apiClient.forkWorkflow(template.id, {
+        name: `${template.name} Copy`,
+        project_id: activeProject?.id,
+      });
+
+      // Add to list and open in studio, same path as freshly created workflows
+      setWorkflows(prev => [response.data, ...prev]);
+      onWorkflowOpen(response.data.id);
+    } catch (error: any) {
+      console.error('Failed to use template:', error);
+      alert(`Failed to use template: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+    } finally {
+      setForkingTemplateId(null);
     }
   };
 
@@ -376,6 +414,13 @@ export default function WorkflowLibraryView({
 
         {/* Project Sections */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* Seeded templates (renders nothing when none exist) */}
+          <TemplatesSection
+            templates={filteredTemplates}
+            forkingTemplateId={forkingTemplateId}
+            onUseTemplate={handleUseTemplate}
+          />
+
           {/* Display all projects (even if they don't have workflows) */}
           {projects.map(project => {
             const projectWorkflows = filteredWorkflowsByProject.get(project.id) || [];
@@ -419,7 +464,7 @@ export default function WorkflowLibraryView({
           )}
 
           {/* No workflows found */}
-          {projects.length === 0 && workflows.length === 0 && (
+          {projects.length === 0 && workflows.length === templates.length && (
             <div className="text-center py-12">
               <span
                 className="material-symbols-outlined text-5xl mb-3"
@@ -435,7 +480,7 @@ export default function WorkflowLibraryView({
               </p>
             </div>
           )}
-          {searchQuery && workflows.length > 0 && filteredWorkflowsByProject.size === 0 && (
+          {searchQuery && workflows.length > 0 && filteredWorkflowsByProject.size === 0 && filteredTemplates.length === 0 && (
             <div className="text-center py-12">
               <span
                 className="material-symbols-outlined text-5xl mb-3"

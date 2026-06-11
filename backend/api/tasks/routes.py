@@ -17,16 +17,17 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 # Pydantic Schemas
 class TaskResponse(BaseModel):
+    # Field set must mirror models.core.Task columns: declaring attributes the
+    # ORM model lacks makes from_attributes validation 500 on every task.
     id: int
-    project_id: int
+    project_id: Optional[int]
     description: str
     status: TaskStatus
-    assigned_model: str
+    assigned_model: Optional[str]
+    workflow_id: Optional[str]
     workflow_profile_id: Optional[int]
     result: Optional[dict]
     error_message: Optional[str]
-    tokens_used: Optional[int]
-    configuration: Optional[dict]
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime]

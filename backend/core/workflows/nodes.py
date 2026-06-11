@@ -29,7 +29,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
 
 # Core State Management
-from .graph_state import (
+from .state import (
     WorkflowState,
     WorkflowStatus,
     ClassificationType,
@@ -38,7 +38,7 @@ from .graph_state import (
 )
 
 # Context Management
-from .context_synthesis import assemble_context_package
+from core.context.synthesis import assemble_context_package
 
 # Type hints for injected dependencies
 from core.agents.factory import AgentFactory
@@ -240,11 +240,14 @@ async def execute_tool_node(
         result_str = str(result)
         logger.info(f"[TOOL_NODE {label}] Tool execution successful. Result: {result_str[:200]}...")
 
-        context_msg = SystemMessage(
-            content=f"[Output from tool `{tool.name}`]\n\n{result_str}"
-        )
-        prompt_msg = HumanMessage(
-            content=f"Continue with your task using the output from `{tool.name}` above."
+        # NOTE: Tool output is handed off as a HumanMessage (not SystemMessage).
+        # Anthropic models reject histories with non-consecutive system messages,
+        # which chained TOOL_NODEs would otherwise produce.
+        context_msg = HumanMessage(
+            content=(
+                f"[Output from tool `{tool.name}`]\n\n{result_str}\n\n"
+                f"Continue with your task using the output from `{tool.name}` above."
+            )
         )
 
         await _emit_node_event(
@@ -262,7 +265,7 @@ async def execute_tool_node(
             "last_tool_output": result_str,
             "current_directive": result_str,
             "handoff_summary": result_str,
-            "messages": [context_msg, prompt_msg],
+            "messages": [context_msg],
         }
 
     except Exception as e:
