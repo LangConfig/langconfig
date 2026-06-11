@@ -10,6 +10,7 @@ import type { ChatStreamEvent } from '../types/chat';
 
 export type NormalizedChatStreamPart =
   | { type: 'text_delta'; text: string }
+  | { type: 'thinking_delta'; text: string }
   | { type: 'complete'; text: string; artifacts: ContentBlock[]; contentBlocks: ContentBlock[] }
   | { type: 'error'; message: string }
   | { type: 'tool_started' | 'tool_completed'; toolName?: string; data?: any }
@@ -20,6 +21,8 @@ export function normalizeChatStreamEvent(event: ChatStreamEvent): NormalizedChat
   switch (event.type) {
     case 'chunk':
       return { type: 'text_delta', text: event.content || '' };
+    case 'thinking':
+      return { type: 'thinking_delta', text: event.content || '' };
     case 'complete':
       return {
         type: 'complete',

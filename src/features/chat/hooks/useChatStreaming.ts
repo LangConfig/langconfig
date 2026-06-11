@@ -88,6 +88,7 @@ export function useChatStreaming(
         }
 
         let accumulatedContent = '';
+        let accumulatedThinking = '';
         let assistantMessageAdded = false;
         let streamedArtifacts: ContentBlock[] = [];
         let streamedContentBlocks: ContentBlock[] = [];
@@ -132,7 +133,13 @@ export function useChatStreaming(
 
                 if (!part) continue;
 
-                if (part.type === 'text_delta') {
+                if (part.type === 'thinking_delta') {
+                  // Model reasoning (Anthropic adaptive thinking) — kept
+                  // separate from content; surfaced via message.thinking
+                  accumulatedThinking += part.text;
+                  ensureAssistantMessage();
+                  onMessageUpdate(accumulatedContent, { thinking: accumulatedThinking });
+                } else if (part.type === 'text_delta') {
                   // Stream individual tokens as they arrive
                   accumulatedContent += part.text;
 

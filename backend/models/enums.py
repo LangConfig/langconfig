@@ -37,10 +37,15 @@ class BackendType(str, Enum):
 
 class ReasoningEffort(str, Enum):
     """
-    Reasoning effort for Gemini models.
-    Maps to thinking_level (Gemini 3+) or thinking_budget (Gemini 2.x).
+    Reasoning effort for model thinking depth.
+
+    Gemini: maps to thinking_level (Gemini 3+) or thinking_budget (Gemini 2.x).
+    Anthropic: maps to the `effort` parameter (low/medium/high/xhigh/max);
+    xhigh/max degrade to high on Gemini.
     """
-    NONE = "none"       # 96% cheaper - minimal reasoning
+    NONE = "none"       # 96% cheaper - minimal reasoning (Gemini); omits effort (Anthropic)
     LOW = "low"         # Balanced cost/quality (default)
     MEDIUM = "medium"   # More thorough reasoning
-    HIGH = "high"       # Maximum reasoning capability
+    HIGH = "high"       # Maximum reasoning capability (Gemini ceiling)
+    XHIGH = "xhigh"     # Anthropic-only: between high and max (best for coding/agentic)
+    MAX = "max"         # Anthropic-only: correctness over cost

@@ -248,12 +248,55 @@ class DeepAgentFactory:
                 "interrupts": config.guardrails.interrupts
             }
 
+        # Resolve the model: for Claude models, construct the ChatAnthropic
+        # instance via AgentFactory._create_llm so provider features configured
+        # on the agent (adaptive thinking, effort, prompt caching) are honored.
+        # Other providers keep the string path (resolved by deepagents via
+        # init_chat_model with provider profiles).
+        model_for_agent: Any = config.model
+        if config.model.startswith("claude"):
+            llm_config: Dict[str, Any] = {
+                "streaming": True,
+                "enable_thinking": config.enable_thinking,
+                "thinking_display": config.thinking_display,
+                "enable_prompt_caching": config.enable_prompt_caching,
+            }
+            # reasoning_effort defaults to LOW for the Gemini path; only
+            # forward it to Anthropic when it was explicitly configured.
+            if "reasoning_effort" in config.model_fields_set and config.reasoning_effort:
+                llm_config["reasoning_effort"] = config.reasoning_effort
+            try:
+                model_for_agent = await AgentFactory._create_llm(
+                    config.model, config.temperature, config.max_tokens, llm_config
+                )
+            except Exception as model_err:
+                logger.warning(
+                    f"Failed to construct configured Claude model instance "
+                    f"({model_err}); falling back to model string"
+                )
+                model_for_agent = config.model
+
+        # Anthropic server-side tools (web_search / web_fetch) - passed to
+        # create_deep_agent as raw dicts (forwarded to the API unchanged).
+        # Kept out of `all_tools` so the returned tool list stays BaseTool-only.
+        server_tool_dicts: List[Dict[str, Any]] = []
+        if config.model.startswith("claude") and config.anthropic_server_tools:
+            from core.agents.factory import resolve_anthropic_server_tools
+            server_tool_dicts, all_tools = resolve_anthropic_server_tools(
+                config.anthropic_server_tools, all_tools
+            )
+            if server_tool_dicts:
+                logger.info(
+                    f"Anthropic server tools enabled: "
+                    f"{[t['name'] for t in server_tool_dicts]}"
+                )
+
         # Create DeepAgent with all components
         try:
             agent_label = f"deep_agent_task_{task_id}"
             agent_kwargs = {
-                "model": config.model,
-                "tools": all_tools,
+                "model": model_for_agent,
+                "tools": all_tools + server_tool_dicts,
                 "system_prompt": config.system_prompt,
                 "middleware": middleware_instances if middleware_instances else None,
                 "subagents": subagents_config if subagents_config else None,
@@ -644,7 +687,16 @@ class DeepAgentFactory:
             "custom_tools": config.custom_tools,
             "enable_memory": False,
             "enable_rag": False,
+            # Anthropic feature passthrough
+            "enable_thinking": config.enable_thinking,
+            "thinking_display": config.thinking_display,
+            "enable_prompt_caching": config.enable_prompt_caching,
+            "anthropic_server_tools": config.anthropic_server_tools,
         }
+        # reasoning_effort defaults to LOW for the Gemini path; only forward
+        # when explicitly configured so Claude models don't get effort="low".
+        if "reasoning_effort" in config.model_fields_set and config.reasoning_effort:
+            agent_config["reasoning_effort"] = config.reasoning_effort
 
         # Use existing AgentFactory
         return await AgentFactory.create_agent(

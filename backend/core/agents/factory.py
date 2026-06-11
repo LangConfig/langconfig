@@ -27,6 +27,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_core.language_models import BaseLanguageModel, BaseChatModel
+from langchain_core.messages import SystemMessage
 # IMPORTANT: LangChain v1.0 - Using unified create_agent from langchain.agents
 from langchain.agents import create_agent
 from langgraph.graph.state import CompiledStateGraph
@@ -77,6 +78,59 @@ SUPPORTED_MODELS = {m.value for m in ModelChoice}
 
 # Models that reject sampling parameters (temperature/top_p/top_k return 400)
 NO_SAMPLING_PARAM_MODELS = {"claude-fable-5"}
+
+# Claude models that support opt-in adaptive thinking ({"type": "adaptive"}).
+# claude-fable-5 is NOT listed here: thinking is always on for it and only the
+# display mode may be overridden (sending {"type": "disabled"} returns a 400).
+ADAPTIVE_THINKING_MODELS = {"claude-opus-4-8", "claude-sonnet-4-6"}
+
+# Anthropic effort parameter values accepted by the API
+ANTHROPIC_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+
+# Anthropic server-side tools (executed on Anthropic infrastructure).
+# Current GA versions; no beta header required.
+SERVER_TOOL_DEFS: Dict[str, Dict[str, Any]] = {
+    "web_search": {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+    "web_fetch": {"type": "web_fetch_20260209", "name": "web_fetch"},
+}
+
+
+def resolve_anthropic_server_tools(
+    requested: Optional[List[str]],
+    existing_tools: List[Any],
+) -> Tuple[List[Dict[str, Any]], List[Any]]:
+    """Resolve requested Anthropic server-side tool names into API tool dicts.
+
+    Accepts both bare names ("web_search") and UI-prefixed names
+    ("anthropic_web_search"). If a native tool with the same name is already
+    loaded (e.g. the DuckDuckGo web_search), the native one is dropped with a
+    warning so the model is not offered two tools with colliding names.
+
+    Returns:
+        Tuple of (server_tool_dicts, filtered_existing_tools)
+    """
+    server_tool_dicts: List[Dict[str, Any]] = []
+    filtered_tools = list(existing_tools)
+
+    for raw_name in requested or []:
+        key = raw_name[len("anthropic_"):] if raw_name.startswith("anthropic_") else raw_name
+        tool_def = SERVER_TOOL_DEFS.get(key)
+        if not tool_def:
+            logger.warning(f"Unknown Anthropic server tool '{raw_name}' - skipping")
+            continue
+        if any(t.get("name") == key for t in server_tool_dicts):
+            continue  # de-duplicate
+        # Collision guard: server-side tool wins over the native equivalent
+        colliding = [t for t in filtered_tools if getattr(t, "name", None) == key]
+        if colliding:
+            logger.warning(
+                f"Native tool '{key}' conflicts with Anthropic server tool "
+                f"'{tool_def['type']}' - dropping the native tool"
+            )
+            filtered_tools = [t for t in filtered_tools if getattr(t, "name", None) != key]
+        server_tool_dicts.append(dict(tool_def))
+
+    return server_tool_dicts, filtered_tools
 
 # =============================================================================
 # AGENT GUARDRAILS FRAMEWORK
@@ -632,13 +686,48 @@ class AgentFactory:
             agent_config=agent_config
         )
 
+        # 6d. Anthropic server-side tools (web_search / web_fetch executed on
+        # Anthropic infrastructure). Passed to create_agent as raw dicts -
+        # create_agent forwards dict tools to the model unchanged and
+        # langchain-anthropic passes built-in tool dicts through to the API.
+        server_tool_dicts: List[Dict[str, Any]] = []
+        if model_name.startswith("claude"):
+            requested_server_tools = agent_config.get("anthropic_server_tools") or []
+            if requested_server_tools:
+                server_tool_dicts, tools = resolve_anthropic_server_tools(
+                    requested_server_tools, tools
+                )
+                if server_tool_dicts:
+                    logger.info(
+                        f"✓ Anthropic server tools enabled: "
+                        f"{[t['name'] for t in server_tool_dicts]}"
+                    )
+
+        # 6e. Prompt caching: wrap the system prompt in a SystemMessage with an
+        # explicit cache_control breakpoint so the (large, stable) system
+        # prompt prefix is cached independently of the volatile conversation.
+        # create_agent accepts str | SystemMessage for system_prompt.
+        system_prompt_value: Any = system_prompt_str
+        enable_prompt_caching = agent_config.get("enable_prompt_caching", False)
+        if enable_prompt_caching and model_name.startswith("claude") and system_prompt_str:
+            system_prompt_value = SystemMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": system_prompt_str,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            )
+            logger.info("✓ Prompt caching enabled: system prompt cache_control breakpoint set")
+
         # 7. Create LangGraph Agent (v1.0 API)
         try:
             # Use the unified agent creator
             create_agent_kwargs = {
                 "model": llm_or_model,  # Unbound model (or selector callable)
-                "tools": tools or [],   # create_agent handles binding
-                "system_prompt": system_prompt_str,  # v1.0: Pass string, messages handled automatically
+                "tools": (tools or []) + server_tool_dicts,   # create_agent handles binding
+                "system_prompt": system_prompt_value,  # v1.0: str or SystemMessage (cache_control)
                 # Note: callbacks are passed when invoking the agent, not when creating it
                 # Note: streaming is configured on the model object itself, not here
                 # "enable_parallel_tools": enable_parallel_tools # If supported by create_agent
@@ -850,6 +939,10 @@ You have been equipped with the following tools: {', '.join(tool_names)}
                     max_results=remaining_slots,
                     min_score=0.6
                 )
+                # Deterministic ordering: stable skill order keeps the rendered
+                # system prompt byte-identical across requests, which is
+                # required for Anthropic prompt-cache hits.
+                matches = sorted(matches, key=lambda m: (-m.score, m.skill.skill_id))
                 for match in matches:
                     if match.skill.skill_id not in skills_used:
                         skill_instructions.append(AgentFactory._format_skill_for_prompt(match.skill))
@@ -1187,6 +1280,44 @@ You have been equipped with the following tools: {', '.join(tool_names)}
             # claude-fable-5 rejects temperature/top_p/top_k with a 400
             if model_name not in NO_SAMPLING_PARAM_MODELS:
                 anthropic_kwargs["temperature"] = temperature
+
+            # --- Adaptive thinking ---
+            enable_thinking = bool(config.get("enable_thinking", False))
+            thinking_display = config.get("thinking_display") or "summarized"
+            if thinking_display not in ("summarized", "omitted"):
+                thinking_display = "summarized"
+
+            if model_name in NO_SAMPLING_PARAM_MODELS:
+                # claude-fable-5: thinking is always on. Only the display mode
+                # may be overridden - NEVER send {"type": "disabled"} (400).
+                anthropic_kwargs["thinking"] = {"type": "adaptive", "display": thinking_display}
+            elif model_name in ADAPTIVE_THINKING_MODELS and enable_thinking:
+                anthropic_kwargs["thinking"] = {"type": "adaptive", "display": thinking_display}
+                # Sampling params are rejected alongside adaptive thinking on
+                # 4.7+; harmless safety on 4.6.
+                anthropic_kwargs.pop("temperature", None)
+
+            # --- Effort (thinking depth / token spend) ---
+            # Only sent for models known to support it (fable-5, opus-4-8,
+            # sonnet-4-6). "none" or absent -> omit (API default is high).
+            reasoning_effort = config.get("reasoning_effort")
+            effort_value = getattr(reasoning_effort, "value", reasoning_effort)
+            if (
+                effort_value
+                and effort_value in ANTHROPIC_EFFORT_LEVELS
+                and model_name in (NO_SAMPLING_PARAM_MODELS | ADAPTIVE_THINKING_MODELS)
+            ):
+                anthropic_kwargs["effort"] = effort_value
+
+            # --- Prompt caching ---
+            # Top-level cache_control auto-places a breakpoint on the last
+            # cacheable block of every request (direct Anthropic API only),
+            # caching the tools + system + conversation prefix.
+            if config.get("enable_prompt_caching", False):
+                anthropic_kwargs["model_kwargs"] = {
+                    "cache_control": {"type": "ephemeral"}
+                }
+
             return ChatAnthropic(**anthropic_kwargs)
 
         # --- Google/Gemini Models ---
@@ -1220,7 +1351,9 @@ You have been equipped with the following tools: {', '.join(tool_names)}
                         "minimal": "low",
                         "low": "low",
                         "medium": "high",   # Medium maps to high
-                        "high": "high"
+                        "high": "high",
+                        "xhigh": "high",    # Anthropic-only level; degrade to high
+                        "max": "high"       # Anthropic-only level; degrade to high
                     }
                     thinking_level = thinking_level_map.get(reasoning_effort, "low")
                     model_kwargs["thinking_level"] = thinking_level
@@ -1232,7 +1365,9 @@ You have been equipped with the following tools: {', '.join(tool_names)}
                         "disable": 0,
                         "low": 1024,
                         "medium": 2048,
-                        "high": 4096
+                        "high": 4096,
+                        "xhigh": 4096,  # Anthropic-only level; degrade to high
+                        "max": 4096     # Anthropic-only level; degrade to high
                     }
                     budget = thinking_budget_map.get(reasoning_effort, 1024)
                     model_kwargs["thinking"] = {"budget_tokens": budget, "includeThoughts": budget > 0}

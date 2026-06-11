@@ -187,6 +187,22 @@ class DeepAgentConfig(BaseModel):
         default=None,
         description="Modalities for multimodal models (e.g., ['image', 'text'] for Gemini image generation)"
     )
+    enable_thinking: bool = Field(
+        default=False,
+        description="Enable adaptive thinking for Claude models (claude-opus-4-8/claude-sonnet-4-6; always on for claude-fable-5)"
+    )
+    thinking_display: str = Field(
+        default="summarized",
+        description="Thinking display mode for Claude adaptive thinking: 'summarized' or 'omitted'"
+    )
+    enable_prompt_caching: bool = Field(
+        default=False,
+        description="Enable Anthropic prompt caching (cache_control breakpoints on system prompt / message prefix)"
+    )
+    anthropic_server_tools: List[str] = Field(
+        default_factory=list,
+        description="Anthropic server-side tools to enable (e.g., 'web_search', 'web_fetch'); only applied to Claude models"
+    )
     system_prompt: str = Field(..., description="Agent system prompt")
 
     # Tools

@@ -28,8 +28,14 @@ import {
 } from 'lucide-react';
 import { useNotification } from '../../../hooks/useNotification';
 import { ModelSelectorInline } from '../../../components/common/ModelSelector';
+import { AVAILABLE_TOOLS } from '../data/agentTools';
 
 import apiClient from '../../../lib/api-client';
+
+// Provider-gated tools (e.g. Anthropic server-side web tools). Rendered only
+// when the selected model matches the gate; persisted into
+// `anthropic_server_tools`, NOT `native_tools`.
+const ANTHROPIC_SERVER_TOOLS = AVAILABLE_TOOLS.filter(t => t.providerGate === 'anthropic');
 
 // Type definitions
 
@@ -122,6 +128,8 @@ interface DeepAgentConfig {
   include_chat_ui: boolean;
   include_docker: boolean;
   enforce_tool_constraints?: boolean;  // Enable/disable action preset enforcement
+  enable_prompt_caching?: boolean;  // Anthropic prompt caching (Claude models only)
+  anthropic_server_tools?: string[];  // Anthropic server-side tools (web_search/web_fetch)
 }
 
 // Unified AgentConfig that supports both Regular and Deep agent fields
@@ -216,7 +224,9 @@ const DEFAULT_CONFIG: DeepAgentConfig = {
   export_format: 'standalone',
   include_chat_ui: true,
   include_docker: false,
-  enforce_tool_constraints: false  // Disabled by default - users can enable for production safety
+  enforce_tool_constraints: false,  // Disabled by default - users can enable for production safety
+  enable_prompt_caching: false,
+  anthropic_server_tools: []
 };
 
 // Native tools registry with DeepAgents standard naming
@@ -481,6 +491,18 @@ export default function DeepAgentBuilder({
         ? prev.native_tools.filter(t => t !== toolId)
         : [...prev.native_tools, toolId]
     }));
+  }, []);
+
+  const toggleServerTool = useCallback((toolId: string) => {
+    setConfig(prev => {
+      const current = prev.anthropic_server_tools || [];
+      return {
+        ...prev,
+        anthropic_server_tools: current.includes(toolId)
+          ? current.filter(t => t !== toolId)
+          : [...current, toolId]
+      };
+    });
   }, []);
 
   const toggleCustomTool = useCallback((toolId: string) => {
@@ -831,6 +853,27 @@ export default function DeepAgentBuilder({
                 />
               </div>
             </div>
+
+            {/* Prompt caching (Anthropic / Claude models only) */}
+            {config.model.startsWith('claude') && (
+              <label className="flex items-start gap-2 cursor-pointer mt-2">
+                <input
+                  type="checkbox"
+                  checked={config.enable_prompt_caching ?? false}
+                  onChange={(e) => updateConfig('enable_prompt_caching', e.target.checked)}
+                  className="mt-0.5"
+                  style={{ accentColor: 'var(--color-primary)' }}
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    Prompt caching
+                  </span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Caches the system prompt for faster/cheaper turns (min ~2-4K tokens)
+                  </p>
+                </div>
+              </label>
+            )}
           </ConfigSection>
 
           {/* System Prompt */}
@@ -885,6 +928,28 @@ export default function DeepAgentBuilder({
                   />
                 ))}
               </div>
+
+              {/* Anthropic server-side tools (Claude models only) */}
+              {config.model.startsWith('claude') && ANTHROPIC_SERVER_TOOLS.length > 0 && (
+                <div className="mt-6">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Anthropic Server Tools
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Run on Anthropic's infrastructure — no local execution. If selected, they replace the matching native web tool.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {ANTHROPIC_SERVER_TOOLS.map(tool => (
+                      <ToolCheckbox
+                        key={tool.id}
+                        tool={tool}
+                        checked={(config.anthropic_server_tools || []).includes(tool.id)}
+                        onChange={() => toggleServerTool(tool.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Action Presets Toggle - Prominent Feature Highlight */}
               <div

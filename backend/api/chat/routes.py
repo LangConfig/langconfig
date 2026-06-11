@@ -482,6 +482,7 @@ async def send_message_stream(
         async def generate_stream():
             """Generate streaming response."""
             full_response = ""
+            thinking_response = ""
             assistant_artifacts: List[Dict[str, Any]] = []
             assistant_content_blocks: List[Dict[str, Any]] = []
             artifact_cursor = 0
@@ -658,6 +659,15 @@ async def send_message_stream(
                         safe_data = make_json_safe(custom_data)
                         yield sse_event({"type": "custom_event", "data": safe_data})
 
+                    # Stream model thinking (Anthropic adaptive thinking summaries).
+                    # Kept separate from full_response so reasoning text is never
+                    # mixed into the assistant message content.
+                    elif normalized_event and normalized_event.get("type") == "thinking_delta":
+                        thinking_token = normalized_event.get("text")
+                        if isinstance(thinking_token, str) and thinking_token:
+                            thinking_response += thinking_token
+                            yield sse_event({"type": "thinking", "content": thinking_token})
+
                     # Stream LLM tokens as they're generated
                     elif normalized_event and normalized_event.get("type") == "text_delta":
                         token = normalized_event.get("text")
@@ -708,14 +718,18 @@ async def send_message_stream(
                         if final_session:
                             logger.info(f"Before adding assistant message: total_messages={len(final_session.messages)}")
 
-                            final_session.messages.append({
+                            assistant_message = {
                                 "role": "assistant",
                                 "content": full_response,
                                 "timestamp": current_timestamp(),
                                 "artifacts": assistant_artifacts,
                                 "content_blocks": assistant_content_blocks,
                                 "has_multimodal": has_multimodal_blocks(assistant_content_blocks),
-                            })
+                            }
+                            # Thinking is stored separately and never merged into content
+                            if thinking_response:
+                                assistant_message["thinking"] = thinking_response
+                            final_session.messages.append(assistant_message)
                             flag_modified(final_session, "messages")
 
                             # Update metrics with RAG token tracking

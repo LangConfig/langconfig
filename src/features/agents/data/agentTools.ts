@@ -14,11 +14,20 @@ export interface AgentTool {
   name: string;
   description: string;
   category: string;
+  /**
+   * When set, this tool is only available for models from the given provider
+   * (e.g. server-side tools executed on Anthropic infrastructure). Gated tools
+   * are persisted into `anthropic_server_tools`, NOT `native_tools`.
+   */
+  providerGate?: 'anthropic';
 }
 
 export const AVAILABLE_TOOLS: AgentTool[] = [
   { id: 'web_search', name: 'Web Search', description: 'Search the web (DuckDuckGo)', category: 'web' },
   { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch webpage content', category: 'web' },
+  // Anthropic server-side tools (executed on Anthropic infrastructure; Claude models only)
+  { id: 'anthropic_web_search', name: 'Web Search (Anthropic)', description: 'Server-side web search run on Anthropic infrastructure with citations. Claude models only.', category: 'web', providerGate: 'anthropic' },
+  { id: 'anthropic_web_fetch', name: 'Web Fetch (Anthropic)', description: 'Server-side URL fetch run on Anthropic infrastructure. Claude models only.', category: 'web', providerGate: 'anthropic' },
   { id: 'browser', name: 'Browser Automation', description: 'Advanced web interaction (Playwright)', category: 'web' },
   // Image generation (OpenAI Images 2.0 — gpt-image-2)
   { id: 'generate_image', name: 'Generate Image', description: 'Generate images with OpenAI Images 2.0 (gpt-image-2). Instant or Thinking mode, up to 8 variants with character continuity, 2K output.', category: 'media' },

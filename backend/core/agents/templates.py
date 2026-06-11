@@ -162,6 +162,16 @@ class AgentTemplate(BaseModel):
         description="LangChain 1.1: Enable prompt caching via SystemMessage cache_control (Anthropic/OpenAI)"
     )
 
+    # Adaptive Thinking (Anthropic claude-opus-4-8 / claude-sonnet-4-6; always on for claude-fable-5)
+    enable_thinking: bool = Field(
+        default=False,
+        description="Enable Anthropic adaptive thinking ({'type': 'adaptive'}) on supported Claude models"
+    )
+    thinking_display: str = Field(
+        default="summarized",
+        description="Anthropic thinking display mode: 'summarized' (readable summary) or 'omitted'"
+    )
+
     # Guardrails (Chapter 13/18 - Safety & HITL)
     requires_human_approval: bool = Field(
         default=False,
@@ -224,6 +234,9 @@ class AgentTemplate(BaseModel):
             "strict_schema": self.strict_schema,
             # LangChain 1.1: Prompt caching
             "enable_prompt_caching": self.enable_prompt_caching,
+            # Anthropic adaptive thinking
+            "enable_thinking": self.enable_thinking,
+            "thinking_display": self.thinking_display,
             "requires_human_approval": self.requires_human_approval,  # HITL
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
