@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: langconfig
+          POSTGRES_PASSWORD: langconfig_dev
+          POSTGRES_DB: langconfig
+        ports:
+          # backend/db/database.py and backend/conftest.py default to localhost:5433
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U langconfig"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://langconfig:langconfig_dev@localhost:5433/langconfig
+      TEST_DATABASE_URL: postgresql+asyncpg://langconfig:langconfig_dev@localhost:5433/langconfig_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Create test database
+        # backend/conftest.py runs Alembic against langconfig_test; the service
+        # container only creates the primary langconfig database.
+        run: |
+          PGPASSWORD=langconfig_dev psql -h localhost -p 5433 -U langconfig -d langconfig \
+            -c "CREATE DATABASE langconfig_test;"
+
+      - name: Run pytest
+        working-directory: backend
+        # test_playwright_tools.py is a manual smoke script that needs installed
+        # Playwright browsers (python -m playwright install chromium); excluded in CI.
+        run: |
+          python -m pytest -q \
+            --ignore=tests/test_playwright_tools.py
+
+  dependency-audit:
+    name: Dependency audit (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit backend dependencies
+        run: pip-audit -r backend/requirements.txt --strict
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Tauri app, but `npm run build` is only `tsc && vite build` — no Rust toolchain needed.
+      - name: Build frontend
+        run: npm run build
