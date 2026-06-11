@@ -248,8 +248,8 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "Cache-Control"],
+    expose_headers=["Content-Disposition"],
 )
 
 @app.get("/")

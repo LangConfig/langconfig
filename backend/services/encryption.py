@@ -18,23 +18,41 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_INSECURE_KEY = "langconfig-default-insecure-key-change-me"
+
 class EncryptionService:
     _instance = None
     _fernet = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(EncryptionService, cls).__new__(cls)
-            cls._instance._initialize()
+            instance = super(EncryptionService, cls).__new__(cls)
+            instance._initialize()
+            # Only publish the singleton after successful initialization so a
+            # failed init (e.g. missing production key) doesn't poison it.
+            cls._instance = instance
         return cls._instance
 
     def _initialize(self):
-        """Initialize the encryption key from environment or generate a default."""
-        try:
-            # Get encryption key from env or use a default (for dev/self-hosted)
-            # In production, this should be strictly managed
-            key_str = os.getenv("APP_ENCRYPTION_KEY", "langconfig-default-insecure-key-change-me")
+        """Initialize the encryption key from environment or fall back to a dev-only default."""
+        environment = os.getenv("ENVIRONMENT", "development").strip().lower()
+        key_str = os.getenv("APP_ENCRYPTION_KEY")
 
+        if not key_str or key_str == DEFAULT_INSECURE_KEY:
+            if environment == "production":
+                raise RuntimeError(
+                    "APP_ENCRYPTION_KEY must be set to a non-default value in production"
+                )
+            logger.warning(
+                "=" * 70 + "\n"
+                "SECURITY WARNING: APP_ENCRYPTION_KEY is not set (or is the default).\n"
+                "Sensitive data is being encrypted with an INSECURE DEFAULT key.\n"
+                "Set APP_ENCRYPTION_KEY in backend/.env before storing real secrets.\n"
+                + "=" * 70
+            )
+            key_str = DEFAULT_INSECURE_KEY
+
+        try:
             # Derive a secure 32-byte key from the string
             salt = b'langconfig_salt' # Fixed salt for deterministic key generation from the env var
             kdf = PBKDF2HMAC(
