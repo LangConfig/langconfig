@@ -1,8 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 @import "tailwindcss";
+
+/* Tailwind 4: drive dark: utilities from the theme's .dark class, not the OS
+   preference. applyTheme() in src/lib/themes.ts owns the class. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-primary: #D98984;
@@ -13,8 +19,63 @@
   --color-text-muted: #7B6870;
   --color-text-primary: #12283B;
 
+  /* Semantic status tones (peony defaults; overridden per-theme at runtime) */
+  --color-success: #3E7C4F;
+  --color-warning: #B07D2B;
+  --color-error: #B6463F;
+  --color-info: #3A6B8A;
+  --color-on-accent: #FFFFFF;
+
   --font-family-display: Inter, sans-serif;
   --font-family-sans: Manrope, system-ui, -apple-system, sans-serif;
+  --font-family-serif: 'Fraunces', Georgia, serif;
+  --font-family-mono: 'JetBrains Mono', 'Monaco', 'Menlo', monospace;
+}
+
+/* Extended design tokens (theme-switched by applyTheme; these are the peony
+   light-mode defaults). Components consume these instead of hardcoding
+   shadows/radii so one classname works in light (offset shadows) and dark
+   (glows) without branching. */
+:root {
+  --color-success-wash: color-mix(in srgb, #3E7C4F 11%, transparent);
+  --color-warning-wash: color-mix(in srgb, #B07D2B 11%, transparent);
+  --color-error-wash: color-mix(in srgb, #B6463F 11%, transparent);
+  --color-info-wash: color-mix(in srgb, #3A6B8A 11%, transparent);
+  --color-success-border: color-mix(in srgb, #3E7C4F 45%, transparent);
+  --color-warning-border: color-mix(in srgb, #B07D2B 45%, transparent);
+  --color-error-border: color-mix(in srgb, #B6463F 45%, transparent);
+  --color-info-border: color-mix(in srgb, #3A6B8A 45%, transparent);
+  --color-accent-wash: color-mix(in srgb, #D98984 12%, transparent);
+
+  --surface-0: #FFF8ED;
+  --surface-1: #FFFFFF;
+  --surface-2: #F8E7DC;
+  --surface-terminal: #1E1E1E;
+  --border-strong: #102D43;
+  --border-subtle: color-mix(in srgb, #102D43 30%, transparent);
+
+  --shadow-card: 4px 4px 0 #102D43;
+  --shadow-card-sm: 2px 2px 0 #102D43;
+  --shadow-pressed: 1px 1px 0 #102D43;
+  --glow-accent: 0 0 0 0 transparent;
+  --glow-success: 0 0 0 0 transparent;
+  --glow-warning: 0 0 0 0 transparent;
+  --glow-error: 0 0 0 0 transparent;
+  --glow-info: 0 0 0 0 transparent;
+  --radius-card: 4px;
+  --radius-control: 4px;
+  --border-w: 2px;
+  --press-shift: 2px;
+  --atmosphere: none;
+
+  /* Terminal/code syntax palette (terminal surfaces stay dark in BOTH themes) */
+  --code-text: #ECE6DA;
+  --code-keyword: #E8868B;
+  --code-string: #A8C97F;
+  --code-comment: #8A8390;
+  --code-function: #8FB8D8;
+  --code-number: #E0B566;
+  --code-punctuation: #B5ADBD;
 }
 
 /* Global resets */
@@ -529,4 +590,375 @@ select {
 .agent-character-img:hover {
   transform: scale(1.02);
   filter: drop-shadow(0 0 30px var(--color-primary)) brightness(1.1);
+}
+
+/* =============================================================================
+   Botanical Brutalism component layer — "living garden terminal"
+   One definition per pattern; theme-switched via the extended tokens, so the
+   same classname renders offset shadows in light themes and glows in dark.
+   ============================================================================= */
+
+/* --- Surfaces --- */
+.surface-card {
+  background: var(--surface-1);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.surface-card-sm {
+  background: var(--surface-1);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card-sm);
+}
+
+.surface-card-interactive {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+.surface-card-interactive:hover {
+  transform: translate(var(--press-shift), var(--press-shift));
+  box-shadow: var(--shadow-pressed);
+}
+
+.surface-inset {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+/* --- Buttons --- */
+.btn-brutal {
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  background: var(--surface-1);
+  color: var(--color-text-primary);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-card-sm);
+  padding: 0.45rem 0.9rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn-brutal:hover:not(:disabled) {
+  transform: translate(var(--press-shift), var(--press-shift));
+  box-shadow: var(--shadow-pressed);
+}
+
+.btn-brutal:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-brutal-primary {
+  background: var(--color-primary);
+  color: var(--color-on-accent);
+}
+
+.btn-ghost {
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: 0.3rem 0.55rem;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-color: var(--border-subtle);
+  background: var(--color-accent-wash);
+}
+
+/* --- Badges & status tones --- */
+.badge-mono {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.14rem 0.5rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--color-text-muted);
+}
+
+.tone-success { color: var(--color-success); background: var(--color-success-wash); border-color: var(--color-success-border); }
+.tone-warning { color: var(--color-warning); background: var(--color-warning-wash); border-color: var(--color-warning-border); }
+.tone-error   { color: var(--color-error);   background: var(--color-error-wash);   border-color: var(--color-error-border); }
+.tone-info    { color: var(--color-info);    background: var(--color-info-wash);    border-color: var(--color-info-border); }
+.tone-accent  { color: var(--color-primary); background: var(--color-accent-wash);  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent); }
+.tone-neutral { color: var(--color-text-muted); background: var(--surface-2); border-color: var(--border-subtle); }
+
+/* --- Terminal blocks (dark in every theme, per the design spec) --- */
+.terminal-block {
+  background: var(--surface-terminal);
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card-sm);
+  font-family: var(--font-family-mono);
+  color: var(--code-text);
+  overflow: hidden;
+}
+
+.terminal-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--code-comment);
+}
+
+.terminal-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.terminal-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.terminal-dots span:nth-child(1) { background: #E8686A; }
+.terminal-dots span:nth-child(2) { background: #E5B765; }
+.terminal-dots span:nth-child(3) { background: #7CC082; }
+
+.terminal-prompt::before {
+  content: '\276F\00a0';
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* --- Chat markdown prose (tables, inline code, lists) --- */
+.chat-markdown {
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.chat-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6rem 0;
+  font-size: 0.85em;
+  border: var(--border-w) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.chat-markdown th {
+  background: var(--surface-2);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: var(--border-w) solid var(--border-strong);
+}
+
+.chat-markdown td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--color-text-primary);
+}
+
+.chat-markdown tr:last-child td {
+  border-bottom: none;
+}
+
+.chat-markdown tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+}
+
+.chat-markdown :not(pre) > code {
+  font-family: var(--font-family-mono);
+  font-size: 0.85em;
+  background: var(--color-accent-wash);
+  color: var(--color-text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 0.08em 0.35em;
+}
+
+.chat-markdown blockquote {
+  border-left: 3px solid var(--color-primary);
+  margin: 0.6rem 0;
+  padding: 0.2rem 0 0.2rem 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.chat-markdown a {
+  color: var(--color-info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --- Code blocks: classed Prism tokens, colors from theme vars --- */
+.code-block {
+  background: var(--surface-terminal);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  font-family: var(--font-family-mono) !important;
+  font-size: 0.8em;
+  line-height: 1.6;
+  color: var(--code-text);
+}
+
+.code-block code,
+.code-block pre {
+  background: transparent !important;
+  color: var(--code-text);
+  font-family: var(--font-family-mono) !important;
+}
+
+.code-block .token.comment, .code-block .token.prolog, .code-block .token.doctype, .code-block .token.cdata { color: var(--code-comment); font-style: italic; }
+.code-block .token.punctuation { color: var(--code-punctuation); }
+.code-block .token.property, .code-block .token.tag, .code-block .token.boolean, .code-block .token.constant, .code-block .token.symbol { color: var(--code-keyword); }
+.code-block .token.number { color: var(--code-number); }
+.code-block .token.selector, .code-block .token.attr-name, .code-block .token.string, .code-block .token.char, .code-block .token.builtin { color: var(--code-string); }
+.code-block .token.operator, .code-block .token.entity, .code-block .token.url, .code-block .token.variable { color: var(--code-punctuation); }
+.code-block .token.atrule, .code-block .token.attr-value, .code-block .token.keyword { color: var(--code-keyword); font-weight: 600; }
+.code-block .token.function, .code-block .token.class-name { color: var(--code-function); font-weight: 600; }
+.code-block .token.regex, .code-block .token.important { color: var(--code-number); }
+
+/* --- Game-feel animations --- */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: var(--shadow-card-sm); }
+  50% { box-shadow: var(--shadow-card-sm), var(--glow-accent); }
+}
+
+.streaming-pulse {
+  animation: glow-pulse 2.4s ease-in-out infinite;
+}
+
+/* Light themes have no glow — degrade to a gentle accent border pulse */
+@keyframes border-pulse {
+  0%, 100% { border-color: var(--border-strong); }
+  50% { border-color: var(--color-primary); }
+}
+
+html:not(.dark) .streaming-pulse {
+  animation: border-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes thinking-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thinking-shimmer {
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  background: linear-gradient(
+    90deg,
+    var(--color-text-muted) 0%,
+    var(--color-primary) 45%,
+    var(--color-text-muted) 90%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.2s linear infinite;
+}
+
+.terminal-caret::after {
+  content: '\258E';
+  color: var(--color-primary);
+  animation: blink 1s step-end infinite;
+  -webkit-text-fill-color: var(--color-primary);
+}
+
+/* Avatar orb state auras */
+.orb-aura-thinking { animation: breathe 2.6s ease-in-out infinite; }
+.orb-aura-streaming { box-shadow: var(--glow-accent), var(--shadow-pressed); }
+.orb-aura-error { box-shadow: var(--glow-error), var(--shadow-pressed); border-color: var(--color-error) !important; }
+
+/* Energy bar (ProgressBar primitive) */
+.energy-bar-track {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--border-strong) 6%, transparent) 7px 8px
+  );
+  overflow: hidden;
+}
+
+.energy-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+  position: relative;
+}
+
+.energy-bar-fill.animated::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: inherit;
+  filter: brightness(1.4);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+/* Dark-only chat atmosphere (vignette + grain), driven by --atmosphere */
+.chat-atmosphere {
+  position: relative;
+}
+
+.chat-atmosphere::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--atmosphere);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .chat-atmosphere::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Textured peony theme companion rules for the new surfaces */
+.textured-theme .surface-card,
+.textured-theme .surface-card-sm {
+  background: rgba(255, 252, 246, 0.86);
+}
+
+.textured-theme .surface-inset {
+  background: rgba(248, 231, 220, 0.6);
 }
