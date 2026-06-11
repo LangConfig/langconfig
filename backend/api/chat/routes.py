@@ -64,8 +64,13 @@ from db.database import get_db
 from models.deep_agent import DeepAgentTemplate, ChatSession, DeepAgentConfig, SessionDocument
 from models.core import DocumentType, IndexingStatus
 from services.deepagent_factory import DeepAgentFactory
-from core.workflows.events.emitter import ExecutionEventCallbackHandler
-from core.streaming.adapters import normalize_stream_event
+from core.runtimes import get_runtime
+from core.runtimes.base import (
+    RuntimeEvent,
+    RuntimeSessionRef,
+    has_multimodal_blocks,
+    make_json_safe,
+)
 from services.conversation_context import ConversationContextService
 
 logger = logging.getLogger(__name__)
@@ -77,24 +82,8 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 # Helper Functions
 # =============================================================================
 
-def make_json_safe(obj):
-    """
-    Recursively convert objects to JSON-safe format.
-    Filters out non-serializable items like LangGraph Command objects.
-    """
-    if isinstance(obj, (str, int, float, bool, type(None))):
-        return obj
-    elif isinstance(obj, dict):
-        return {k: make_json_safe(v) for k, v in obj.items() if not k.startswith('_')}
-    elif isinstance(obj, (list, tuple)):
-        return [make_json_safe(item) for item in obj]
-    else:
-        # Skip non-serializable objects like Command
-        try:
-            json.dumps(obj)
-            return obj
-        except (TypeError, ValueError):
-            return None
+# NOTE: make_json_safe / has_multimodal_blocks moved to core.runtimes.base
+# (imported above) so runtime implementations can reuse them.
 
 
 def sse_event(payload: Dict[str, Any]) -> str:
@@ -107,11 +96,60 @@ def current_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
 
-def has_multimodal_blocks(blocks: Optional[List[Dict[str, Any]]]) -> bool:
-    """Whether content blocks include non-text UI-renderable content."""
-    if not blocks:
-        return False
-    return any(block.get("type") in {"image", "audio", "file", "resource"} for block in blocks if isinstance(block, dict))
+def runtime_event_to_sse_payload(revent: RuntimeEvent) -> Optional[Dict[str, Any]]:
+    """Dumb RuntimeEvent -> SSE frame mapping.
+
+    Keeps the public SSE contract (chunk/thinking/tool_start/tool_end/
+    tool_artifact/custom_event/error/complete) byte-identical to the
+    pre-runtime implementation. Guarded by tests/test_runtime_sse_contract.py.
+    """
+    rtype = revent.get("type")
+
+    if rtype == "text_delta":
+        return {"type": "chunk", "content": revent.get("text")}
+
+    if rtype == "thinking_delta":
+        return {"type": "thinking", "content": revent.get("text")}
+
+    if rtype == "tool_start":
+        return {
+            "type": "tool_start",
+            "tool_name": revent.get("tool_name") or "unknown",
+            "data": revent.get("data"),
+        }
+
+    if rtype == "tool_end":
+        return {
+            "type": "tool_end",
+            "tool_name": revent.get("tool_name") or "unknown",
+            "data": revent.get("data"),
+        }
+
+    if rtype == "tool_artifact":
+        return {
+            "type": "tool_artifact",
+            "tool_name": revent.get("tool_name"),
+            "artifact": (revent.get("data") or {}).get("artifact"),
+        }
+
+    if rtype == "custom":
+        return {"type": "custom_event", "data": revent.get("data")}
+
+    if rtype == "error":
+        return {"type": "error", "message": revent.get("error")}
+
+    if rtype == "complete":
+        data = revent.get("data") or {}
+        return {
+            "type": "complete",
+            "content": revent.get("text"),
+            "artifacts": data.get("artifacts", []),
+            "content_blocks": data.get("content_blocks", []),
+            "has_multimodal": data.get("has_multimodal", False),
+        }
+
+    # "usage" and any future event types have no SSE frame yet.
+    return None
 
 
 # =============================================================================
@@ -177,26 +215,14 @@ class ChatHistoryResponse(BaseModel):
 
 from services.chat_session_manager import get_session_manager
 
-# Legacy: Will be removed after migration to session manager
-active_agents: Dict[str, Any] = {}
-
-
-def get_cached_agent(session_id: str) -> Optional[Any]:
-    """Get cached agent instance using session manager."""
-    manager = get_session_manager()
-    agent = manager.get_agent(session_id)
-    if agent:
-        return agent
-    # Fallback to legacy cache
-    return active_agents.get(session_id)
-
-
-def cache_agent(session_id: str, agent_instance: Any):
-    """Cache agent instance using session manager."""
-    manager = get_session_manager()
-    manager.cache_agent(session_id, agent_instance)
-    # Also update legacy cache for compatibility
-    active_agents[session_id] = agent_instance
+# Agent instance caching relocated to the LangGraph runtime. Re-exported here
+# because the non-streaming endpoint and the session lifecycle endpoints still
+# manage the cache directly (single shared cache either way).
+from core.runtimes.langgraph_runtime import (
+    active_agents,
+    cache_agent,
+    get_cached_agent,
+)
 
 
 # =============================================================================
@@ -282,6 +308,13 @@ async def send_message(
 ):
     """
     Send a message and receive a complete response (non-streaming).
+
+    NOTE(runtime): intentionally NOT routed through the AgentRuntime
+    abstraction yet. It uses synchronous ``agent.invoke()`` rather than the
+    streaming event loop; funneling it through ``runtime.stream()`` would
+    change execution semantics (astream_events vs invoke). It still shares
+    the runtime's agent cache via get_cached_agent/cache_agent, so a future
+    ``runtime.invoke()`` capability can absorb it cleanly.
 
     Storage Flow:
     1. Append user message to session.messages (PostgreSQL JSON)
@@ -476,6 +509,7 @@ async def send_message_stream(
         # to avoid detached session issues
         session_id = session.session_id
         session_project_id = getattr(session, "project_id", None)
+        session_runtime = getattr(session, "runtime", None) or "langgraph"
         agent_config = agent.config.copy() if agent.config else {}
         agent_project_id = getattr(agent, 'project_id', None)
 
@@ -485,7 +519,6 @@ async def send_message_stream(
             thinking_response = ""
             assistant_artifacts: List[Dict[str, Any]] = []
             assistant_content_blocks: List[Dict[str, Any]] = []
-            artifact_cursor = 0
             all_context = ""
             rag_tokens_used = 0
 
@@ -565,142 +598,44 @@ async def send_message_stream(
                         rag_tokens_used = token_counter.count_tokens(all_context)
                         logger.info(f"Retrieved RAG context: {rag_tokens_used} tokens")
 
-                # Get or create agent instance
-                agent_instance = get_cached_agent(request.session_id)
-
-                if not agent_instance:
-                    config = DeepAgentConfig(**agent_config)
-                    agent_instance, tools, callbacks = await DeepAgentFactory.create_deep_agent(
-                        config=config,
-                        project_id=project_id or 0,
-                        task_id=0,
-                        context=all_context,  # Inject RAG context
-                        mcp_manager=None,
-                        vector_store=None
-                    )
-                    cache_agent(request.session_id, agent_instance)
-
-                # Create event handler for tracking tool calls and subagent activity
-                event_handler = ExecutionEventCallbackHandler(
-                    project_id=project_id or 0,
-                    task_id=0,
-                    workflow_id=None,  # No workflow for chat sessions
-                    enable_sanitization=True,
-                    save_to_db=False  # Don't persist to DB for chat sessions
+                # Resolve the execution runtime for this session and acquire
+                # (or build) the runtime-side agent/session. Agent acquisition,
+                # the astream_events loop, and event normalization now live in
+                # the runtime (core/runtimes/langgraph_runtime.py).
+                runtime = get_runtime(session_runtime)
+                ref = await runtime.create_session(
+                    config=agent_config,
+                    session_id=session_id,
+                    context=all_context,  # Inject RAG context
+                    project_id=project_id,
                 )
 
-                # Create new user message (checkpointer loads previous messages)
-                from langchain_core.messages import HumanMessage
-                new_message = HumanMessage(content=request.message)
-
-                # Use astream_events for token-by-token streaming.
-                # MUST be v2: Pregel's v3 stream API is experimental and returns
-                # an awaitable AsyncGraphRunStream, not an async iterator -
-                # `async for` over it raises "'async for' requires an object
-                # with __aiter__ method, got coroutine" on every chat prompt.
-                # v2 yields the StreamEvent dicts that normalize_stream_event
-                # and the SSE handlers below consume.
-                # Guarded by tests/test_chat_stream_contract.py.
-                async for event in agent_instance.astream_events(
-                    {"messages": [new_message]},
-                    config={
-                        "configurable": {"thread_id": session_id, "enable_hitl": request.enable_hitl},
-                        "metadata": {"enable_hitl": request.enable_hitl},
-                        "callbacks": [event_handler],
-                        "recursion_limit": 500  # Increased from default 25 for complex tool chains
+                async for revent in runtime.stream(
+                    ref,
+                    request.message,
+                    options={
+                        "enable_hitl": request.enable_hitl,
+                        "project_id": project_id,
                     },
-                    version="v2"
                 ):
-                    kind = event.get("event")
-                    normalized_event = normalize_stream_event(event)
+                    rtype = revent.get("type")
 
-                    # Stream tool call events
-                    if normalized_event and normalized_event.get("type") == "tool_started":
-                        yield sse_event({
-                            "type": "tool_start",
-                            "tool_name": normalized_event.get("tool_name") or "unknown",
-                            "data": {
-                                "input": normalized_event.get("input"),
-                                "namespace": normalized_event.get("namespace"),
-                            },
-                        })
-
-                    elif normalized_event and normalized_event.get("type") in {"tool_completed", "tool_error"}:
-                        tool_name = normalized_event.get("tool_name") or "unknown"
-                        yield sse_event({
-                            "type": "tool_end",
-                            "tool_name": tool_name,
-                            "data": {
-                                "output": normalized_event.get("output"),
-                                "error": normalized_event.get("error"),
-                                "namespace": normalized_event.get("namespace"),
-                            },
-                        })
-
-                        collected_artifacts = event_handler.get_collected_artifacts()
-                        new_artifacts = collected_artifacts[artifact_cursor:]
-                        artifact_cursor = len(collected_artifacts)
-                        for artifact in new_artifacts:
-                            artifact = make_json_safe(artifact)
-                            if not isinstance(artifact, dict):
-                                continue
+                    # Accumulate state the route persists to the DB afterwards
+                    # (persistence is runtime-agnostic and stays here).
+                    if rtype == "text_delta":
+                        full_response += revent.get("text") or ""
+                    elif rtype == "thinking_delta":
+                        thinking_response += revent.get("text") or ""
+                    elif rtype == "tool_artifact":
+                        artifact = (revent.get("data") or {}).get("artifact")
+                        if isinstance(artifact, dict):
                             assistant_artifacts.append(artifact)
                             if artifact.get("type") in {"image", "audio", "file", "resource"}:
                                 assistant_content_blocks.append(artifact)
-                            yield sse_event({
-                                "type": "tool_artifact",
-                                "tool_name": tool_name,
-                                "artifact": artifact,
-                            })
 
-                    # Stream custom events (LangGraph-style progress bars, status badges, etc.)
-                    elif kind == "on_custom_event" or (kind == "custom_event"):
-                        custom_data = event.get("data", {})
-                        safe_data = make_json_safe(custom_data)
-                        yield sse_event({"type": "custom_event", "data": safe_data})
-
-                    # Stream model thinking (Anthropic adaptive thinking summaries).
-                    # Kept separate from full_response so reasoning text is never
-                    # mixed into the assistant message content.
-                    elif normalized_event and normalized_event.get("type") == "thinking_delta":
-                        thinking_token = normalized_event.get("text")
-                        if isinstance(thinking_token, str) and thinking_token:
-                            thinking_response += thinking_token
-                            yield sse_event({"type": "thinking", "content": thinking_token})
-
-                    # Stream LLM tokens as they're generated
-                    elif normalized_event and normalized_event.get("type") == "text_delta":
-                        token = normalized_event.get("text")
-
-                        # Ensure token is a string (handle cases where content might be a list of blocks)
-                        if isinstance(token, list):
-                            # Skip empty lists
-                            if not token:
-                                continue
-                            # Extract text from content blocks: [{'text': '...', 'type': 'text'}, ...]
-                            parts = [
-                                block.get("text", "") if isinstance(block, dict) else str(block)
-                                for block in token
-                            ]
-                            # Join parts directly - streaming sends complete tokens
-                            token = "".join(parts)
-                        elif token is None:
-                            continue
-                        elif not isinstance(token, str):
-                            token = str(token)
-
-                        if token:
-                            full_response += token
-                            yield sse_event({"type": "chunk", "content": token})
-
-                # Send completion event
-                yield sse_event({
-                    "type": "complete",
-                    "content": full_response,
-                    "artifacts": assistant_artifacts,
-                    "content_blocks": assistant_content_blocks,
-                    "has_multimodal": has_multimodal_blocks(assistant_content_blocks),
-                })
+                    payload = runtime_event_to_sse_payload(revent)
+                    if payload is not None:
+                        yield sse_event(payload)
 
             except Exception as e:
                 logger.error(f"Error in stream: {e}")
@@ -870,6 +805,7 @@ async def end_chat_session(
     session.is_active = False
     import datetime
     session.ended_at = datetime.datetime.utcnow()
+    session_runtime = getattr(session, "runtime", None) or "langgraph"
     db.commit()
 
     # Cleanup agent instance from cache
@@ -880,11 +816,13 @@ async def end_chat_session(
     if session_id in active_agents:
         del active_agents[session_id]
 
-    # Cleanup LangGraph checkpoints for this thread
+    # Cleanup runtime-side state (LangGraph checkpoints) for this thread
     cleanup_success = False
     try:
-        from core.workflows.checkpointing.utils import delete_thread_checkpoints
-        await delete_thread_checkpoints(thread_id=session_id)
+        runtime = get_runtime(session_runtime)
+        await runtime.destroy_session(RuntimeSessionRef(
+            runtime=session_runtime, session_id=session_id, external_ref=session_id
+        ))
         cleanup_success = True
         logger.info(f"Cleaned up checkpoints for session {session_id}")
     except Exception as e:
@@ -921,6 +859,9 @@ async def delete_chat_session(
     ).all()
     document_paths = [doc.file_path for doc in documents if doc.file_path]
 
+    # Capture before delete: the row is gone once we commit.
+    session_runtime = getattr(session, "runtime", None) or "langgraph"
+
     db.delete(session)
     db.commit()
 
@@ -941,8 +882,10 @@ async def delete_chat_session(
 
     cleanup_success = False
     try:
-        from core.workflows.checkpointing.utils import delete_thread_checkpoints
-        await delete_thread_checkpoints(thread_id=session_id)
+        runtime = get_runtime(session_runtime)
+        await runtime.destroy_session(RuntimeSessionRef(
+            runtime=session_runtime, session_id=session_id, external_ref=session_id
+        ))
         cleanup_success = True
     except Exception as e:
         logger.warning(f"Failed to cleanup checkpoints for deleted session {session_id}: {e}")
@@ -1083,6 +1026,18 @@ async def recover_messages_from_checkpoint(
     If messages were lost from the database but still exist in the
     LangGraph checkpoint storage, this endpoint can retrieve and restore them.
     """
+    # Checkpoint inspection reads LangGraph checkpoint tables directly; gate
+    # it for sessions backed by other runtimes. (Outside the try below so the
+    # 400 is not swallowed by the generic 500 handler.)
+    gate_session = db.query(ChatSession).filter(
+        ChatSession.session_id == session_id
+    ).first()
+    if gate_session is not None and (getattr(gate_session, "runtime", None) or "langgraph") != "langgraph":
+        raise HTTPException(
+            status_code=400,
+            detail="Checkpoint inspection is only supported for the 'langgraph' runtime"
+        )
+
     try:
         # Check if session exists
         session = db.query(ChatSession).filter(
@@ -1291,8 +1246,11 @@ async def delete_chat_message(
 
     cleanup_success = False
     try:
-        from core.workflows.checkpointing.utils import delete_thread_checkpoints
-        cleanup_success = await delete_thread_checkpoints(thread_id=session_id)
+        session_runtime = getattr(session, "runtime", None) or "langgraph"
+        runtime = get_runtime(session_runtime)
+        cleanup_success = await runtime.destroy_session(RuntimeSessionRef(
+            runtime=session_runtime, session_id=session_id, external_ref=session_id
+        ))
     except Exception as e:
         logger.warning(f"Failed to cleanup checkpoints for session {session_id} after message delete: {e}")
 

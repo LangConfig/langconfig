@@ -1,0 +1,11 @@
+[
+  "data: {\"type\": \"chunk\", \"content\": \"Hello \"}\n\n",
+  "data: {\"type\": \"chunk\", \"content\": \"from blocks\"}\n\n",
+  "data: {\"type\": \"thinking\", \"content\": \"Considering the question...\"}\n\n",
+  "data: {\"type\": \"tool_start\", \"tool_name\": \"calculator\", \"data\": {\"input\": {\"expression\": \"6*7\"}, \"namespace\": []}}\n\n",
+  "data: {\"type\": \"tool_end\", \"tool_name\": \"calculator\", \"data\": {\"output\": \"42\", \"error\": null, \"namespace\": []}}\n\n",
+  "data: {\"type\": \"tool_artifact\", \"tool_name\": \"calculator\", \"artifact\": {\"type\": \"image\", \"data\": \"aGVsbG8=\", \"mimeType\": \"image/png\", \"tool_name\": \"calculator\", \"agent_label\": \"main\"}}\n\n",
+  "data: {\"type\": \"custom_event\", \"data\": {\"progress\": 0.5, \"label\": \"halfway\"}}\n\n",
+  "data: {\"type\": \"chunk\", \"content\": \"Final.\"}\n\n",
+  "data: {\"type\": \"complete\", \"content\": \"Hello from blocksFinal.\", \"artifacts\": [{\"type\": \"image\", \"data\": \"aGVsbG8=\", \"mimeType\": \"image/png\", \"tool_name\": \"calculator\", \"agent_label\": \"main\"}], \"content_blocks\": [{\"type\": \"image\", \"data\": \"aGVsbG8=\", \"mimeType\": \"image/png\", \"tool_name\": \"calculator\", \"agent_label\": \"main\"}], \"has_multimodal\": true}\n\n"
+]

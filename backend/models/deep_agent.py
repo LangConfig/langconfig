@@ -11,7 +11,7 @@ Supports middleware, subagents, backends, and advanced context management.
 """
 
 from typing import Dict, List, Any, Optional
-from sqlalchemy import Column, Integer, String, JSON, Boolean, ForeignKey, DateTime, Text, Float, Enum
+from sqlalchemy import Column, Integer, String, JSON, Boolean, ForeignKey, DateTime, Text, Float, Enum, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from pydantic import BaseModel, Field, model_validator, field_validator
@@ -175,6 +175,13 @@ class GuardrailsConfig(BaseModel):
 
 class DeepAgentConfig(BaseModel):
     """Complete DeepAgent configuration (Pydantic model for validation)."""
+    # Execution runtime (see core/runtimes/): langgraph (default), or future
+    # runtimes such as google_adk / anthropic_agents.
+    runtime: str = Field(
+        default="langgraph",
+        description="Agent execution runtime (resolved via core.runtimes.get_runtime)"
+    )
+
     # Base agent settings
     model: str = Field(default="claude-sonnet-4-6")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -272,6 +279,17 @@ class DeepAgentTemplate(Base, OptimisticLockMixin):
 
     # References to base agent template (if extends one)
     base_template_id = Column(String(100), nullable=True, index=True)
+
+    # Execution runtime for this agent (langgraph, google_adk, anthropic_agents, ...)
+    runtime = Column(
+        String(32), nullable=False, default="langgraph",
+        server_default="langgraph", index=True
+    )
+
+    # Runtime-native references (e.g. ADK agent resource name, managed agent id)
+    # server_default is dialect-neutral ('{}' implicitly casts to json on PG,
+    # plain text on SQLite test fixtures).
+    external_refs = Column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
 
     # DeepAgents configuration (stored as JSON)
     config = Column(JSON, nullable=False)
@@ -375,6 +393,15 @@ class ChatSession(Base):
     # Session metadata
     session_id = Column(String(100), unique=True, nullable=False, index=True)
     user_id = Column(Integer, nullable=True, index=True)  # Optional user tracking
+
+    # Execution runtime backing this session (mirrors the agent's runtime at start)
+    runtime = Column(
+        String(32), nullable=False, default="langgraph",
+        server_default="langgraph"
+    )
+
+    # Runtime-native session handle (LangGraph thread_id, ADK session name, ...)
+    external_session_ref = Column(String(255), nullable=True)
 
     # Conversation data
     messages = Column(JSON, nullable=False, default=list)  # List of messages
