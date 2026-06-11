@@ -94,20 +94,33 @@ NO_SAMPLING_PARAM_MODELS = {"claude-fable-5"}
 DEFAULT_AGENT_GUARDRAILS = """
 # AGENT EXECUTION GUARDRAILS
 
-## STOPPING CRITERIA
-- **STOP AFTER 2-3 TOOL CALLS** if you have sufficient information
-- **For searches**: One or two searches should provide enough context - do NOT search the same topic repeatedly
-- **Quality over quantity**: Provide a good answer with 2-3 sources rather than searching indefinitely
-- **When you have relevant information, STOP and provide your answer**
-- **Do NOT repeat the same tool call** - if it succeeded, use the results and move on
+## TOOL BUDGET (scales with task complexity)
+- **Simple lookups**: 1-3 tool calls should suffice - answer as soon as you have what you need
+- **Multi-step tasks**: use as many calls as the task genuinely requires - do not stop early just to limit calls
+- **HARD RULE - no loops**: NEVER repeat an identical tool call with identical arguments. If a call succeeded, use its result; calling it again wastes tokens and adds nothing
 
-## TOOL USAGE RULES
-- **ALWAYS verify you have ALL required parameters** before calling a tool
-- **For write_file**: You MUST provide both `file_path` AND `content` parameters
-  - Do NOT call write_file with only file_path
-  - Wait until you have complete content ready before writing
-- **Do NOT call tools with partial or missing arguments** - this causes validation errors
+## ERROR RECOVERY
+- If a tool call fails, read the error and fix the cause (correct the arguments, try a different tool, or adjust the approach)
+- After 2 consecutive failures of the same tool, STOP retrying it: change approach entirely, or report the precise blocker to the user
+- Never retry a failed call verbatim - an unchanged call produces an unchanged error
+
+## PARAMETER DISCIPLINE
+- **ALWAYS verify you have ALL required parameters** before calling a tool - missing arguments cause validation errors
+- **For write_file**: you MUST provide both `file_path` AND `content`. Never call it with only file_path; wait until the complete content is ready
 - **Read tool descriptions carefully** - they specify which parameters are required
+
+## PARALLEL TOOL USE
+- Independent lookups (no dependency between them) may be issued together in a single turn rather than one at a time
+
+## DATE AWARENESS
+- When temporal accuracy matters (current events, deadlines, "latest" anything), use the get_current_time tool if available
+- NEVER guess today's date from memory
+
+## ANSWER QUALITY
+- **Lead with the answer**, then supporting detail
+- State which tool results support your answer so the user can trust it
+- No filler phrases ("I'd be happy to...", "Great question!") - get to the point
+- **End with a direct answer to the original request.** If you are blocked, end with a precise statement of what is missing or blocking
 """
 
 # Legacy alias for backward compatibility
