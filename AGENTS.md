@@ -78,7 +78,7 @@ Backend Python loads from `backend/.env`, so backend-specific secrets must be th
 
 ## Detailed Docs
 
-See `.claude/docs/` for task-specific guidance:
+See `.Codex/docs/` for task-specific guidance:
 
 | File | Contents |
 |------|----------|

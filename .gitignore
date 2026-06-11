@@ -3,6 +3,9 @@ node_modules/
 __pycache__/
 *.pyc
 
+# Local config
+cleancontrol.json
+
 # Environment (CRITICAL - contains API keys and secrets)
 .env
 .env.local
@@ -60,6 +63,8 @@ backend/storage/
 .agent/
 .ai-plans/
 .claude/
+tasks/
+artifacts/
 
 # Temporary build/debug files
 build_errors*.txt
