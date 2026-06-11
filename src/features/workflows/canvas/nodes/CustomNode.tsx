@@ -9,7 +9,7 @@ import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { MessageSquare } from 'lucide-react';
 import { useAvailableModels } from '@/hooks/useAvailableModels';
-import { getModelDisplayName } from '@/lib/model-utils';
+import { getModelDisplayName } from '@/lib/modelDisplayNames';
 import type { NodeExecutionStatus } from '@/hooks/useNodeExecutionStatus';
 import { useWorkflowCanvasContext } from '../context';
 

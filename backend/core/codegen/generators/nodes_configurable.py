@@ -42,7 +42,7 @@ AVAILABLE_MODELS = {
         "import": "from langchain_openai import ChatOpenAI",
         "api_key_env": "OPENAI_API_KEY"
     },
-    "gemini-3-pro-preview": {
+    "gemini-3.1-pro-preview": {
         "provider": "google",
         "class": "ChatGoogleGenerativeAI",
         "import": "from langchain_google_genai import ChatGoogleGenerativeAI",
@@ -454,7 +454,7 @@ logger = logging.getLogger(__name__)
 AVAILABLE_MODELS = {
     "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
     "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
-    "gemini-3-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY"},
+    "gemini-3.1-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY"},
 }
 
 

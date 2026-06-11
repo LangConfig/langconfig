@@ -122,7 +122,7 @@ CRITICAL: Your response must be ONLY the JSON array, nothing else.""",
                 "model": "gpt-5.4-mini",
                 "config": {
                     "model": "gpt-5.4-mini",
-                    "fallback_models": ["gpt-5", "gemini-2.0-flash"],
+                    "fallback_models": ["gpt-5.4", "gemini-2.5-flash"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Diligent Data Collector and Analyst.
 EXPERTISE: Web research, information synthesis, source evaluation, citation formatting.
@@ -473,7 +473,7 @@ CRITICAL: Output must be valid JSON that can be parsed. No preamble, no markdown
                 "model": "gpt-5.4-mini",
                 "config": {
                     "model": "gpt-5.4-mini",
-                    "fallback_models": ["gpt-5", "gemini-2.0-flash"],
+                    "fallback_models": ["gpt-5.4", "gemini-2.5-flash"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Technical Research Specialist.
 

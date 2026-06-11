@@ -168,7 +168,7 @@ OUTPUT FORMAT: ONLY a JSON list of strings. Example: ["Q1...", "Q2...", "Q3..."]
                 researcher_agent, _, callbacks = await self.agent_factory.create_agent(
                     agent_config={
                         "template_id": "field_researcher",
-                        "model": "gpt-4o-mini",
+                        "model": "gpt-5.4-mini",
                         "temperature": 0.3,
                         "system_prompt": """ROLE: Research Analyst.
 GOAL: Investigate the assigned question using web_search and synthesize findings.
@@ -306,7 +306,7 @@ STYLE: Objective, professional, with proper Markdown formatting and citations.""
             critic_agent, _, callbacks = await self.agent_factory.create_agent(
                 agent_config={
                     "template_id": "report_critic",
-                    "model": "gpt-4o",
+                    "model": "gpt-5.4",
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Quality Assurance Specialist.
 GOAL: Evaluate report draft against quality standards.
@@ -476,7 +476,7 @@ CONCLUDE: [DECISION: PASS] or [DECISION: REVISE] with specific feedback.""",
             logger.warning("[PARALLEL_RESEARCH] No blueprint config provided, using hardcoded defaults")
             researcher_config = {
                 "template_id": "field_researcher",
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.4-mini",
                 "temperature": 0.3,
                 "mcp_tools": ["web_search", "puppeteer-browser"],
                 "enable_model_routing": True,

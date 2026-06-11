@@ -1109,32 +1109,22 @@ class SimpleWorkflowExecutor:
                     workflow_summary["tokens_by_agent"][agent_name]["calls"] += 1
                     workflow_summary["total_tokens"] += tokens
 
-                # Cost estimation based on current model pricing (Updated December 2025)
-                cost_per_1m_tokens = {
-                    # OpenAI Reasoning Models
-                    "o3": 20.00,
-                    "o3-mini": 4.00,
-                    "o4-mini": 3.00,
-                    # OpenAI GPT-4o Series
-                    "gpt-5.4": 2.50,
-                    "gpt-5.4-mini": 0.15,
-                    # Anthropic Claude 4.5
-                    "claude-opus-4-8": 15.00,
-                    "claude-sonnet-4-6": 3.00,
-                    "claude-sonnet-4-6": 3.00,
-                    "claude-haiku-4-5": 1.00,
-                    # Google Gemini 3
-                    "gemini-3-pro-preview": 2.00,
-                    # Google Gemini 2.5
-                    "gemini-2.5-flash": 0.075,
-                    # Google Gemini 2.0
-                    "gemini-2.0-flash": 0.075,
-                    "default": 1.00
-                }
+                # Cost estimation via the model registry (single pricing source).
+                # Stored model strings may carry provider prefixes, so fall back
+                # to a substring match against registry IDs before defaulting.
+                from core.models.registry import model_registry
+
+                def _blended_rate(model_str: str) -> float:
+                    model_str = (model_str or "").lower()
+                    if model_registry.get_model(model_str):
+                        return model_registry.get_blended_cost_per_1m(model_str)
+                    for known_id in model_registry._models:
+                        if known_id in model_str:
+                            return model_registry.get_blended_cost_per_1m(known_id)
+                    return 1.00
 
                 for agent_name, data in workflow_summary["tokens_by_agent"].items():
-                    model = data["model"].lower()
-                    rate = next((v for k, v in cost_per_1m_tokens.items() if k in model), cost_per_1m_tokens["default"])
+                    rate = _blended_rate(data["model"])
                     agent_cost = (data["tokens"] / 1_000_000) * rate
                     data["estimated_cost_usd"] = round(agent_cost, 4)
                     workflow_summary["total_cost_usd"] += agent_cost
@@ -2400,14 +2390,14 @@ When your work is complete, deliver the final result and END."""
 
                     # Calculate estimated cost if we have token data
                     if token_usage:
-                        try:
-                            from lib.model_pricing import get_model_cost
-                            cost = get_model_cost(model, token_usage['promptTokens'], token_usage['completionTokens'])
-                            token_usage['costString'] = f"${cost:.6f}"
-                        except Exception:
-                            # Fallback cost estimation
-                            estimated_cost = (token_usage['promptTokens'] * 0.000003) + (token_usage['completionTokens'] * 0.000015)
-                            token_usage['costString'] = f"${estimated_cost:.6f}"
+                        from core.models.registry import model_registry
+                        cost = model_registry.get_model_cost(
+                            model, token_usage['promptTokens'], token_usage['completionTokens']
+                        )
+                        if cost is None:
+                            # Unknown model - rough Sonnet-class fallback
+                            cost = (token_usage['promptTokens'] * 0.000003) + (token_usage['completionTokens'] * 0.000015)
+                        token_usage['costString'] = f"${cost:.6f}"
 
                     # Emit node_completed event with all metrics
                     try:

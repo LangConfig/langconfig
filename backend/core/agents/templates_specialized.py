@@ -38,7 +38,7 @@ WORKFLOW_ARCHITECT = AgentTemplate(
     category=AgentCategory.ARCHITECTURE,
 
     model="claude-sonnet-4-6",  # Claude excels at system design
-    fallback_models=["gpt-5", "gemini-2.5-pro"],
+    fallback_models=["gpt-5.4", "gemini-3.1-pro-preview"],
     temperature=0.4,
 
     system_prompt="""ROLE: Agent Workflow Architect
@@ -94,7 +94,7 @@ PERFORMANCE_ANALYST = AgentTemplate(
     - Recommend infrastructure improvements""",
     category=AgentCategory.QA_VALIDATION,
 
-    model="gpt-5",
+    model="gpt-5.4",
     fallback_models=["claude-sonnet-4-6", "gpt-5.4-mini"],
     temperature=0.3,
 
@@ -217,7 +217,7 @@ TECHNICAL_WRITER = AgentTemplate(
     category=AgentCategory.DOCUMENTATION,
 
     model="claude-sonnet-4-6",  # Claude excels at technical writing
-    fallback_models=["gpt-5", "gemini-2.5-pro"],
+    fallback_models=["gpt-5.4", "gemini-3.1-pro-preview"],
     temperature=0.6,
 
     system_prompt="""ROLE: Senior Technical Writer
@@ -278,7 +278,7 @@ TEST_ARCHITECT = AgentTemplate(
     - Review testing practices""",
     category=AgentCategory.TESTING,
 
-    model="gpt-5",
+    model="gpt-5.4",
     fallback_models=["claude-sonnet-4-6", "gpt-5.4-mini"],
     temperature=0.4,
 
@@ -340,7 +340,7 @@ GKE_DEPLOYMENT_SPECIALIST = AgentTemplate(
     - Troubleshoot deployment issues""",
     category=AgentCategory.DEVOPS,
 
-    model="gpt-5",
+    model="gpt-5.4",
     fallback_models=["claude-sonnet-4-6"],
     temperature=0.3,
 

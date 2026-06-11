@@ -21,7 +21,7 @@ Example Usage:
     )
 
     agent = create_agent(
-        model="gpt-4o",
+        model="gpt-5.4",
         tools=tools,
         middleware=[
             personalized_system_prompt,  # Adapts to user preferences

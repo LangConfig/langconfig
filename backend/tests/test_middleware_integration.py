@@ -53,7 +53,7 @@ async def test_regular_agent_with_middleware():
 
         # Build agent config with middleware
         agent_config = {
-            "model": "gpt-4o-mini",  # Using mini for cheaper testing
+            "model": "gpt-5.4-mini",  # Using mini for cheaper testing
             "temperature": 0.7,
             "system_prompt": "You are a helpful test assistant. Respond with exactly: 'Middleware test successful!'",
             "mcp_tools": [],
@@ -121,7 +121,7 @@ async def test_deepagent_with_middleware():
 
         # Create DeepAgent config with middleware
         config = DeepAgentConfig(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             temperature=0.7,
             system_prompt="You are a helpful deep agent assistant.",
             tools=[],
@@ -259,7 +259,7 @@ async def test_cost_tracking_middleware():
 
         # Simulate after_model with token usage
         class MockRuntime:
-            model = "gpt-4o-mini"
+            model = "gpt-5.4-mini"
 
         test_state = {
             "messages": [

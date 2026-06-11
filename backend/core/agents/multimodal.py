@@ -320,9 +320,9 @@ def check_model_multimodal_support(model_name: str) -> Dict[str, bool]:
         "documents": False
     }
 
-    # Claude models
+    # Claude models (Claude 3+ including Fable support vision and PDFs)
     if "claude" in model_lower:
-        if "3" in model_lower or "4" in model_lower:
+        if any(marker in model_lower for marker in ("3", "4", "5", "fable")):
             capabilities["vision"] = True
             capabilities["documents"] = True  # PDF support
 
@@ -334,6 +334,10 @@ def check_model_multimodal_support(model_name: str) -> Dict[str, bool]:
     if "gpt-4o" in model_lower:
         capabilities["vision"] = True
         capabilities["audio"] = True
+
+    # GPT-5 series are natively multimodal
+    if "gpt-5" in model_lower:
+        capabilities["vision"] = True
 
     # Gemini models
     if "gemini" in model_lower:

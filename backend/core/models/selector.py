@@ -42,7 +42,7 @@ class ModelSelector:
 
     def __init__(
         self,
-        primary_model: str = "gpt-5",
+        primary_model: str = "gpt-5.4",
         temperature: float = 0.5,
         enable_routing: bool = True,
         agent_config: Dict[str, Any] = None,
@@ -73,11 +73,10 @@ class ModelSelector:
         self.model_usage = {
             "gpt-5.4-mini": 0,
             "gpt-5.4": 0,
-            "gpt-5": 0,
+            "gpt-5.5": 0,
             "claude-sonnet-4-6": 0,
-            "claude-3.5-sonnet": 0,
-            "gemini-2.5-pro": 0,
-            "o1-preview": 0
+            "claude-fable-5": 0,
+            "gemini-3.1-pro-preview": 0
         }
 
     def create_selector(self, tools: List[BaseTool]) -> Callable:
@@ -91,7 +90,7 @@ class ModelSelector:
             Function that selects model based on state
 
         Example:
-            >>> selector = ModelSelector("gpt-5", temperature=0.5)
+            >>> selector = ModelSelector("gpt-5.4", temperature=0.5)
             >>> model_fn = selector.create_selector(tools)
             >>> agent = create_react_agent(model=model_fn, tools=tools)
         """
@@ -135,11 +134,11 @@ class ModelSelector:
 
             Routing Logic (Enhanced with ModelRouter integration):
             - Code tasks → Claude Sonnet (POWERFUL tier)
-            - Simple queries → GPT-4o-mini (FAST tier) - 80% cost savings!
-            - Research → Gemini Pro (large context)
-            - Deep reasoning → o1-preview (REASONING tier)
+            - Simple queries → GPT-5.4 Mini (FAST tier) - big cost savings!
+            - Research → Gemini 3.1 Pro (large context)
+            - Deep reasoning → Claude Fable 5 (REASONING tier)
             - Complex/long → Primary model
-            - Default → GPT-4o (STANDARD tier)
+            - Default → GPT-5.4 (STANDARD tier)
             """
 
             messages = state.get("messages", [])
@@ -153,17 +152,18 @@ class ModelSelector:
 
             content_lower = content.lower()
 
-            # RULE 0: Deep reasoning tasks → o1-preview (REASONING tier)
+            # RULE 0: Deep reasoning tasks → claude-fable-5 (REASONING tier)
             # Check ModelRouter's reasoning indicators
             reasoning_indicators = [
                 "algorithm", "optimization problem", "mathematical", "proof",
                 "complex logic", "graph theory", "dynamic programming", "recursion"
             ]
             if any(kw in content_lower for kw in reasoning_indicators):
-                model_name = "o1-preview"
-                temp = 1.0  # o1 uses fixed temperature
+                model_name = "claude-fable-5"
+                # Sampling params are stripped for fable in AgentFactory._create_llm
+                temp = self.temperature
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
-                logger.info(f"🎯 Selected: o1-preview (REASONING tier - deep reasoning task)")
+                logger.info(f"🎯 Selected: Claude Fable 5 (REASONING tier - deep reasoning task)")
 
             # RULE 1: Code-heavy tasks → Claude Sonnet 4.5 (POWERFUL tier)
             elif any(kw in content_lower for kw in [
@@ -175,7 +175,7 @@ class ModelSelector:
                 model_name = "claude-sonnet-4-6"
                 temp = 0.3  # Lower temp for precise code
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
-                logger.info(f"🎯 Selected: Claude Sonnet 4.5 (POWERFUL tier - code task)")
+                logger.info(f"🎯 Selected: Claude Sonnet 4.6 (POWERFUL tier - code task)")
 
             # RULE 2: Simple queries → GPT-4o-mini (FAST tier - BIGGEST SAVINGS!)
             elif message_count <= 2 and len(content) < 200:
@@ -188,19 +188,19 @@ class ModelSelector:
                     fast_cost = self.tier_configs[ModelTier.FAST]['cost_per_1k_tokens']
                     standard_cost = self.tier_configs[ModelTier.STANDARD]['cost_per_1k_tokens']
                     savings_pct = ((standard_cost - fast_cost) / standard_cost) * 100
-                    logger.info(f"🎯 Selected: GPT-4o-mini (FAST tier) - {savings_pct:.0f}% cost reduction!")
+                    logger.info(f"🎯 Selected: GPT-5.4 Mini (FAST tier) - {savings_pct:.0f}% cost reduction!")
                 else:
-                    logger.info(f"🎯 Selected: GPT-4o-mini (FAST tier) - ~80% cost reduction!")
+                    logger.info(f"🎯 Selected: GPT-5.4 Mini (FAST tier) - ~80% cost reduction!")
 
-            # RULE 3: Research/analysis → Gemini 2.5 Pro (large context)
+            # RULE 3: Research/analysis → Gemini 3.1 Pro (large context)
             elif any(kw in content_lower for kw in [
                 "research", "analyze", "investigate", "explain",
                 "summarize", "study", "review", "compare"
             ]):
-                model_name = "gemini-2.5-pro"
+                model_name = "gemini-3.1-pro-preview"
                 temp = 0.4
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
-                logger.info(f"🎯 Selected: Gemini 2.5 Pro (research/analysis - large context)")
+                logger.info(f"🎯 Selected: Gemini 3.1 Pro (research/analysis - large context)")
 
             # RULE 4: Long conversations → Primary model (context matters)
             elif message_count > 10:
@@ -209,12 +209,12 @@ class ModelSelector:
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
                 logger.info(f"🎯 Selected: {self.primary_model} (complex conversation, {message_count} messages)")
 
-            # RULE 5: Default → GPT-4o (STANDARD tier - balanced)
+            # RULE 5: Default → GPT-5.4 (STANDARD tier - balanced)
             else:
                 model_name = "gpt-5.4"
                 temp = self.temperature
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
-                logger.info(f"🎯 Selected: GPT-4o (STANDARD tier - balanced, message #{message_count})")
+                logger.info(f"🎯 Selected: GPT-5.4 (STANDARD tier - balanced, message #{message_count})")
 
             # Create LLM instance
             try:
@@ -271,22 +271,17 @@ class ModelSelector:
             for tier, tier_config in self.tier_configs.items():
                 model_name = tier_config['model']
                 cost_per_1k[model_name] = tier_config['cost_per_1k_tokens']
-            # Add any missing models with default estimates
-            cost_per_1k.setdefault("gpt-5", 0.010)
-            cost_per_1k.setdefault("claude-sonnet-4-6", 0.003)
-            cost_per_1k.setdefault("gemini-2.5-pro", 0.0035)
+            # Add any missing models with default estimates (blended $/1K)
+            cost_per_1k.setdefault("gpt-5.5", 0.0175)
+            cost_per_1k.setdefault("claude-sonnet-4-6", 0.009)
+            cost_per_1k.setdefault("claude-fable-5", 0.030)
+            cost_per_1k.setdefault("gemini-3.1-pro-preview", 0.007)
         else:
-            # Rough cost estimates (per 1K tokens) - average of input/output
+            # Blended cost estimates (per 1K tokens) from the model registry
+            from core.models.registry import model_registry
             cost_per_1k = {
-                "gpt-5.4-mini": 0.000375,  # ($0.15 + $0.60) / 2 per 1M
-                "gpt-5.4": 0.00625,        # ($2.50 + $10) / 2 per 1M
-                "gpt-5": 0.00625,          # ($2.50 + $10) / 2 per 1M
-                "gpt-5-mini": 0.00125,     # ($0.50 + $2) / 2 per 1M
-                "gpt-5-nano": 0.000375,    # ($0.15 + $0.60) / 2 per 1M
-                "claude-sonnet-4-6": 0.009,  # ($3 + $15) / 2 per 1M
-                "claude-haiku-4-5": 0.00075,  # ($0.25 + $1.25) / 2 per 1M
-                "gemini-2.5-pro": 0.003125,  # ($1.25 + $5) / 2 per 1M
-                "gemini-2.5-flash": 0.0001875  # ($0.075 + $0.30) / 2 per 1M
+                model_id: model_registry.get_blended_cost_per_1k(model_id)
+                for model_id in self.model_usage
             }
 
         # Calculate what we would have paid with primary model only

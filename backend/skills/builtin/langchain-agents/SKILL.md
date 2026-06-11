@@ -38,21 +38,22 @@ LangChain is a framework for building LLM-powered applications with these key co
 
 ### Agent Configuration in LangConfig
 
-#### Supported Models (December 2025)
+#### Supported Models (June 2026)
 
 ```python
 # OpenAI
-"gpt-5.1"              # Latest GPT-5 series
-"gpt-4o", "gpt-4o-mini" # GPT-4o series
+"gpt-5.5"                       # Latest GPT-5 series
+"gpt-5.4", "gpt-5.4-mini"       # Balanced / fast
 
-# Anthropic Claude 4.5
-"claude-opus-4-5-20250514"    # Most capable
-"claude-sonnet-4-5-20250929"  # Balanced
-"claude-haiku-4-5-20251015"   # Fast/cheap (default)
+# Anthropic Claude
+"claude-fable-5"      # Frontier tier (no temperature support)
+"claude-opus-4-8"     # Most capable Opus
+"claude-sonnet-4-6"   # Balanced
+"claude-haiku-4-5"    # Fast/cheap (default)
 
 # Google Gemini
-"gemini-3-pro-preview"  # Gemini 3
-"gemini-2.5-flash"      # Gemini 2.5
+"gemini-3.1-pro-preview"  # Gemini 3.1
+"gemini-2.5-flash"        # Gemini 2.5
 ```
 
 #### Agent Configuration Schema
@@ -60,7 +61,7 @@ LangChain is a framework for building LLM-powered applications with these key co
 ```json
 {
   "name": "Research Agent",
-  "model": "claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-6",
   "temperature": 0.7,
   "max_tokens": 8192,
   "system_prompt": "You are a research assistant...",
@@ -197,7 +198,7 @@ Best for focused tasks:
 ```json
 {
   "name": "SQL Generator",
-  "model": "claude-haiku-4-5-20251015",
+  "model": "claude-haiku-4-5",
   "temperature": 0.2,
   "system_prompt": "You are a SQL expert. Generate only valid SQL queries.",
   "native_tools": []
@@ -209,7 +210,7 @@ For tasks requiring external data:
 ```json
 {
   "name": "Research Agent",
-  "model": "claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-6",
   "temperature": 0.5,
   "system_prompt": "Research topics thoroughly using available tools.",
   "native_tools": ["web_search", "web_fetch", "filesystem"]
@@ -221,7 +222,7 @@ For development tasks:
 ```json
 {
   "name": "Code Assistant",
-  "model": "claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-6",
   "temperature": 0.3,
   "system_prompt": "Help with coding tasks. Write clean, tested code.",
   "native_tools": ["filesystem", "python", "shell", "grep"]

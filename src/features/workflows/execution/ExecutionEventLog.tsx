@@ -130,7 +130,7 @@ export default function ExecutionEventLog({ events, className = '' }: ExecutionE
           totalTokens = promptTokens + completionTokens;
         }
 
-        const modelName = event.data?.model || event.data?.model_name || 'gpt-4o';
+        const modelName = event.data?.model || event.data?.model_name || 'gpt-5.4';
 
         let description = undefined;
         if (totalTokens > 0) {

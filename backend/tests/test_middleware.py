@@ -92,8 +92,12 @@ def test_cost_tracking_middleware_creation():
     assert middleware is not None
     assert middleware.total_cost == 0.0
     assert middleware.call_count == 0
-    assert "gpt-4o" in middleware.costs
-    assert "claude-sonnet-4-5-20250929" in middleware.costs
+
+    # Pricing now resolves via the central model registry (the per-instance
+    # .costs dict was removed from CostTrackingMiddleware).
+    from core.models.registry import model_registry
+    assert model_registry.get_blended_cost_per_1k("gpt-5.4") > 0
+    assert model_registry.get_blended_cost_per_1k("claude-sonnet-4-6") > 0
     logger.info("✓ CostTrackingMiddleware created successfully")
 
 
@@ -166,7 +170,7 @@ def test_middleware_can_be_passed_to_config():
 
     # Create a mock agent config
     agent_config = {
-        "model": "gpt-4o",
+        "model": "gpt-5.4",
         "temperature": 0.7,
         "middleware": [logging_mw, cost_mw]
     }

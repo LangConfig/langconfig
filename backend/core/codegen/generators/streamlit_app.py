@@ -1503,10 +1503,10 @@ def get_task_run_details(idx: int) -> Optional[Dict]:
 
 # Available models for selection
 AVAILABLE_MODELS = {
-    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.5"},
+    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.8"},
     "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Haiku 4.5"},
-    "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.2"},
-    "gemini-3-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY", "display": "Gemini 3 Pro"},
+    "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.5"},
+    "gemini-3.1-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY", "display": "Gemini 3.1 Pro"},
 }
 
 

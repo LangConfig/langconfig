@@ -74,7 +74,7 @@ FIELD_RESEARCHER = AgentTemplate(
     description="Conducts focused web research on specific questions using search tools. Optimized for speed and accuracy.",
     category=AgentCategory.RESEARCH,
     model=MODEL_FAST,  # Optimized for fast data gathering
-    fallback_models=[MODEL_BALANCED, "gemini-2.0-flash"],
+    fallback_models=[MODEL_BALANCED, "gemini-2.5-flash"],
     temperature=0.3,
     system_prompt="""ROLE: Diligent Data Collector and Analyst.
 EXPERTISE: Web research, information synthesis, source evaluation, citation formatting.

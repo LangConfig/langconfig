@@ -53,6 +53,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Default Configuration Constants
+# Intentional cheap/fast fallback for agent configs that omit 'model' —
+# distinct from constants.models.DEFAULT_MODEL (the platform-wide default).
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_TEMPERATURE = 0.5
 DEFAULT_MAX_TOKENS = 30000
@@ -67,17 +69,14 @@ MAX_MAX_TOKENS = 500000
 REASONING_NODE = "agent"
 TOOLS_NODE = "tools"
 
-# Supported Models Registry (for validation) - Updated June 5, 2026
-SUPPORTED_MODELS = {
-    # OpenAI - GPT-5 frontier series
-    "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
-    # Anthropic - Claude current generation
-    "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5",
-    # Google - Gemini 3 (Current)
-    "gemini-3-pro-preview",
-    # Google - Gemini 2.5
-    "gemini-2.5-flash",
-}
+# Supported Models Registry (for validation) - derived from the ModelChoice enum
+# so the selectable catalog has a single source of truth.
+from constants.models import ModelChoice
+
+SUPPORTED_MODELS = {m.value for m in ModelChoice}
+
+# Models that reject sampling parameters (temperature/top_p/top_k return 400)
+NO_SAMPLING_PARAM_MODELS = {"claude-fable-5"}
 
 # =============================================================================
 # AGENT GUARDRAILS FRAMEWORK
@@ -1166,12 +1165,16 @@ You have been equipped with the following tools: {', '.join(tool_names)}
             if not settings.ANTHROPIC_API_KEY:
                 raise ValueError(f"ANTHROPIC_API_KEY is required for model {model_name}")
 
-            return ChatAnthropic(
-                model=model_name, temperature=temperature,
-                max_tokens=max_tokens or DEFAULT_MAX_TOKENS,  # Use default constant for consistency
-                api_key=settings.ANTHROPIC_API_KEY,
-                streaming=streaming,
-            )
+            anthropic_kwargs = {
+                "model": model_name,
+                "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,  # Use default constant for consistency
+                "api_key": settings.ANTHROPIC_API_KEY,
+                "streaming": streaming,
+            }
+            # claude-fable-5 rejects temperature/top_p/top_k with a 400
+            if model_name not in NO_SAMPLING_PARAM_MODELS:
+                anthropic_kwargs["temperature"] = temperature
+            return ChatAnthropic(**anthropic_kwargs)
 
         # --- Google/Gemini Models ---
         elif model_name.startswith("gemini"):
@@ -1710,7 +1713,7 @@ You have been equipped with the following tools: {', '.join(tool_names)}
         3. Synthesizing results hierarchically
 
         Args:
-            model: LLM model name (e.g., "gpt-4o-mini", "claude-haiku-4-5-20251015")
+            model: LLM model name (e.g., "gpt-5.4-mini", "claude-haiku-4-5")
             repl_env: RLM REPL environment with context loaded
             query: User query to answer
             depth: Current recursion depth (0 = root)

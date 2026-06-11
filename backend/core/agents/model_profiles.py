@@ -26,11 +26,13 @@ _DEFAULT_CAPABILITIES: Dict[str, Dict[str, bool]] = {
     "gpt-5.4": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
     "gpt-5.4-mini": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
     "gpt-5.4-nano": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
+    "claude-fable-5": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
     "claude-opus-4-8": {"function_calling": True, "structured_output": True, "json_mode": False, "vision": True, "streaming": True},
     "claude-sonnet-4-6": {"function_calling": True, "structured_output": True, "json_mode": False, "vision": True, "streaming": True},
     "claude-haiku-4-5": {"function_calling": True, "structured_output": True, "json_mode": False, "vision": True, "streaming": True},
-    "gemini-3-pro-preview": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
+    "gemini-3.1-pro-preview": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
     "gemini-2.5-flash": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
+    "gemini-2.5-flash-lite": {"function_calling": True, "structured_output": True, "json_mode": True, "vision": True, "streaming": True},
 }
 
 _CONSERVATIVE_DEFAULTS: Dict[str, bool] = {

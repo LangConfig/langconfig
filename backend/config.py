@@ -134,8 +134,8 @@ class Settings(BaseSettings):
     langsmith_api_key: Optional[str] = None
     langsmith_project: str = "langconfig"
 
-    # Defaults
-    default_model: str = "gpt-4o"
+    # Defaults (keep in sync with constants.models.DEFAULT_MODEL)
+    default_model: str = "gpt-5.4"
     default_temperature: float = 0.7
     max_tokens: int = 4096
 

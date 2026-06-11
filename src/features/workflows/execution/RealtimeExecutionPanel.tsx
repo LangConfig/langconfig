@@ -1311,7 +1311,7 @@ export default function RealtimeExecutionPanel({
                     // Estimate 75% prompt, 25% completion tokens
                     const promptTokens = Math.round(workflowMetrics.totalTokens * 0.75);
                     const completionTokens = Math.round(workflowMetrics.totalTokens * 0.25);
-                    return calculateAndFormatCost(promptTokens, completionTokens, 'gpt-4o');
+                    return calculateAndFormatCost(promptTokens, completionTokens, 'gpt-5.4');
                   })()}
                 </span>
               </div>
@@ -1371,7 +1371,7 @@ export default function RealtimeExecutionPanel({
                       <span>{(() => {
                         const promptTokens = Math.round(workflowMetrics.totalTokens * 0.75);
                         const completionTokens = Math.round(workflowMetrics.totalTokens * 0.25);
-                        return calculateAndFormatCost(promptTokens, completionTokens, 'gpt-4o');
+                        return calculateAndFormatCost(promptTokens, completionTokens, 'gpt-5.4');
                       })()}</span>
                     </div>
                     <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white" style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} title="Total Tokens">

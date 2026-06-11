@@ -128,7 +128,7 @@ SPECIALIZED_RESEARCHER = AgentTemplate(
     description="Conducts targeted external research using specialized sources (ArXiv, GitHub, technical docs).",
     category=AgentCategory.RESEARCH,
     model=MODEL_FAST,
-    fallback_models=[MODEL_BALANCED, "gemini-2.0-flash"],
+    fallback_models=[MODEL_BALANCED, "gemini-2.5-flash"],
     temperature=0.3,
     system_prompt="""ROLE: Technical Research Specialist.
 

@@ -5,13 +5,13 @@
 
 """
 Model constants for LangConfig
-Updated June 5, 2026
+Updated June 10, 2026
 """
 from enum import Enum
 
 
 class ModelChoice(str, Enum):
-    """Selectable AI models - updated June 5, 2026."""
+    """Selectable AI models - updated June 10, 2026."""
 
     # OpenAI - GPT-5 frontier series
     GPT_5_5 = "gpt-5.5"
@@ -20,15 +20,15 @@ class ModelChoice(str, Enum):
     GPT_5_4_NANO = "gpt-5.4-nano"
 
     # Anthropic - Claude current generation
+    CLAUDE_FABLE_5 = "claude-fable-5"  # Frontier tier above Opus; no temperature/top_p, thinking always on
     CLAUDE_OPUS_4_8 = "claude-opus-4-8"
     CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
     CLAUDE_HAIKU_4_5 = "claude-haiku-4-5"
 
-    # Google - Gemini 3 (Current)
-    GEMINI_3_PRO = "gemini-3-pro-preview"
+    # Google - Gemini 3.1 (current; gemini-3-pro-preview was shut down 2026-03-09)
+    GEMINI_3_1_PRO = "gemini-3.1-pro-preview"
 
-    # Google - Gemini 2.5
-    GEMINI_2_FLASH = "gemini-2.0-flash"
+    # Google - Gemini 2.5 (gemini-2.0-flash was shut down 2026-06-01)
     GEMINI_25_FLASH = "gemini-2.5-flash"
     GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
 

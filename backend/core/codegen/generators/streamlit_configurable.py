@@ -168,11 +168,11 @@ MIDDLEWARE = {{
 }}
 
 MODELS = {{
-    "gpt-5.5": {{"provider": "openai", "display": "GPT-5.2"}},
-    "gpt-5.4": {{"provider": "openai", "display": "GPT-4o"}},
-    "claude-opus-4-8": {{"provider": "anthropic", "display": "Claude Opus 4.5"}},
+    "gpt-5.5": {{"provider": "openai", "display": "GPT-5.5"}},
+    "gpt-5.4": {{"provider": "openai", "display": "GPT-5.4"}},
+    "claude-opus-4-8": {{"provider": "anthropic", "display": "Claude Opus 4.8"}},
     "claude-haiku-4-5": {{"provider": "anthropic", "display": "Claude Haiku 4.5"}},
-    "gemini-3-pro-preview": {{"provider": "google", "display": "Gemini 3 Pro"}},
+    "gemini-3.1-pro-preview": {{"provider": "google", "display": "Gemini 3.1 Pro"}},
 }}
 
 # ============================================================

@@ -51,7 +51,7 @@ async def generate_agent_config(request: GenerateAgentRequest) -> dict:
         "gpt-5.4-mini",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
-        "gemini-2.0-flash-exp"
+        "gemini-2.5-flash"
     ]
 
     # DeepAgents standard filesystem tool names
@@ -107,7 +107,7 @@ INSTRUCTIONS:
    - gpt-5.4-mini: Simple tasks, cost-effective
    - claude-sonnet-4-6: Long context, detailed analysis
    - claude-haiku-4-5: Fast, simple tasks
-   - gemini-2.0-flash-exp: Multimodal, fast prototyping
+   - gemini-2.5-flash: Multimodal, fast and cost-effective
 
 2. Choose appropriate temperature (0.0-1.0):
    - 0.0-0.3: Deterministic tasks (code, SQL, testing)

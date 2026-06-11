@@ -550,16 +550,6 @@ class CostTrackingMiddleware(AgentMiddleware):
         self.tool_calls = []  # [{tool: str, agent: str, timestamp: float}]
         self.cost_history = []  # [{timestamp, agent, cost, tokens}]
 
-        # Cost per 1K tokens (updated 10/19/2025)
-        self.costs = {
-            "gpt-5.4-mini": 0.00015,
-            "gpt-5.4": 0.0025,
-            "gpt-5": 0.010,
-            "claude-sonnet-4-6": 0.003,
-            "claude-3.5-sonnet": 0.003,
-            "gemini-2.5-pro": 0.0035,
-            "o1-preview": 0.015
-        }
 
     def before_model(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
         """Track call and tool usage."""
@@ -607,7 +597,8 @@ class CostTrackingMiddleware(AgentMiddleware):
                 if hasattr(model_name, 'model_name'):
                     model_name = model_name.model_name
 
-                cost_per_1k = self.costs.get(model_name, 0.0025)
+                from core.models.registry import model_registry
+                cost_per_1k = model_registry.get_blended_cost_per_1k(model_name, default=0.0025)
                 call_cost = (total_tokens / 1000) * cost_per_1k
                 self.total_cost += call_cost
 

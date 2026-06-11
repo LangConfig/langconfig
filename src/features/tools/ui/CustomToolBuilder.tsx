@@ -1392,7 +1392,7 @@ ${toolId}_tool = StructuredTool.from_function(
 
 # Add to your agent
 # agent = create_agent(
-#     model="gpt-4o",
+#     model="gpt-5.4",
 #     tools=[${toolId}_tool],
 #     middleware=[...],
 # )`;

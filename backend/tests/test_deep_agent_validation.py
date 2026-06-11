@@ -291,7 +291,7 @@ class TestDeepAgentConfigIntegration:
     def test_full_config_with_enums_valid(self):
         """Full config with all enum types should work."""
         config = DeepAgentConfig(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-6",
             system_prompt="Test agent",
             reasoning_effort=ReasoningEffort.LOW,
             middleware=[
@@ -317,7 +317,7 @@ class TestDeepAgentConfigIntegration:
     def test_full_config_with_strings_converts_to_enums(self):
         """Full config with string values should convert to enums."""
         config = DeepAgentConfig(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-6",
             system_prompt="Test agent",
             reasoning_effort="high",  # String
             middleware=[

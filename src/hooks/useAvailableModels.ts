@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getModelDisplayName, getModelProvider } from '@/lib/modelDisplayNames';
 import type { LocalModel } from '@/types/api';
 
 /**
@@ -79,52 +80,16 @@ export function useAvailableModels(
       const availableModels = settingsResponse.data.models || [];
       const localModelsList = settingsResponse.data.local_models || [];
 
-      // Model display name mapping (public-facing names)
-      // Updated June 5, 2026
-      const modelDisplayNames: Record<string, { name: string; provider: string }> = {
-        // OpenAI - GPT-5 frontier series
-        'gpt-5.5': { name: 'GPT-5.5', provider: 'OpenAI' },
-        'gpt-5.4': { name: 'GPT-5.4', provider: 'OpenAI' },
-        'gpt-5.4-mini': { name: 'GPT-5.4 Mini', provider: 'OpenAI' },
-        'gpt-5.4-nano': { name: 'GPT-5.4 Nano', provider: 'OpenAI' },
-
-        // Anthropic - Claude current generation
-        'claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'Anthropic' },
-        'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', provider: 'Anthropic' },
-        'claude-haiku-4-5': { name: 'Claude Haiku 4.5', provider: 'Anthropic' },
-
-        // Google - Gemini 3 (Current)
-        'gemini-3-pro-preview': { name: 'Gemini 3 Pro', provider: 'Google' },
-
-        // Google - Gemini 2.5
-        'gemini-2.0-flash': { name: 'Gemini 2.0 Flash', provider: 'Google' },
-        'gemini-2.5-flash': { name: 'Gemini 2.5 Flash', provider: 'Google' },
-        'gemini-2.5-flash-lite': { name: 'Gemini 2.5 Flash-Lite', provider: 'Google' },
-      };
-
-      // Convert cloud models to ModelOption format
+      // Convert cloud models to ModelOption format using the shared
+      // display-name module (single source of truth for model labels)
       const cloudModelOptions: ModelOption[] = availableModels
         .filter((modelId: string) => !modelId.startsWith('local-'))
-        .map((modelId: string) => {
-          const modelInfo = modelDisplayNames[modelId];
-
-          if (modelInfo) {
-            return {
-              id: modelId,
-              name: modelInfo.name,
-              provider: modelInfo.provider,
-              type: 'cloud' as const
-            };
-          }
-
-          // Fallback for unknown models
-          return {
-            id: modelId,
-            name: modelId,
-            provider: 'Unknown',
-            type: 'cloud' as const
-          };
-        });
+        .map((modelId: string) => ({
+          id: modelId,
+          name: getModelDisplayName(modelId) || modelId,
+          provider: getModelProvider(modelId),
+          type: 'cloud' as const
+        }));
 
       setCloudModels(cloudModelOptions);
 

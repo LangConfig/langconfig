@@ -24,40 +24,36 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // OpenAI Reasoning Models
-  'o3': { input: 20.00, output: 80.00 },
-  'o3-mini': { input: 4.00, output: 16.00 },
-  'o4-mini': { input: 3.00, output: 12.00 },
-
   // OpenAI GPT-5 frontier series
   'gpt-5.5': { input: 5.00, output: 30.00 },
   'gpt-5.4': { input: 2.50, output: 15.00 },
   'gpt-5.4-mini': { input: 0.75, output: 4.50 },
   'gpt-5.4-nano': { input: 0.20, output: 1.25 },
 
-  // Legacy OpenAI display/cost support
-  'gpt-5.2': { input: 5.00, output: 15.00 },
-  'gpt-5.1': { input: 4.00, output: 12.00 },
-  'gpt-4o': { input: 2.50, output: 10.00 },
-  'gpt-4o-mini': { input: 0.15, output: 0.60 },
-
   // Anthropic Claude current generation
+  'claude-fable-5': { input: 10.00, output: 50.00 },
   'claude-opus-4-8': { input: 5.00, output: 25.00 },
   'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
   'claude-haiku-4-5': { input: 1.00, output: 5.00 },
 
-  // Legacy Anthropic display/cost support
+  // Google Gemini current generation
+  'gemini-3.1-pro-preview': { input: 2.00, output: 12.00 },
+  'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+  'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
+
+  // Legacy display/cost support - keep all entries so historical
+  // executions recorded against retired models still price correctly.
+  'o3': { input: 20.00, output: 80.00 },
+  'o3-mini': { input: 4.00, output: 16.00 },
+  'o4-mini': { input: 3.00, output: 12.00 },
+  'gpt-5.2': { input: 5.00, output: 15.00 },
+  'gpt-5.1': { input: 4.00, output: 12.00 },
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
   'claude-opus-4-5': { input: 15.00, output: 75.00 },
   'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
   'claude-sonnet-4-5-20250929': { input: 3.00, output: 15.00 },
-
-  // Google Gemini 3
   'gemini-3-pro-preview': { input: 2.00, output: 12.00 },
-
-  // Google Gemini 2.5
-  'gemini-2.5-flash': { input: 0.075, output: 0.30 },
-
-  // Google Gemini 2.0
   'gemini-2.0-flash': { input: 0.075, output: 0.30 },
 
   // Default fallback

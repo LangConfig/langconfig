@@ -44,7 +44,7 @@ def _get_or_create_demo_project(db) -> Project:
         status=ProjectStatus.IDLE,
         indexing_status=IndexingStatus.NOT_INDEXED,
         configuration={
-            "default_model": "gpt-4o",
+            "default_model": "gpt-5.4",
             "theme": "langconfig",
             "seeded_by": "seed_langconfig_dev",
         },

@@ -1715,32 +1715,22 @@ async def get_workflow_cost_metrics(
             if tool_name and tool_name != "unknown":
                 tool_usage[tool_name] += 1
 
-        # Calculate costs using pricing table (Updated December 2025)
-        cost_per_1m_tokens = {
-            # OpenAI Reasoning Models
-            "o3": 20.00,
-            "o3-mini": 4.00,
-            "o4-mini": 3.00,
-            # OpenAI GPT-4o Series
-            "gpt-5.4": 2.50,
-            "gpt-5.4-mini": 0.15,
-            # Anthropic Claude 4.5
-            "claude-opus-4-8": 15.00,
-            "claude-sonnet-4-6": 3.00,
-            "claude-sonnet-4-6": 3.00,
-            "claude-haiku-4-5": 1.00,
-            # Google Gemini 3
-            "gemini-3-pro-preview": 2.00,
-            # Google Gemini 2.5
-            "gemini-2.5-flash": 0.075,
-            # Google Gemini 2.0
-            "gemini-2.0-flash": 0.075,
-            "default": 1.00
-        }
+        # Calculate costs via the model registry (single pricing source).
+        # Stored model strings may carry provider prefixes, so fall back to a
+        # substring match against registry IDs before defaulting.
+        from core.models.registry import model_registry
+
+        def _blended_rate(model_str: str) -> float:
+            model_str = (model_str or "").lower()
+            if model_registry.get_model(model_str):
+                return model_registry.get_blended_cost_per_1m(model_str)
+            for known_id in model_registry._models:
+                if known_id in model_str:
+                    return model_registry.get_blended_cost_per_1m(known_id)
+            return 1.00
 
         for agent_name, data in agent_costs.items():
-            model = data.get("model", "unknown").lower()
-            rate = next((v for k, v in cost_per_1m_tokens.items() if k in model), cost_per_1m_tokens["default"])
+            rate = _blended_rate(data.get("model", "unknown"))
             agent_cost = (data["tokens"] / 1_000_000) * rate
             data["cost"] = round(agent_cost, 4)
             total_cost += agent_cost

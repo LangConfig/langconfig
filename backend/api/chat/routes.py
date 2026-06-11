@@ -794,48 +794,9 @@ async def get_session_metrics(
     if agent and agent.config:
         model = agent.config.get("model", "claude-sonnet-4-6")
 
-    MODEL_PRICING = {
-        "gpt-5.5": 17.5,
-        "gpt-5.4": 8.75,
-        "gpt-5.4-mini": 2.625,
-        "gpt-5.4-nano": 0.825,
-        "claude-opus-4-8": 15.0,
-        "claude-sonnet-4-6": 9.0,
-        "claude-haiku-4-5": 3.0,
-        "claude-sonnet-4-5-20250929": 9.0,
-        "claude-sonnet-4": 9.0,
-        "claude-opus-4-20250514": 45.0,
-        "claude-opus-4": 45.0,
-        "claude-3-5-sonnet-20241022": 6.0,
-        "claude-3-5-sonnet-20240620": 6.0,
-        "claude-3-5-haiku-20241022": 1.5,
-        "claude-3-opus-20240229": 37.5,
-        "claude-3-sonnet-20240229": 6.0,
-        "claude-3-haiku-20240307": 0.75,
-        "gpt-4o-2024-11-20": 5.0,
-        "gpt-4o-2024-08-06": 5.0,
-        "gpt-4o-2024-05-13": 10.0,
-        "gpt-4o": 7.5,
-        "gpt-4o-mini-2024-07-18": 0.3,
-        "gpt-4o-mini": 0.3,
-        "gpt-4-turbo-2024-04-09": 15.0,
-        "gpt-4-turbo": 15.0,
-        "gpt-4-0125-preview": 30.0,
-        "gpt-4": 30.0,
-        "gpt-3.5-turbo": 1.5,
-        "gemini-2.0-flash-exp": 0.0,
-        "gemini-exp-1206": 0.0,
-        "gemini-2.0-flash-thinking-exp-1219": 0.0,
-        "gemini-2.0-flash-thinking-exp": 0.0,
-        "gemini-1.5-pro-002": 2.5,
-        "gemini-1.5-pro": 2.5,
-        "gemini-1.5-flash-002": 0.15,
-        "gemini-1.5-flash": 0.15,
-        "deepseek-chat": 0.55,
-        "deepseek-reasoner": 2.19,
-    }
+    from core.models.registry import model_registry
 
-    cost_per_1m = MODEL_PRICING.get(model, 9.0)
+    cost_per_1m = model_registry.get_blended_cost_per_1m(model, default=9.0)
     estimated_cost = (total_tokens / 1_000_000) * cost_per_1m
 
     # Calculate current context size

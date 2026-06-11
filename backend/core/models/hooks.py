@@ -330,17 +330,6 @@ class CostTrackingHook(ModelHook):
         self.total_cost = 0.0
         self.call_count = 0
 
-        # Cost per 1K tokens (approximate)
-        self.costs = {
-            "gpt-5.4-mini": 0.00015,
-            "gpt-5.4": 0.0025,
-            "gpt-5": 0.010,
-            "claude-sonnet-4-6": 0.003,
-            "claude-3.5-sonnet": 0.003,
-            "gemini-2.5-pro": 0.0035,
-            "o1-preview": 0.015
-        }
-
     def pre_model(self, messages: List[BaseMessage], config: Dict[str, Any]) -> List[BaseMessage]:
         """Track input tokens."""
         self.call_count += 1
@@ -358,7 +347,8 @@ class CostTrackingHook(ModelHook):
 
                 # Get model name from config
                 model_name = config.get('model', 'gpt-5.4')
-                cost_per_1k = self.costs.get(model_name, 0.0025)  # Default to gpt-5.4
+                from core.models.registry import model_registry
+                cost_per_1k = model_registry.get_blended_cost_per_1k(model_name, default=0.0025)
 
                 # Calculate cost
                 call_cost = (total_tokens / 1000) * cost_per_1k

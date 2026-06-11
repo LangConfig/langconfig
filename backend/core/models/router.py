@@ -26,8 +26,8 @@ class ModelTier(str, Enum):
     """Model tiers ordered by capability and cost."""
     FAST = "fast"          # gpt-5.4-mini - cheap, fast, good for simple tasks
     STANDARD = "standard"  # gpt-5.4 - balanced performance/cost
-    POWERFUL = "powerful"  # claude-3.5-sonnet - high quality, expensive
-    REASONING = "reasoning"  # o1-preview - deep reasoning, very expensive
+    POWERFUL = "powerful"  # claude-sonnet-4-6 - high quality, expensive
+    REASONING = "reasoning"  # claude-fable-5 - deep reasoning, very expensive
 
 
 class ModelRouter:
@@ -44,7 +44,7 @@ class ModelRouter:
 
         >>> state = WorkflowState(task_description="design authentication system")
         >>> model = ModelRouter.select_model(state, config={})
-        >>> print(model)  # "claude-3.5-sonnet"
+        >>> print(model)  # "claude-sonnet-4-6"
     """
 
     # Complexity indicators that suggest a simple task
@@ -70,14 +70,14 @@ class ModelRouter:
         'distributed system', 'microservices', 'api design', 'data model'
     ]
 
-    # Indicators that require deep reasoning (o1-preview)
+    # Indicators that require deep reasoning (claude-fable-5)
     REASONING_INDICATORS = [
         'algorithm', 'optimization problem', 'mathematical', 'proof',
         'complex logic', 'graph theory', 'dynamic programming', 'recursion',
         'performance analysis', 'complexity analysis'
     ]
 
-    # Model configurations by tier (Updated December 2025)
+    # Model configurations by tier (Updated June 2026)
     MODEL_CONFIGS = {
         ModelTier.FAST: {
             'model': 'gpt-5.4-mini',
@@ -101,11 +101,13 @@ class ModelRouter:
             'cost_per_1k_tokens': 0.003  # $3.00 per 1M tokens
         },
         ModelTier.REASONING: {
-            'model': 'o3',
-            'temperature': 1.0,  # o3 uses fixed temperature
-            'max_tokens': 32768,
-            'timeout': 120,
-            'cost_per_1k_tokens': 0.020  # $20.00 per 1M tokens
+            'model': 'claude-fable-5',
+            # claude-fable-5 rejects sampling params; AgentFactory strips
+            # temperature for it (NO_SAMPLING_PARAM_MODELS), value here is unused
+            'temperature': 0.7,
+            'max_tokens': 64000,
+            'timeout': 300,  # Fable turns can run minutes on hard tasks
+            'cost_per_1k_tokens': 0.030  # $10/$50 per 1M blended
         }
     }
 
@@ -126,7 +128,7 @@ class ModelRouter:
                 - min_tier: ModelTier - Minimum tier to use
 
         Returns:
-            Model identifier string (e.g., "gpt-5.4-mini", "claude-3.5-sonnet")
+            Model identifier string (e.g., "gpt-5.4-mini", "claude-sonnet-4-6")
         """
         if config is None:
             config = {}

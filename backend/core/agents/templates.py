@@ -254,7 +254,7 @@ ARCHITECT_AGENT = AgentTemplate(
     ],
 
     model="claude-sonnet-4-6",
-    fallback_models=["gpt-5", "gemini-2.5-pro"],
+    fallback_models=["gpt-5.4", "gemini-3.1-pro-preview"],
     temperature=0.3,
     system_prompt="""ROLE: Senior Software Architect.
 EXPERTISE: Scalable system design, data modeling, API specification (OpenAPI), security best practices.
@@ -284,7 +284,7 @@ CODE_IMPLEMENTER = AgentTemplate(
         "api-development", "database", "error-handling"
     ],
 
-    model="gpt-5",
+    model="gpt-5.4",
     fallback_models=["claude-sonnet-4-6", "gpt-5.4"],
     temperature=0.5,
     system_prompt="""ROLE: Software Engineer.
@@ -311,7 +311,7 @@ FAST_IMPLEMENTER = AgentTemplate(
     capabilities=["simple-crud", "quick-fixes", "boilerplate", "copy-modify", "speed-optimized"],
 
     model="gpt-5.4-mini",
-    fallback_models=["claude-haiku-4-5", "gemini-2.0-flash"],
+    fallback_models=["claude-haiku-4-5", "gemini-2.5-flash"],
     temperature=0.6,
     system_prompt="""ROLE: Junior Software Engineer (Efficient Executor).
 EXPERTISE: Rapid implementation of well-defined tasks.
@@ -336,7 +336,7 @@ REFACTOR_SPECIALIST = AgentTemplate(
     capabilities=["refactoring", "design-patterns", "solid-principles", "code-smells", "test-preservation"],
 
     model="claude-sonnet-4-6",
-    fallback_models=["gpt-5"],
+    fallback_models=["gpt-5.4"],
     temperature=0.3,
     system_prompt="""ROLE: Refactoring Expert.
 EXPERTISE: Code quality improvement, design patterns, SOLID principles.
@@ -364,7 +364,7 @@ CODE_REVIEWER = AgentTemplate(
     capabilities=["code-review", "security-analysis", "best-practices", "pr-comments", "test-execution", "static-analysis"],
 
     model="claude-sonnet-4-6",  # Claude 4.5 Sonnet - Excellent at code analysis
-    fallback_models=["gpt-5"],
+    fallback_models=["gpt-5.4"],
     temperature=0.2,  # Low temperature for consistent reviews
     output_schema_name="code_review",  # NEW: Structured output with CodeReviewOutput schema
     enable_structured_output=True,  # NEW: Type-safe code review responses
@@ -406,7 +406,7 @@ TEST_GENERATOR = AgentTemplate(
 
     capabilities=["unit-testing", "integration-testing", "test-coverage", "tdd"],
 
-    model="gpt-5",  # GPT-5 - Excellent at writing tests
+    model="gpt-5.4",  # GPT-5 - Excellent at writing tests
     fallback_models=["claude-sonnet-4-6"],
     temperature=0.4,
     system_prompt="""ROLE: QA Engineer & Test Automation Specialist.
@@ -430,7 +430,7 @@ QA_VALIDATOR = AgentTemplate(
 
     capabilities=["automated-testing", "quality-gates", "linting", "ci-cd-validation"],
 
-    model="gemini-2.0-flash",  # Fast and efficient for validation tasks
+    model="gemini-2.5-flash",  # Fast and efficient for validation tasks
     fallback_models=["gpt-5.4-mini"],
     temperature=0.3,
     system_prompt="""ROLE: QA Validator (Automated Checks).
@@ -455,7 +455,7 @@ DEVOPS_AGENT = AgentTemplate(
 
     capabilities=["ci-cd", "docker", "kubernetes", "terraform", "infrastructure-as-code"],
 
-    model="gpt-5",  # GPT-5 for infrastructure tasks
+    model="gpt-5.4",  # GPT-5 for infrastructure tasks
     fallback_models=["claude-sonnet-4-6"],
     temperature=0.2,  # Low temperature for safety
     system_prompt="""ROLE: DevOps Expert (Restricted).
@@ -481,8 +481,8 @@ RESEARCH_AGENT = AgentTemplate(
 
     capabilities=["code-analysis", "technology-research", "architecture-review", "best-practices"],
 
-    model="gemini-2.5-pro",  # Large context window, excellent for research
-    fallback_models=["claude-sonnet-4-6", "gpt-5"],
+    model="gemini-3.1-pro-preview",  # Large context window, excellent for research
+    fallback_models=["claude-sonnet-4-6", "gpt-5.4"],
     temperature=0.4,
     system_prompt="""ROLE: Technical Research Analyst.
 EXPERTISE: Code analysis, architecture review, technology evaluation, best practices research.
@@ -534,7 +534,7 @@ TASK_PLANNER = AgentTemplate(
 
     capabilities=["task-decomposition", "mcgs-planning", "dependency-analysis", "estimation", "milestone-planning", "approach-comparison"],
 
-    model="gpt-5",  # GPT-5 for strategic planning
+    model="gpt-5.4",  # GPT-5 for strategic planning
     fallback_models=["claude-sonnet-4-6"],
     temperature=0.3,
     output_schema_name="task_plan",  # Structured output with TaskPlanOutput schema (includes MCGS)
@@ -740,7 +740,7 @@ JIRA_QA_TRIAGER = AgentTemplate(
     description="Automates Jira ticket triage, analysis, and workflow management using Jira CLI tools. Fetches tickets, analyzes content, updates descriptions, adds labels, transitions status, and assigns tickets. Provides structured output with triage results.",
     category=AgentCategory.QA_VALIDATION,
     model="claude-sonnet-4-6",  # Claude 4.5 Sonnet for reasoning about QA issues
-    fallback_models=["gpt-5", "gpt-5.4"],
+    fallback_models=["gpt-5.4", "gpt-5.4-mini"],
     temperature=0.4,
     output_schema_name="jira_triage",  # NEW: Structured output with JiraTriageOutput schema
     enable_structured_output=True,  # NEW: Type-safe triage responses
@@ -899,7 +899,7 @@ IMAGE_CREATOR = AgentTemplate(
     ],
 
     model="gpt-5.4",  # GPT-4o is excellent at understanding visual concepts and prompt engineering
-    fallback_models=["claude-sonnet-4-6", "gemini-2.5-pro"],
+    fallback_models=["claude-sonnet-4-6", "gemini-3.1-pro-preview"],
     temperature=0.7,  # Higher temperature for creative prompt generation
 
     system_prompt="""ROLE: AI Image Generation Specialist & Creative Director.
