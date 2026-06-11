@@ -147,23 +147,25 @@ class DeepAgentFactory:
             vector_store=vector_store
         )
 
-        # Initialize middleware instances with instrumentation
+        # Initialize middleware instances (custom/extra middleware only - the
+        # deepagents harness supplies TodoList/Filesystem/SubAgent/Summarization)
         middleware_instances = []
 
-        # Import instrumentation utilities
-        from services.deepagents_instrumentation import (
-            instrument_deepagents_middleware,
-            create_todo_tracker
-        )
-
-        # Initialize FilesystemMiddleware if enabled
+        # Resolve filesystem workspace backend if enabled
         filesystem_config = next(
             (m for m in config.middleware if m.type == MiddlewareType.FILESYSTEM),
             None
         )
+        # DO NOT manually append TodoListMiddleware or FilesystemMiddleware here.
+        # deepagents 0.6.x adds both to every deep agent by default, and
+        # create_agent asserts middleware uniqueness - a manual instance raises
+        # "Please remove duplicate middleware instances", which silently kicked
+        # EVERY chat agent onto the checkpointer-less fallback path (no
+        # conversation memory). Filesystem customization goes through the
+        # supported `backend=` parameter instead (resolved below).
+        fs_backend = None
         if filesystem_config and filesystem_config.enabled:
             try:
-                from deepagents.middleware.filesystem import FilesystemMiddleware
                 try:
                     from deepagents.memory.backends import FilesystemBackend
                 except ImportError:
@@ -184,42 +186,19 @@ class DeepAgentFactory:
                     fs_backend = FilesystemBackend(root=str(workspace_path))
                 except TypeError:
                     fs_backend = FilesystemBackend(root_dir=str(workspace_path))
-                fs_middleware = FilesystemMiddleware(backend=fs_backend)
-                instrumented_fs = instrument_deepagents_middleware(
-                    fs_middleware,
-                    callback_handler=callback_handler
-                )
-                middleware_instances.append(instrumented_fs)
-                logger.info(f"FilesystemMiddleware initialized with workspace: {workspace_path}")
+                logger.info(f"Filesystem backend resolved to workspace: {workspace_path}")
             except ImportError as e:
-                logger.warning(f"FilesystemMiddleware not available: {e}")
+                logger.warning(f"FilesystemBackend not available: {e}")
 
-        # Todo middleware is part of the Deep Agents harness in current 0.6.x.
-        # Enable it when configured, or by default for task-planning workflows.
         todo_config = next(
             (m for m in config.middleware if m.type == MiddlewareType.TODO_LIST),
             None
         )
-        if todo_config is None or todo_config.enabled:
-            try:
-                try:
-                    from deepagents.middleware.todo import TodoListMiddleware
-                except ImportError:
-                    from langchain.agents.middleware.todo import TodoListMiddleware
-                todo_kwargs = todo_config.config if todo_config else {}
-                try:
-                    todo_middleware = TodoListMiddleware(**todo_kwargs)
-                except TypeError:
-                    logger.warning("TodoListMiddleware rejected config kwargs; falling back to defaults")
-                    todo_middleware = TodoListMiddleware()
-                instrumented_todo = instrument_deepagents_middleware(
-                    todo_middleware,
-                    callback_handler=callback_handler
-                )
-                middleware_instances.append(instrumented_todo)
-                logger.info("TodoListMiddleware initialized")
-            except ImportError as e:
-                logger.warning(f"TodoListMiddleware not available: {e}")
+        if todo_config and todo_config.config:
+            logger.info(
+                "TodoListMiddleware is provided by the deepagents harness; "
+                "custom todo config is not forwarded (built-in defaults apply)"
+            )
 
         # NOTE: SubAgentMiddleware is NOT manually created here.
         # The deepagents library automatically creates SubAgentMiddleware (with the `task` tool)
@@ -305,6 +284,11 @@ class DeepAgentFactory:
                 "debug": getattr(config, 'debug', False),
             }
 
+            # Custom filesystem root (task workspace) via the supported param;
+            # deepagents builds its own FilesystemMiddleware around it.
+            if fs_backend is not None:
+                agent_kwargs["backend"] = fs_backend
+
             try:
                 store = get_store()
                 if store:
@@ -354,8 +338,13 @@ class DeepAgentFactory:
             return agent, all_tools, callbacks
 
         except Exception as e:
-            logger.error(f"Error creating DeepAgent: {e}")
-            logger.info("Falling back to regular agent")
+            logger.error(f"Error creating DeepAgent: {e}", exc_info=True)
+            logger.critical(
+                "Falling back to regular AgentFactory - the fallback agent has "
+                "NO checkpointer, so chat sessions will have NO conversation "
+                "memory and HITL resume will not work. Fix the error above; do "
+                "not let this fallback become the steady state."
+            )
             return await DeepAgentFactory._fallback_to_regular_agent(
                 config, project_id, task_id, context, mcp_manager, vector_store
             )
