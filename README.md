@@ -29,6 +29,9 @@ LangConfig includes workflow templates for research and content creation. We're 
 ## Key Features
 
 - **Visual Workflow Builder** - Drag-and-drop LangGraph state graphs on an interactive canvas
+- **3D Spatial Builder** - Build the same workflows in a game-like 3D space and watch multi-agent executions animate live: glowing nodes, tool pulses along edges, orbiting subagent swarms, and a replay timeline for past runs
+- **Multi-Runtime Agents** - Run chat agents on LangGraph (default), Google ADK, or Anthropic Managed Agents (hosted sessions), selected per agent template
+- **Adaptive Thinking & Prompt Caching** - Claude agents support adaptive thinking with effort control, visible thinking summaries in chat, cached system prompts, and Anthropic server-side web search/fetch tools
 - **Custom Agent Builder** - Create specialized agents with AI-generated configurations
 - **Interactive Chat Testing** - Test agents with live streaming, tool execution visibility, and document upload
 - **RAG Knowledge Base** - Upload documents (PDF, DOCX, code) for semantic search with pgvector
