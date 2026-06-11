@@ -1,28 +1,29 @@
 # Core Framework
-fastapi==0.115.0
-uvicorn[standard]==0.31.0
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
 pydantic>=2.10.0
 pydantic-settings>=2.10.1
 python-multipart
 
 # Database
-sqlalchemy==2.0.35
-alembic==1.13.3
+sqlalchemy==2.0.50
+alembic==1.18.4
 psycopg[binary]>=3.2.0
 psycopg-pool>=3.2.0
 
 # LangChain v1.0 + LangGraph
-langchain>=1.3.2,<2
-langchain-core>=1.4.0,<2
-langchain-openai>=1.0.1
-langchain-anthropic>=1.4.3,<2
-langchain-google-genai>=4.2.2,<5
-langchain-community>=0.4.1,<0.5  # Pinned major line for stability
-langchain-postgres
-langgraph>=1.2.2,<1.3
+langchain>=1.3.7,<2
+langchain-core>=1.4.5,<2
+langchain-openai>=1.3.0,<2
+langchain-anthropic>=1.4.5,<2
+langchain-google-genai>=4.2.5,<5
+langchain-community>=0.4.2,<0.5  # Pinned major line for stability
+langchain-experimental>=0.4.2,<0.5  # pandas_agent (create_pandas_dataframe_agent)
+langchain-postgres>=0.0.17
+langgraph>=1.2.4,<1.3
 langgraph-checkpoint-postgres>=3.1.0,<4
-langgraph-prebuilt>=1.0.0
-langgraph-sdk>=0.3.0,<0.4
+langgraph-prebuilt>=1.1.0
+langgraph-sdk>=0.4.2,<0.5
 # Multi-agent and dynamic tool libraries
 langgraph-supervisor
 langgraph-swarm
@@ -35,7 +36,7 @@ llama-index
 llama-index-vector-stores-postgres
 llama-index-embeddings-huggingface
 llama-index-embeddings-openai
-sentence-transformers==3.2.0
+sentence-transformers>=3.2.0,<4  # stay on v3: embedding-vector compat with existing pgvector data
 pgvector
 numpy
 
@@ -51,10 +52,10 @@ python-magic-bin>=0.4.14; platform_system=="Windows"  # File type detection on W
 fastapi-mcp>=0.1.0
 
 # DeepAgents - Agent harness (requires Python >=3.11)
-deepagents>=0.6.7,<0.7
+deepagents>=0.6.8,<0.7
 
 # Real-time Monitoring (SSE for desktop app streaming)
-sse-starlette>=2.1.3
+sse-starlette>=3.0.2,<4
 
 # Note: Redis NOT needed for desktop app
 # Event streaming handled by in-memory asyncio.Queue (services/event_bus.py)
@@ -67,7 +68,7 @@ playwright>=1.48.0  # For browser tool (requires: python -m playwright install c
 faster-whisper>=1.0.0
 
 # Security & Utilities
-cryptography
+cryptography>=48.0.1,<49
 python-dotenv==1.0.1
 httpx>=0.28.1
 aiofiles==24.1.0
