@@ -11,8 +11,8 @@ import { useProject } from "../../contexts/ProjectContext";
 import { useChat } from '../../features/chat/state/ChatContext';
 
 interface ModernHeaderProps {
-  currentView: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
-  onViewChange: (view: 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community') => void;
+  currentView: 'studio' | 'spatial' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
+  onViewChange: (view: 'studio' | 'spatial' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community') => void;
 }
 
 export default function ModernHeader({
@@ -92,6 +92,22 @@ export default function ModernHeader({
           <span className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base">account_tree</span>
             Studio
+          </span>
+        </button>
+        <button
+          onClick={() => onViewChange('spatial')}
+          className={`px-4 py-2 text-sm rounded-[4px] transition-all border-2 ${currentView === 'spatial'
+            ? 'bg-background-light/70 font-semibold border-border-dark shadow-[3px_3px_0_var(--color-border-dark)]'
+            : 'font-medium hover:bg-background-light/45 border-transparent hover:border-border-dark'
+            } `}
+          style={{
+            color: 'var(--color-text-primary)',
+            backdropFilter: currentView === 'spatial' ? 'blur(8px)' : 'none'
+          }}
+        >
+          <span className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">deployed_code</span>
+            Spatial
           </span>
         </button>
         <button

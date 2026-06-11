@@ -97,7 +97,9 @@ function MetadataRow({
   value,
   valueStyle,
 }: {
-  icon: React.ElementType;
+  // ComponentType (not ElementType): rendering ElementType via JSX trips over
+  // the @react-three/fiber JSX.IntrinsicElements augmentation.
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   label: string;
   value: React.ReactNode;
   valueStyle?: React.CSSProperties;

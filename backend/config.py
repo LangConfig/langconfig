@@ -134,6 +134,12 @@ class Settings(BaseSettings):
     langsmith_api_key: Optional[str] = None
     langsmith_project: str = "langconfig"
 
+    # Anthropic Managed Agents runtime (core/runtimes/anthropic_managed_runtime.py):
+    # reusable cloud environment id (env_...). If unset, the runtime creates a
+    # 'langconfig-default' environment at first use and logs its id with
+    # instructions to pin it here.
+    ANTHROPIC_MANAGED_ENVIRONMENT_ID: Optional[str] = None
+
     # Defaults (keep in sync with constants.models.DEFAULT_MODEL)
     default_model: str = "gpt-5.4"
     default_temperature: float = 0.7

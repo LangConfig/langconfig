@@ -56,12 +56,62 @@ export default defineConfig(async () => ({
     chunkSizeWarningLimit: 2500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom", "react-router-dom", "@tanstack/react-query"],
-          "vendor-flow": ["reactflow"],
-          "vendor-icons": ["lucide-react"],
-          "vendor-export": ["jspdf", "html2canvas", "html2canvas-oklch", "jszip"],
-          "vendor-math": ["katex"],
+        // Function form (not object form): shared transitive deps must be
+        // placed deterministically. With the object form, "scheduler"
+        // (shared by react-dom and @react-three/fiber's react-reconciler)
+        // landed inside vendor-3d, creating a circular chunk
+        // (vendor-3d <-> vendor-react) that made the app shell eagerly load
+        // the entire 1MB+ 3D bundle at startup.
+        manualChunks(id: string) {
+          // Shared helper modules (rollup commonjs helpers, babel runtime
+          // helpers) are imported by nearly every chunk; without a pin they
+          // can get colored into a heavy lazy vendor chunk, forcing eager
+          // loads of it. vendor-react always loads first, so they are free
+          // there. (Other \0 virtual modules — e.g. commonjs proxies — must
+          // fall through so they follow their owning package.)
+          if (
+            id.includes("commonjsHelpers") ||
+            id.includes("vite/preload-helper") ||
+            id.includes("vite/modulepreload-polyfill")
+          ) {
+            return "vendor-react";
+          }
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("node_modules/@babel/runtime/") || id.includes("node_modules\\@babel\\runtime\\")) {
+            return "vendor-react";
+          }
+          const has = (pkg: string) =>
+            id.includes(`node_modules/${pkg}/`) || id.includes(`node_modules\\${pkg}\\`);
+
+          // 3D stack — lazy, loads only on the /spatial route.
+          if (
+            has("three") ||
+            has("@react-three") ||
+            has("react-reconciler") ||
+            has("its-fine")
+          ) {
+            return "vendor-3d";
+          }
+          // zustand is shared by reactflow (2D) and the spatial stores (3D):
+          // it gets its own tiny chunk so neither side drags the other in.
+          if (has("zustand")) return "vendor-state";
+          if (has("reactflow") || has("@reactflow")) return "vendor-flow";
+          if (has("lucide-react")) return "vendor-icons";
+          if (has("jspdf") || has("html2canvas") || has("html2canvas-oklch") || has("jszip")) {
+            return "vendor-export";
+          }
+          if (has("katex")) return "vendor-math";
+          if (
+            has("react") ||
+            has("react-dom") ||
+            has("react-router") ||
+            has("react-router-dom") ||
+            has("scheduler") ||
+            has("@tanstack")
+          ) {
+            return "vendor-react";
+          }
+          return undefined;
         },
       },
     },

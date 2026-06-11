@@ -48,11 +48,10 @@ export function Surface({
     .filter(Boolean)
     .join(' ');
 
-  return (
-    <Tag className={classes} {...rest}>
-      {children}
-    </Tag>
-  );
+  // createElement instead of JSX: rendering a React.ElementType via JSX
+  // trips over the @react-three/fiber JSX.IntrinsicElements augmentation
+  // (the union of all intrinsic props collapses `children` to never).
+  return React.createElement(Tag, { className: classes, ...rest }, children);
 }
 
 export default Surface;

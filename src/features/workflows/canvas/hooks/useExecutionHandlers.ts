@@ -202,7 +202,8 @@ export function useExecutionHandlers({
         nodes: nodes.map(n => ({
           id: n.id,
           type: n.data.agentType || n.data.label.toLowerCase().replace(/\s+/g, '_'),
-          data: n.data, // Preserve data for restoration
+          data: n.data, // Preserve data for restoration (includes position3d)
+          position: n.position, // Preserve canvas layout (same as useWorkflowPersistence)
           config: {
             ...n.data.config, // Preserve ALL config fields (important for CONDITIONAL_NODE, etc.)
             model: n.data.config?.model || n.data.model || 'gpt-5.4-mini',

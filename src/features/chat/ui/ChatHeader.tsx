@@ -16,6 +16,7 @@ import Badge from '../../../components/ui/Badge';
 const RUNTIME_LABELS: Record<string, string> = {
   google_adk: 'Google ADK',
   anthropic_agents: 'Anthropic Agents',
+  anthropic_managed: 'Anthropic Managed',
 };
 
 interface ChatHeaderProps {

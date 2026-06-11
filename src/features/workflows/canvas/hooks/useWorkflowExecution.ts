@@ -272,6 +272,11 @@ export function useWorkflowExecution({
         nodes: nodes.map(n => ({
           id: n.id,
           type: n.data.label.toLowerCase().replace(/\s+/g, '_'),
+          // Persist the full node shape (same as useWorkflowPersistence.ts)
+          // so executing doesn't strip the canvas layout (position) or 3D
+          // placement (data.position3d) from the saved configuration.
+          data: n.data,
+          position: n.position,
           config: {
             model: n.data.config?.model || 'gpt-5.4-mini',
             temperature: n.data.config?.temperature ?? 0.7,

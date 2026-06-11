@@ -7,9 +7,10 @@
 
 Resolves a runtime name (stored on chat_sessions.runtime /
 deep_agent_templates.runtime) to an :class:`AgentRuntime` implementation.
-'langgraph' is the default and is registered lazily on first lookup; future
-runtimes (e.g. 'google_adk', 'anthropic_agents') register via
-:func:`register_runtime`.
+'langgraph' is the default and is registered lazily on first lookup;
+'google_adk' and 'anthropic_managed' are also registered lazily (so their
+optional dependencies only matter when selected). Future runtimes register
+via :func:`register_runtime`.
 """
 
 from typing import Dict
@@ -57,6 +58,22 @@ def get_runtime(name: str = None) -> AgentRuntime:
                     f"(import failed: {e})"
                 ) from e
             register_runtime(GoogleADKRuntime())
+        elif resolved == "anthropic_managed":
+            # Lazy import so a missing/old anthropic SDK (Managed Agents beta
+            # surface ships in anthropic>=0.92) never breaks startup - it
+            # only fails when this runtime is actually selected.
+            try:
+                from core.runtimes.anthropic_managed_runtime import (
+                    AnthropicManagedRuntime,
+                )
+            except ImportError as e:
+                raise ValueError(
+                    "The 'anthropic_managed' runtime requires the 'anthropic' "
+                    "package with the Managed Agents beta surface. Install it "
+                    "with: pip install -U 'anthropic>=0.92,<1' "
+                    f"(import failed: {e})"
+                ) from e
+            register_runtime(AnthropicManagedRuntime())
         else:
             raise ValueError(
                 f"Unknown agent runtime '{resolved}'. "

@@ -16,6 +16,10 @@ langchain>=1.3.7,<2
 langchain-core>=1.4.5,<2
 langchain-openai>=1.3.0,<2
 langchain-anthropic>=1.4.5,<2
+# Anthropic SDK: Managed Agents beta surface (client.beta.{agents,sessions,
+# environments}) used by core/runtimes/anthropic_managed_runtime.py.
+# langchain-anthropic 1.4.5 pins anthropic>=0.96,<1 — compatible.
+anthropic>=0.92,<1
 langchain-google-genai>=4.2.5,<5
 langchain-community>=0.4.2,<0.5  # Pinned major line for stability
 langchain-experimental>=0.4.2,<0.5  # pandas_agent (create_pandas_dataframe_agent)

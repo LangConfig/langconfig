@@ -519,6 +519,12 @@ async def send_message_stream(
         session_project_id = getattr(session, "project_id", None)
         session_runtime = getattr(session, "runtime", None) or "langgraph"
         agent_config = agent.config.copy() if agent.config else {}
+        # Thread runtime-native references (e.g. the Anthropic managed agent
+        # id provisioned at template save) through to runtime.create_session.
+        # Extra keys are ignored by DeepAgentConfig validation elsewhere.
+        agent_external_refs = getattr(agent, "external_refs", None)
+        if agent_external_refs:
+            agent_config["external_refs"] = dict(agent_external_refs)
         agent_project_id = getattr(agent, 'project_id', None)
 
         async def generate_stream():

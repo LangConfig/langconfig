@@ -27,8 +27,9 @@ const SkillLibrary = lazy(() => import('./features/skills/ui/SkillLibrary'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
 const GlobalChatModal = lazy(() => import('./features/chat/ui/GlobalChatModal'));
+const SpatialView = lazy(() => import('./features/workflows/spatial/SpatialWorkflowView'));
 
-type View = 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
+type View = 'studio' | 'spatial' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
 type WorkflowStatus = 'draft' | 'saved' | 'running' | 'completed' | 'failed';
 
 interface Agent {
@@ -191,6 +192,7 @@ function AppContent() {
     const path = location.pathname;
     if (path === '/' || path === '/home') return 'home';
     if (path === '/studio' || path === '/results') return 'studio';
+    if (path === '/spatial') return 'spatial';
     if (path === '/library') return 'library';
     if (path === '/agents' || path === '/deepagents') return 'agents';
     if (path === '/knowledge') return 'knowledge';
@@ -240,6 +242,7 @@ function AppContent() {
     const routes: Record<View, string> = {
       home: '/home',
       studio: '/studio',
+      spatial: '/spatial',
       library: '/library',
       agents: '/agents',
       skills: '/skills',
@@ -447,6 +450,7 @@ function AppContent() {
                 externalSelectedTask={selectedHistoryTask}
               />
             )}
+            {currentView === 'spatial' && <SpatialView />}
             {currentView === 'library' && (
               <WorkflowLibraryView
                 onWorkflowSelect={setSelectedWorkflowId}
