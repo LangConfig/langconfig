@@ -12,8 +12,12 @@
  * Prevents hardcoded URLs and enables different environments (dev, staging, prod).
  */
 
-// Get API base URL from environment variable, fallback to empty string so Vite proxy handles routing
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+// Get API base URL from environment variable.
+// - Vite dev server: default to '' so the dev proxy (vite.config.ts) routes /api.
+// - Production / Tauri builds: there is no proxy, so default to the local
+//   backend (http://localhost:8780) unless VITE_API_BASE_URL overrides it.
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:8780');
 
 /**
  * API Endpoints
@@ -75,7 +79,9 @@ export const API_ENDPOINTS = {
  */
 export async function checkApiHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    // The Vite dev proxy only covers /api, so hit the backend directly
+    // when API_BASE_URL is the empty (proxied) dev default.
+    const response = await fetch(`${API_BASE_URL || 'http://localhost:8780'}/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(5000), // 5 second timeout
     });

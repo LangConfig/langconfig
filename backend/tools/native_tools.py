@@ -1406,7 +1406,8 @@ async def generate_image(
         "quality": quality,
         "background": background,
         "output_format": output_format,
-        "response_format": "b64_json",
+        # NOTE: no "response_format" — gpt-image models return b64_json
+        # unconditionally and reject the parameter with a 400 error.
     }
 
     headers = {

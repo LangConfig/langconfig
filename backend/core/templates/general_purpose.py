@@ -28,7 +28,7 @@ GENERAL_PURPOSE_AGENT = AgentTemplate(
     
     # Model Configuration
     model="gpt-5.4",  # Good balance of capability and cost
-    fallback_models=["claude-sonnet-4-6", "gpt-5"],
+    fallback_models=["claude-sonnet-4-6", "gpt-5.4-mini"],
     temperature=0.5,
     
     # System Prompt

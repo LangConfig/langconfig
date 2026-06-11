@@ -6,6 +6,7 @@ selectively ingested into the project knowledge base (ContextDocument +
 RAG indexing pipeline).
 """
 
+import asyncio
 import logging
 import mimetypes
 from pathlib import Path
@@ -29,6 +30,10 @@ from services.git_repository_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/repositories", tags=["repositories"])
+
+# Cap on files per ingest request — keeps the synchronous request bounded.
+# Larger folders should be ingested as smaller subdirectories.
+MAX_INGEST_FILES = 500
 
 
 # Maps file extensions to DocumentType for knowledge-base ingestion.
@@ -203,6 +208,13 @@ async def sync_repository(
             detail=f"Repository is currently {repo.sync_status.value}",
         )
 
+    # Mark the repo as pending BEFORE enqueueing: the in-progress guard above
+    # then covers the enqueue->dequeue window (no duplicate sync tasks), and
+    # the frontend's polling reliably sees an in-progress state immediately.
+    repo.sync_status = RepoSyncStatus.PENDING
+    repo.last_error = None
+    db.commit()
+
     task_id = await task_queue.enqueue(
         "sync_git_repo",
         {"repo_id": repo.id},
@@ -240,7 +252,8 @@ async def list_repository_files(
 
     from services.git_repository_service import list_repo_files
 
-    files = list_repo_files(repo_id)
+    # The full-repo walk is blocking — run it off the event loop
+    files = await asyncio.to_thread(list_repo_files, repo_id)
     return {"files": files, "total": len(files)}
 
 
@@ -347,42 +360,61 @@ async def ingest_repository_path(
             raise HTTPException(status_code=400, detail="File type is not ingestable")
         candidates.append(target)
     else:
-        for fp in target.rglob("*"):
-            if not fp.is_file():
-                continue
-            rel_parts = fp.relative_to(repo_root).parts
-            if any(part in EXCLUDED_DIRS for part in rel_parts):
-                continue
-            if not _should_index_file(fp):
-                continue
-            candidates.append(fp)
+        def _collect_candidates() -> list:
+            found = []
+            for fp in target.rglob("*"):
+                if not fp.is_file():
+                    continue
+                rel_parts = fp.relative_to(repo_root).parts
+                if any(part in EXCLUDED_DIRS for part in rel_parts):
+                    continue
+                if not _should_index_file(fp):
+                    continue
+                found.append(fp)
+            return found
+
+        # The directory walk is blocking disk I/O — run it off the event loop
+        candidates = await asyncio.to_thread(_collect_candidates)
 
     if not candidates:
         return {"ingested": 0, "skipped": 0, "errors": [], "message": "No ingestable files found"}
+
+    if len(candidates) > MAX_INGEST_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many files to ingest at once ({len(candidates)} found, "
+                f"limit is {MAX_INGEST_FILES}). Ingest smaller subdirectories instead."
+            ),
+        )
 
     ingested = 0
     skipped = 0
     errors: list = []
     created_doc_ids: list = []
 
+    def _read_candidate(fp: Path) -> Optional[str]:
+        """Blocking stat+read for a candidate; None means skip."""
+        if fp.stat().st_size > MAX_INDEXABLE_FILE_SIZE:
+            return None
+        try:
+            return fp.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            return None
+
     for fp in candidates:
         relative_path = str(fp.relative_to(repo_root)).replace("\\", "/")
+        saved_file_path: Optional[str] = None
         try:
-            if fp.stat().st_size > MAX_INDEXABLE_FILE_SIZE:
+            content = await asyncio.to_thread(_read_candidate, fp)
+            if content is None or not content.strip():
                 skipped += 1
                 continue
 
-            try:
-                content = fp.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                skipped += 1
-                continue
-
-            if not content.strip():
-                skipped += 1
-                continue
-
-            filename = f"{repo.repo_name}__{relative_path.replace('/', '_')}"
+            # Encode '/' as '__' (cannot appear inside a path segment created
+            # by the single-'_' flattening) so distinct paths like 'a/b_c.md'
+            # and 'a_b/c.md' don't collide on the same flattened filename.
+            filename = f"{repo.repo_name}__{relative_path.replace('/', '__')}"
 
             # Skip duplicates (same project + filename already ingested)
             existing = db.query(ContextDocument).filter(
@@ -394,7 +426,9 @@ async def ingest_repository_path(
                 continue
 
             content_bytes = content.encode("utf-8")
-            file_path = file_storage.save_file(repo.project_id, filename, content_bytes)
+            saved_file_path = await asyncio.to_thread(
+                file_storage.save_file, repo.project_id, filename, content_bytes
+            )
 
             file_ext = fp.suffix.lstrip(".").lower()
             document_type = DOC_TYPE_MAP.get(file_ext, DocumentType.TEXT)
@@ -404,7 +438,7 @@ async def ingest_repository_path(
                 project_id=repo.project_id,
                 filename=filename,
                 original_filename=fp.name,
-                file_path=file_path,
+                file_path=saved_file_path,
                 file_size=len(content_bytes),
                 mime_type=mime_type,
                 document_type=document_type,
@@ -414,14 +448,29 @@ async def ingest_repository_path(
             )
             db.add(doc)
             db.flush()
+            # Commit per file so a later failure's rollback only discards
+            # that file's row, never previously ingested ones.
+            db.commit()
             created_doc_ids.append(doc.id)
             ingested += 1
 
         except Exception as exc:
             logger.error("Failed to ingest %s: %s", fp, exc)
             errors.append({"file": relative_path, "error": str(exc)})
-
-    db.commit()
+            # A failed flush/commit poisons the session — roll back so the
+            # remaining files (and their commits) still work.
+            try:
+                db.rollback()
+            except Exception as rollback_exc:
+                logger.warning("Rollback after ingest failure failed: %s", rollback_exc)
+            # Remove the orphaned storage file if its DB row never landed
+            if saved_file_path:
+                try:
+                    await asyncio.to_thread(file_storage.delete_file, saved_file_path)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to clean up orphaned file %s: %s", saved_file_path, cleanup_exc
+                    )
 
     # Queue RAG indexing through the same pipeline as uploaded documents
     for doc_id in created_doc_ids:

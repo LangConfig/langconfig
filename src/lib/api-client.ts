@@ -121,9 +121,13 @@ class APIClient {
 
     switch (status) {
       case 409: {
-        // Conflict - Optimistic locking failure
-        const message = errorData?.message || 'Resource was modified by another user';
+        // Conflict — optimistic locking failure or domain conflict (e.g.
+        // duplicate resource, busy resource). FastAPI puts the reason in
+        // `detail`, so fall back to it before the generic locking message.
         const detail = (errorData as ConflictError)?.detail;
+        const message =
+          errorData?.message ||
+          (typeof detail === 'string' ? detail : 'Resource was modified by another user');
         this.showToast(message, 'warning');
         throw new ConflictErrorClass(message, detail);
       }

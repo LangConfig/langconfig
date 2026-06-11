@@ -5,7 +5,7 @@ Visual platform for building LangChain agents and LangGraph workflows.
 ## Stack
 
 - **Frontend:** React 19 + TypeScript + Tailwind CSS 4 + ReactFlow (`src/`)
-- **Backend:** Python 3.11 + FastAPI + LangChain v1.0 + LangGraph (`backend/`)
+- **Backend:** Python 3.11 + FastAPI + LangChain v1.3 + LangGraph (`backend/`)
 - **Database:** PostgreSQL 16 + pgvector + Alembic
 
 ## Commands
@@ -78,7 +78,7 @@ Backend Python loads from `backend/.env`, so backend-specific secrets must be th
 
 ## Detailed Docs
 
-See `.Codex/docs/` for task-specific guidance:
+See `.claude/docs/` for task-specific guidance:
 
 | File | Contents |
 |------|----------|

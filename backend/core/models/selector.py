@@ -165,7 +165,7 @@ class ModelSelector:
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
                 logger.info(f"🎯 Selected: Claude Fable 5 (REASONING tier - deep reasoning task)")
 
-            # RULE 1: Code-heavy tasks → Claude Sonnet 4.5 (POWERFUL tier)
+            # RULE 1: Code-heavy tasks → Claude Sonnet 4.6 (POWERFUL tier)
             elif any(kw in content_lower for kw in [
                 "implement", "function", "class", "refactor",
                 "code review", "debug", "fix bug", "write code",
@@ -177,7 +177,7 @@ class ModelSelector:
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
                 logger.info(f"🎯 Selected: Claude Sonnet 4.6 (POWERFUL tier - code task)")
 
-            # RULE 2: Simple queries → GPT-4o-mini (FAST tier - BIGGEST SAVINGS!)
+            # RULE 2: Simple queries → GPT-5.4 Mini (FAST tier - BIGGEST SAVINGS!)
             elif message_count <= 2 and len(content) < 200:
                 model_name = "gpt-5.4-mini"
                 temp = 0.7

@@ -592,7 +592,10 @@ async def send_message_stream(
                 from langchain_core.messages import HumanMessage
                 new_message = HumanMessage(content=request.message)
 
-                # Use astream_events for token-by-token streaming
+                # Use astream_events for token-by-token streaming.
+                # version="v3" is safe here: DeepAgentFactory always returns a
+                # LangGraph-compiled (Pregel) graph — both the deepagents path and
+                # the AgentFactory fallback — and Pregel implements the v3 protocol.
                 async for event in agent_instance.astream_events(
                     {"messages": [new_message]},
                     config={

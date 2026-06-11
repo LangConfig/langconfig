@@ -1501,12 +1501,18 @@ def get_task_run_details(idx: int) -> Optional[Dict]:
     return None
 
 
-# Available models for selection
+# Available models for selection (mirrors the platform's selectable catalog
+# in constants.models.ModelChoice)
 AVAILABLE_MODELS = {
-    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.8"},
-    "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Haiku 4.5"},
     "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.5"},
+    "gpt-5.4": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.4"},
+    "gpt-5.4-mini": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.4 Mini"},
+    "claude-fable-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Fable 5"},
+    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.8"},
+    "claude-sonnet-4-6": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Sonnet 4.6"},
+    "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Haiku 4.5"},
     "gemini-3.1-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY", "display": "Gemini 3.1 Pro"},
+    "gemini-2.5-flash": {"provider": "google", "api_key_env": "GOOGLE_API_KEY", "display": "Gemini 2.5 Flash"},
 }
 
 

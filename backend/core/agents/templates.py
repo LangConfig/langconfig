@@ -285,7 +285,7 @@ CODE_IMPLEMENTER = AgentTemplate(
     ],
 
     model="gpt-5.4",
-    fallback_models=["claude-sonnet-4-6", "gpt-5.4"],
+    fallback_models=["claude-sonnet-4-6", "gpt-5.4-mini"],
     temperature=0.5,
     system_prompt="""ROLE: Software Engineer.
 EXPERTISE: Full-stack development, clean code principles (SOLID, DRY).
@@ -363,7 +363,7 @@ CODE_REVIEWER = AgentTemplate(
 
     capabilities=["code-review", "security-analysis", "best-practices", "pr-comments", "test-execution", "static-analysis"],
 
-    model="claude-sonnet-4-6",  # Claude 4.5 Sonnet - Excellent at code analysis
+    model="claude-sonnet-4-6",  # Claude Sonnet 4.6 - Excellent at code analysis
     fallback_models=["gpt-5.4"],
     temperature=0.2,  # Low temperature for consistent reviews
     output_schema_name="code_review",  # NEW: Structured output with CodeReviewOutput schema
@@ -739,7 +739,7 @@ JIRA_QA_TRIAGER = AgentTemplate(
     name="Jira QA Ticket Triager",
     description="Automates Jira ticket triage, analysis, and workflow management using Jira CLI tools. Fetches tickets, analyzes content, updates descriptions, adds labels, transitions status, and assigns tickets. Provides structured output with triage results.",
     category=AgentCategory.QA_VALIDATION,
-    model="claude-sonnet-4-6",  # Claude 4.5 Sonnet for reasoning about QA issues
+    model="claude-sonnet-4-6",  # Claude Sonnet 4.6 for reasoning about QA issues
     fallback_models=["gpt-5.4", "gpt-5.4-mini"],
     temperature=0.4,
     output_schema_name="jira_triage",  # NEW: Structured output with JiraTriageOutput schema
@@ -898,7 +898,7 @@ IMAGE_CREATOR = AgentTemplate(
         "creative-direction", "style-adaptation", "image-variations", "visual-concept-translation"
     ],
 
-    model="gpt-5.4",  # GPT-4o is excellent at understanding visual concepts and prompt engineering
+    model="gpt-5.4",  # GPT-5.4 is excellent at understanding visual concepts and prompt engineering
     fallback_models=["claude-sonnet-4-6", "gemini-3.1-pro-preview"],
     temperature=0.7,  # Higher temperature for creative prompt generation
 

@@ -110,7 +110,7 @@ async def task_supervisor_node(
     try:
         # Create supervisor agent (uses powerful model for routing decisions)
         supervisor_config = {
-            "model": "gpt-5",  # Use powerful model for routing decisions
+            "model": "gpt-5.4",  # Use powerful model for routing decisions
             "fallback_models": ["claude-sonnet-4-6"],
             "temperature": 0.3,  # Lower temp for consistent routing
             "system_prompt": supervisor_prompt,

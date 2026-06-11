@@ -178,10 +178,21 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
           )}
 
           {/* Messages Preview */}
+          {context.messages.length > 0 && visibleMessages.length === 0 && (
+            <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
+              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
+                <MessageSquare className="w-3 h-3" /> Input Messages
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-500 italic px-2 py-1">
+                {context.messages.length} internal tool handoff message{context.messages.length === 1 ? '' : 's'} hidden
+              </div>
+            </div>
+          )}
           {visibleMessages.length > 0 && (
             <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" /> Input Messages ({visibleMessages.length})
+                <MessageSquare className="w-3 h-3" /> Input Messages ({visibleMessages.length}
+                {visibleMessages.length < context.messages.length ? ` of ${context.messages.length}` : ''})
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto">
                 {visibleMessages.map((msg, i) => (

@@ -22,7 +22,7 @@ from core.agents.templates import AgentTemplate, AgentCategory
 # Use current model types
 MODEL_REASONING = "claude-sonnet-4-6"
 MODEL_FAST = "gpt-5.4-mini"
-MODEL_BALANCED = "gpt-5"
+MODEL_BALANCED = "gpt-5.4"
 
 # =============================================================================
 # Stage 1: Internal Knowledge Review (Memory Retrieval)

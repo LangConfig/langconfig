@@ -32,7 +32,8 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Custom Agent Builder** - Create specialized agents with AI-generated configurations
 - **Interactive Chat Testing** - Test agents with live streaming, tool execution visibility, and document upload
 - **RAG Knowledge Base** - Upload documents (PDF, DOCX, code) for semantic search with pgvector
-- **Multi-Model Support** - OpenAI (GPT-4o, GPT-5), Anthropic (Claude 4.5 Sonnet/Opus/Haiku), Google (Gemini 3 Pro, Gemini 2.5), DeepSeek, local models (Ollama, LM Studio)
+- **Repository Browser** - Clone git repositories read-only, browse with syntax-highlighted previews, and ingest files or folders into the knowledge base
+- **Multi-Model Support** - OpenAI (GPT-5.5, GPT-5.4 series), Anthropic (Claude Fable 5, Opus 4.8, Sonnet 4.6, Haiku 4.5), Google (Gemini 3.1 Pro, Gemini 2.5 Flash), local models (Ollama, LM Studio)
 - **Deep Agents v0.6 Support** - Build long-running agents with filesystem, todo, subagent, checkpoint, and store-backed workflows
 - **Multi-Agent Patterns** - Supervisor (hierarchical delegation) and Swarm (peer-to-peer handoffs) strategies via `langgraph-supervisor` and `langgraph-swarm`
 - **Node-Level Caching** - Per-node `CachePolicy` with configurable TTL and backend (in-memory or Redis) to skip redundant re-execution
@@ -40,6 +41,7 @@ LangConfig includes workflow templates for research and content creation. We're 
 - **Dynamic Tool System** - `langgraph-bigtool` for large tool registries (15+ tools) and middleware-based tool add/remove based on workflow state
 - **Model Capability Profiles** - Auto-detect model capabilities (function calling, structured output, vision, JSON mode) to adapt agent behavior per model
 - **Custom Tool Builder** - Create specialized tools beyond built-in MCP servers
+- **Tools Hub** - Browse tool templates and manage custom tools alongside agents in the Agents area
 - **Privacy Tools** - Configure reusable PII profiles and run PII detection/redaction in workflows
 - **Local Audio Transcription** - Upload audio for local `faster-whisper` transcription and pass transcripts through downstream workflow nodes
 - **GPT Image 2 Tools** - Generate OpenAI image artifacts with supported size, quality, background, and output format controls
@@ -255,8 +257,8 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 1. Click **Agent Builder** from toolbar
 2. Enter name: `"Security Auditor"`
 3. Enter description: `"Reviews code for security vulnerabilities and suggests fixes"`
-4. Click **AI Generate** → GPT-4o suggests:
-   - Model: `gpt-4o` (reasoning capability)
+4. Click **AI Generate** → GPT-5.4 suggests:
+   - Model: `gpt-5.4` (reasoning capability)
    - Temperature: `0.2` (focused, deterministic)
    - Tools: `filesystem`, `grep`, `web_search`
    - System prompt: Specialized security analysis prompt
@@ -399,9 +401,9 @@ Run models locally with zero API costs:
 - langgraph-checkpoint-postgres (state persistence)
 
 **AI/ML:**
-- OpenAI (GPT-4o, GPT-4o-mini, GPT-5, GPT Image 2)
-- Anthropic (Claude 4.5 Sonnet, Claude 4.5 Opus, Claude 4.5 Haiku)
-- Google (Gemini 3 Pro Preview, Gemini 2.5 Flash, Gemini 2.0 Flash)
+- OpenAI (GPT-5.5, GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano, GPT Image 2)
+- Anthropic (Claude Fable 5, Claude Opus 4.8, Claude Sonnet 4.6, Claude Haiku 4.5)
+- Google (Gemini 3.1 Pro Preview, Gemini 2.5 Flash, Gemini 2.5 Flash Lite)
 - DeepSeek (DeepSeek Chat, DeepSeek Reasoner)
 - Local models via Ollama/LM Studio
 - Sentence Transformers (embeddings)

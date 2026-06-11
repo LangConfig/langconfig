@@ -60,9 +60,12 @@ def _resolve_template_string(value: str, state: Dict[str, Any]) -> str:
         var = match.group(1).strip()
 
         if var in ("directive", "input", "query"):
+            # Prefer the live handoff directive (updated after each tool run)
+            # over the original query, so chained tool nodes templating
+            # {{directive}} receive the upstream node's output.
             return str(
-                state.get("query")
-                or state.get("current_directive")
+                state.get("current_directive")
+                or state.get("query")
                 or state.get("original_directive")
                 or ""
             )

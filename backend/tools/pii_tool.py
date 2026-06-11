@@ -713,13 +713,20 @@ def _run_detection_with_profile(
     all_matches: List[PIIMatch] = []
     processed = text
 
-    # Record allowlist spans so we can shield them from other detectors
-    allowed_spans: List[Tuple[int, int]] = []
-    for term in allowlist:
-        if not term:
-            continue
-        for m in re.finditer(re.escape(term), processed, re.IGNORECASE):
-            allowed_spans.append((m.start(), m.end()))
+    # Allowlist spans must be recomputed against the CURRENT text before each
+    # detection pass: every redaction replaces a substring with a placeholder
+    # of different length, shifting all subsequent offsets, so spans captured
+    # against an earlier text version would protect the wrong ranges.
+    def _allowed_spans_in(current: str) -> List[Tuple[int, int]]:
+        spans: List[Tuple[int, int]] = []
+        for term in allowlist:
+            if not term:
+                continue
+            for m in re.finditer(re.escape(term), current, re.IGNORECASE):
+                spans.append((m.start(), m.end()))
+        return spans
+
+    allowed_spans = _allowed_spans_in(processed)
 
     def is_allowed(start: int, end: int) -> bool:
         return any(a <= start and end <= b for a, b in allowed_spans)
@@ -749,7 +756,9 @@ def _run_detection_with_profile(
     for ct in custom_types:
         detector = _make_custom_type_detector(ct)
         ct_matches = detector(processed)
-        # Filter out allowlisted matches
+        # Filter out allowlisted matches — recompute spans against the text
+        # version these match offsets refer to (earlier redactions shifted it)
+        allowed_spans = _allowed_spans_in(processed)
         ct_matches = [m for m in ct_matches if not is_allowed(m["start"], m["end"])]
         if ct_matches:
             # Apply replacements in reverse so positions stay valid
@@ -765,9 +774,9 @@ def _run_detection_with_profile(
             continue
         mw = _get_middleware(pii_type, strategy)
         new_processed, matches = mw._process_content(processed)
-        # Filter out allowlisted matches (re-run detection to figure out which
-        # would-be matches are in protected spans — since middleware already
-        # redacted, check if match value intersects any allowlist span by position)
+        # Filter out allowlisted matches. Match offsets refer to the current
+        # `processed` text, so recompute allowlist spans against it first.
+        allowed_spans = _allowed_spans_in(processed)
         if matches:
             # Keep matches that are NOT inside allowed spans
             safe_matches = [m for m in matches if not is_allowed(m["start"], m["end"])]

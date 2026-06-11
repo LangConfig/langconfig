@@ -20,12 +20,16 @@ export interface ValidationResult {
   warnings: ValidationError[];
 }
 
+// Keep in sync with the control node types handled by the backend executor
+// (backend/core/workflows/executor.py) — none of these require a model.
 const CONTROL_NODE_TYPES = new Set([
   'START_NODE',
   'END_NODE',
   'CONDITIONAL_NODE',
   'LOOP_NODE',
-  'HUMAN_REVIEW_NODE',
+  'APPROVAL_NODE',
+  'OUTPUT_NODE',
+  'CHECKPOINT_NODE',
 ]);
 
 const requiresAgentConfig = (agentType?: string): boolean => {

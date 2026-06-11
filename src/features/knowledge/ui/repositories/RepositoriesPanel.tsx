@@ -141,6 +141,14 @@ const RepositoriesPanel = () => {
     };
   }, [repos, fetchRepos]);
 
+  // Reset selection when switching projects so stale repo/file state from the
+  // previous project doesn't linger and auto-select can re-fire.
+  useEffect(() => {
+    setSelectedRepoId(null);
+    setSelectedPath(null);
+    setRepos([]);
+  }, [activeProjectId]);
+
   // Auto-select first synced repo
   useEffect(() => {
     if (selectedRepoId !== null) return;
@@ -171,8 +179,16 @@ const RepositoriesPanel = () => {
       setBranch('main');
       await fetchRepos();
     } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to add repository.');
+      // 409 (e.g. repo already linked) surfaces as ConflictError from the
+      // api-client interceptor, which carries the backend detail string.
+      if (err?.name === 'ConflictError') {
+        setError(
+          typeof err.detail === 'string' ? err.detail : 'Repository already added to this project.',
+        );
+      } else {
+        const detail = err?.response?.data?.detail;
+        setError(typeof detail === 'string' ? detail : 'Failed to add repository.');
+      }
     } finally {
       setCloning(false);
     }
@@ -186,7 +202,11 @@ const RepositoriesPanel = () => {
     } catch (err: any) {
       // 409 (already syncing) surfaces as ConflictError from the api-client interceptor.
       if (err?.name === 'ConflictError') {
-        setError('Repository is busy. Try again once the current operation finishes.');
+        setError(
+          typeof err.detail === 'string'
+            ? err.detail
+            : 'Repository is busy. Try again once the current operation finishes.',
+        );
       } else {
         const detail = err?.response?.data?.detail;
         setError(typeof detail === 'string' ? detail : 'Sync failed.');
@@ -200,7 +220,7 @@ const RepositoriesPanel = () => {
   const handleDelete = async (repoId: number) => {
     const repo = repos.find((r) => r.id === repoId);
     const name = repo?.repo_name ?? 'this repository';
-    if (!window.confirm(`Remove "${name}"? This deletes the local clone and all indexed content.`)) {
+    if (!window.confirm(`Remove "${name}"? This deletes the local clone. Documents already added to the Knowledge Base are kept.`)) {
       return;
     }
     setDeletingId(repoId);

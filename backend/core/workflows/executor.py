@@ -1110,21 +1110,12 @@ class SimpleWorkflowExecutor:
                     workflow_summary["total_tokens"] += tokens
 
                 # Cost estimation via the model registry (single pricing source).
-                # Stored model strings may carry provider prefixes, so fall back
-                # to a substring match against registry IDs before defaulting.
+                # Stored model strings may carry provider prefixes; the registry
+                # resolves those (exact then longest-substring match) internally.
                 from core.models.registry import model_registry
 
-                def _blended_rate(model_str: str) -> float:
-                    model_str = (model_str or "").lower()
-                    if model_registry.get_model(model_str):
-                        return model_registry.get_blended_cost_per_1m(model_str)
-                    for known_id in model_registry._models:
-                        if known_id in model_str:
-                            return model_registry.get_blended_cost_per_1m(known_id)
-                    return 1.00
-
                 for agent_name, data in workflow_summary["tokens_by_agent"].items():
-                    rate = _blended_rate(data["model"])
+                    rate = model_registry.get_blended_cost_per_1m(data["model"], default=1.00)
                     agent_cost = (data["tokens"] / 1_000_000) * rate
                     data["estimated_cost_usd"] = round(agent_cost, 4)
                     workflow_summary["total_cost_usd"] += agent_cost
@@ -2529,7 +2520,7 @@ When your work is complete, deliver the final result and END."""
 
         Control nodes handle workflow coordination, state management, and output formatting.
         """
-        display_label = node_data.get("label") or control_type
+        display_label = node_data.get("data", {}).get("label") or node_data.get("label") or control_type
 
         async def control_node_executor(state: SimpleWorkflowState) -> Dict[str, Any]:
             """Execute a control node, emitting node lifecycle events around the body."""

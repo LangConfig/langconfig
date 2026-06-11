@@ -429,6 +429,23 @@ class ModelRegistry:
         """Get model information by ID."""
         return self._models.get(model_id)
 
+    def resolve_model_id(self, model_str: str) -> Optional[str]:
+        """Resolve a possibly prefixed/decorated model string to a registry ID.
+
+        Tries an exact match first, then falls back to the LONGEST registered
+        ID that appears as a substring (so 'openai:gpt-5.4-mini' resolves to
+        'gpt-5.4-mini', not 'gpt-5.4'). Returns None when nothing matches.
+        """
+        model_str = (model_str or "").lower()
+        if not model_str:
+            return None
+        if model_str in self._models:
+            return model_str
+        matches = [known_id for known_id in self._models if known_id in model_str]
+        if not matches:
+            return None
+        return max(matches, key=len)
+
     def list_models(self, provider: Optional[ModelProvider] = None) -> List[ModelInfo]:
         """List all models, optionally filtered by provider."""
         models = list(self._models.values())
@@ -554,10 +571,15 @@ class ModelRegistry:
         """
         Blended (input+output averaged) USD cost per 1M tokens.
 
+        Accepts either an exact registry ID or a prefixed/decorated model
+        string (e.g. 'openai:gpt-5.4-mini'), resolved via resolve_model_id.
         Used by consumers that only track a total token count rather than an
         input/output split. Unknown models get the provided default.
         """
         model = self.get_model(model_id)
+        if not model:
+            resolved = self.resolve_model_id(model_id)
+            model = self.get_model(resolved) if resolved else None
         if not model:
             return default
         return (model.cost_per_1m_input + model.cost_per_1m_output) / 2

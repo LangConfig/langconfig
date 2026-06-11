@@ -79,7 +79,7 @@ DEEP_RESEARCH_RECIPE = WorkflowRecipe(
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Expert Research Strategist.
 EXPERTISE: Information architecture, research methodology, query formulation.
@@ -164,7 +164,7 @@ OUTPUT: A detailed summary of findings for the specific sub-question with inline
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.5,
                     "system_prompt": """ROLE: Expert Technical Writer and Research Analyst.
 EXPERTISE: Report writing, information synthesis, technical communication, academic writing standards.
@@ -220,9 +220,9 @@ REVISION MODE (if critique provided):
             "data": {
                 "label": "Report Critic",
                 "agentType": "report_critic",
-                "model": "gpt-5",
+                "model": "gpt-5.4",
                 "config": {
-                    "model": "gpt-5",
+                    "model": "gpt-5.4",
                     "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Meticulous Editor and Quality Assurance Specialist.
@@ -376,9 +376,9 @@ LEARNING_RESEARCH_RECIPE = WorkflowRecipe(
             "data": {
                 "label": "Internal Knowledge Reviewer",
                 "agentType": "learning_internal_reviewer",
-                "model": "gpt-5",
+                "model": "gpt-5.4",
                 "config": {
-                    "model": "gpt-5",
+                    "model": "gpt-5.4",
                     "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Project Knowledge Archivist and Gap Analyst.
@@ -431,7 +431,7 @@ OUTPUT FORMAT:
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: AI Operations Research Strategist.
 
@@ -527,7 +527,7 @@ OUTPUT FORMAT:
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.5,
                     "system_prompt": """ROLE: Senior AI Operations Consultant and Technical Advisor.
 
@@ -583,9 +583,9 @@ OUTPUT FORMAT:
             "data": {
                 "label": "Knowledge Curator",
                 "agentType": "learning_knowledge_curator",
-                "model": "gpt-5",
+                "model": "gpt-5.4",
                 "config": {
-                    "model": "gpt-5",
+                    "model": "gpt-5.4",
                     "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Knowledge Management Specialist (The Learning Loop).
@@ -701,7 +701,7 @@ RESEARCH_CONTENT_EDITOR_RECIPE = WorkflowRecipe(
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.6,
                     "max_tokens": 4000,
                     "system_prompt": """ROLE: Deep Research Specialist.
@@ -749,7 +749,7 @@ After completing your report, hand it over to the Editor who will proofread and 
                 "model": "claude-sonnet-4-6",
                 "config": {
                     "model": "claude-sonnet-4-6",
-                    "fallback_models": ["gpt-5"],
+                    "fallback_models": ["gpt-5.4"],
                     "temperature": 0.7,
                     "max_tokens": 4000,
                     "system_prompt": """ROLE: Professional Editor and Quality Assurance Specialist.

@@ -34,6 +34,7 @@ interface CustomToolBuilderProps {
   existingToolId?: string;
   skipTemplateStep?: boolean;
   initialTemplate?: {
+    templateId?: string;
     toolType: string;
     name: string;
     description: string;
@@ -100,9 +101,12 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
       setTags(initialTemplate.tags);
       setImplementationConfig(initialTemplate.implementationConfig);
       setInputSchema(initialTemplate.inputSchema);
-      // Set a dummy template object so the form knows what type it is
+      // Set a dummy template object so the form knows what type it is.
+      // template_id must be the real backend template id (a ToolTemplateType
+      // value) or empty so handleSave sends template_type: null — a tool-type
+      // string here would fail backend enum validation with a 500.
       setSelectedTemplate({
-        template_id: initialTemplate.toolType,
+        template_id: initialTemplate.templateId || '',
         name: initialTemplate.name,
         description: initialTemplate.description,
         category: initialTemplate.category,

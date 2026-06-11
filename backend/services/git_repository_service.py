@@ -145,7 +145,14 @@ async def _run_git(
     asyncio.create_subprocess_exec raises NotImplementedError under the
     WindowsSelectorEventLoopPolicy that main.py installs, so blocking
     subprocess.run is used via asyncio.to_thread instead.
+
+    Always disables interactive credential prompts so auth failures fail
+    fast with a clear stderr message instead of hanging until the
+    subprocess timeout (e.g. private repo with no GITHUB_TOKEN).
     """
+    run_env = dict(env) if env is not None else os.environ.copy()
+    run_env["GIT_TERMINAL_PROMPT"] = "0"
+    run_env.setdefault("GCM_INTERACTIVE", "never")
     return await asyncio.to_thread(
         subprocess.run,
         cmd,
@@ -153,7 +160,7 @@ async def _run_git(
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
-        env=env,
+        env=run_env,
     )
 
 
@@ -228,6 +235,15 @@ async def clone_repo(repo_id: int) -> dict:
             db.commit()
             raise RuntimeError(f"git clone failed: {error_msg}")
 
+        # Strip the token from the on-disk remote URL — git clone persists the
+        # authed URL in .git/config otherwise (mirrors pull_repo's cleanup).
+        if token:
+            try:
+                clean_cmd = ["git", "-C", str(repo_path), "remote", "set-url", "origin", repo.clone_url]
+                await _run_git(clean_cmd)
+            except Exception:
+                logger.warning("Failed to restore clean remote URL after clone")
+
         # Get HEAD commit hash
         commit_hash = await _get_head_commit(repo_path)
 
@@ -236,7 +252,7 @@ async def clone_repo(repo_id: int) -> dict:
         repo.last_commit_hash = commit_hash
         repo.last_synced_at = datetime.now(timezone.utc)
         repo.sync_status = RepoSyncStatus.SYNCED
-        repo.indexed_files_count = _count_browsable_files(repo_path)
+        repo.indexed_files_count = await asyncio.to_thread(_count_browsable_files, repo_path)
         db.commit()
 
         logger.info(f"Cloned {repo.repo_name} to {repo_path} (commit: {commit_hash[:7]})")
@@ -315,7 +331,7 @@ async def pull_repo(repo_id: int) -> dict:
         repo.last_commit_hash = commit_hash
         repo.last_synced_at = datetime.now(timezone.utc)
         repo.sync_status = RepoSyncStatus.SYNCED
-        repo.indexed_files_count = _count_browsable_files(repo_path)
+        repo.indexed_files_count = await asyncio.to_thread(_count_browsable_files, repo_path)
         db.commit()
 
         logger.info(f"Pulled {repo.repo_name} (commit: {commit_hash[:7]})")

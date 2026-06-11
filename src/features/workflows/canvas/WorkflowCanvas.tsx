@@ -715,8 +715,14 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     }
   }, [initialTab]);
 
+  // Auto-switch to the Chat tab once, when a run starts. Only fire on the
+  // non-running -> running transition so the user can manually return to the
+  // Studio tab to watch node execution while the workflow is still running.
+  const prevExecutionStateRef = useRef(executionStatus.state);
   useEffect(() => {
-    if (executionStatus.state === 'running' && activeTab === 'studio') {
+    const wasRunning = prevExecutionStateRef.current === 'running';
+    prevExecutionStateRef.current = executionStatus.state;
+    if (executionStatus.state === 'running' && !wasRunning && activeTab === 'studio') {
       handleTabChange('chat');
     }
   }, [activeTab, executionStatus.state, handleTabChange]);

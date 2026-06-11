@@ -1332,7 +1332,8 @@ class ToolFactory:
                 "quality": resolved_quality,
                 "background": resolved_background,
                 "output_format": resolved_format,
-                "response_format": "b64_json",
+                # NOTE: no "response_format" — gpt-image models return b64_json
+                # unconditionally and reject the parameter with a 400 error.
             }
             headers = {
                 "Authorization": f"Bearer {api_key}",

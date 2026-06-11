@@ -352,21 +352,27 @@ async def update_workflow(
         )
 
 
+def _escape_like_pattern(value: str) -> str:
+    """Escape LIKE/ILIKE wildcards so user input matches literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _unique_workflow_name(db: Session, requested_name: str) -> str:
     """Return a workflow name that does not collide with existing profiles."""
     base_name = requested_name.strip()
     if not base_name:
         base_name = "Untitled Workflow"
 
+    escaped_base = _escape_like_pattern(base_name)
     existing = db.query(WorkflowProfile).filter(
-        WorkflowProfile.name.ilike(base_name)
+        WorkflowProfile.name.ilike(escaped_base, escape="\\")
     ).first()
     if not existing:
         return base_name
 
     counter = 2
     while db.query(WorkflowProfile).filter(
-        WorkflowProfile.name.ilike(f"{base_name} ({counter})")
+        WorkflowProfile.name.ilike(f"{escaped_base} ({counter})", escape="\\")
     ).first():
         counter += 1
     return f"{base_name} ({counter})"
@@ -1716,21 +1722,12 @@ async def get_workflow_cost_metrics(
                 tool_usage[tool_name] += 1
 
         # Calculate costs via the model registry (single pricing source).
-        # Stored model strings may carry provider prefixes, so fall back to a
-        # substring match against registry IDs before defaulting.
+        # Stored model strings may carry provider prefixes; the registry
+        # resolves those (exact then longest-substring match) internally.
         from core.models.registry import model_registry
 
-        def _blended_rate(model_str: str) -> float:
-            model_str = (model_str or "").lower()
-            if model_registry.get_model(model_str):
-                return model_registry.get_blended_cost_per_1m(model_str)
-            for known_id in model_registry._models:
-                if known_id in model_str:
-                    return model_registry.get_blended_cost_per_1m(known_id)
-            return 1.00
-
         for agent_name, data in agent_costs.items():
-            rate = _blended_rate(data.get("model", "unknown"))
+            rate = model_registry.get_blended_cost_per_1m(data.get("model", "unknown"), default=1.00)
             agent_cost = (data["tokens"] / 1_000_000) * rate
             data["cost"] = round(agent_cost, 4)
             total_cost += agent_cost

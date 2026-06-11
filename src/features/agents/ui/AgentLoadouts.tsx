@@ -16,6 +16,7 @@ import apiClient, { ConflictErrorClass } from '../../../lib/api-client';
 import ConflictDialog from '../../workflows/ui/ConflictDialog';
 import { useNotification } from '../../../hooks/useNotification';
 import { useAvailableModels } from '../../../hooks/useAvailableModels';
+import { getModelDisplayName } from '../../../lib/modelDisplayNames';
 import { AVAILABLE_TOOLS } from '../data/agentTools';
 import type { CustomTool, Skill, SelectedItem as SelectedItemOf } from './agentLoadoutTypes';
 
@@ -518,6 +519,13 @@ print(result)
                     >
                       {availableModelsList.length > 0 ? (
                         <>
+                          {/* Retired model: keep the saved value visible instead of
+                              silently falling back to the first option */}
+                          {config.model && !availableModelsList.some(m => m.id === config.model) && (
+                            <option value={config.model} disabled>
+                              {getModelDisplayName(config.model)} (retired)
+                            </option>
+                          )}
                           {/* Cloud Models */}
                           <optgroup label="Cloud Models">
                             {availableModelsList.filter(m => m.type === 'cloud').map(model => (
@@ -1056,13 +1064,33 @@ print(result)
                                     }}
                                   >
                                     <option value="">Use parent agent model</option>
-                                    <option value="openai:gpt-5.5">GPT-5.5</option>
-                                    <option value="openai:gpt-5.4">GPT-5.4</option>
-                                    <option value="openai:gpt-5.4-mini">GPT-5.4 Mini</option>
-                                    <option value="openai:gpt-5.4-nano">GPT-5.4 Nano</option>
-                                    <option value="anthropic:claude-opus-4-8">Claude Opus 4.8</option>
-                                    <option value="anthropic:claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                                    <option value="anthropic:claude-haiku-4-5">Claude Haiku 4.5</option>
+                                    {/* Keep a saved model visible even if it is no longer
+                                        in the available catalog */}
+                                    {subagent.model && !availableModelsList.some(m => m.id === subagent.model) && (
+                                      <option value={subagent.model} disabled>
+                                        {getModelDisplayName(subagent.model)} (retired)
+                                      </option>
+                                    )}
+                                    {availableModelsList.length > 0 ? (
+                                      availableModelsList.map(model => (
+                                        <option key={model.id} value={model.id}>
+                                          {model.name}
+                                        </option>
+                                      ))
+                                    ) : (
+                                      <>
+                                        <option value="gpt-5.5">GPT-5.5</option>
+                                        <option value="gpt-5.4">GPT-5.4</option>
+                                        <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                                        <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
+                                        <option value="claude-fable-5">Claude Fable 5</option>
+                                        <option value="claude-opus-4-8">Claude Opus 4.8</option>
+                                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                        <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                      </>
+                                    )}
                                   </select>
                                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
                                     Different models excel at different tasks (e.g., use GPT-5.4 Mini for faster analysis)
@@ -2553,6 +2581,9 @@ const AgentLoadouts = () => {
   const fetchSkillDetail = async (skillId: string) => {
     try {
       const res = await apiClient.get(`/api/skills/${skillId}`);
+      // Skills render in the agents-mode center panel; leave Tools mode so
+      // the selection is actually visible.
+      setCenterMode('agents');
       // Update selectedItem with full skill details
       setSelectedItem({ type: 'skill', data: res.data });
     } catch (e) {
@@ -2769,6 +2800,7 @@ const AgentLoadouts = () => {
     setSelectedItem({ type: 'template', category: 'tool' });
 
     let initialTemplate = {
+      templateId: template.template_id,
       toolType: template.tool_type,
       name: template.name,
       description: template.description,
@@ -2782,13 +2814,16 @@ const AgentLoadouts = () => {
       const res = await apiClient.getToolTemplate(template.template_id);
       const full = res.data;
       if (full) {
+        // The template detail's config_template is a wrapper:
+        // { tool_type, template_type, implementation_config: {...} }
         initialTemplate = {
+          templateId: full.template_id || template.template_id,
           toolType: full.tool_type || template.tool_type,
           name: full.name || template.name,
           description: full.description || template.description,
           category: full.category || template.category,
           tags: full.tags || [],
-          implementationConfig: full.config_template || {},
+          implementationConfig: full.config_template?.implementation_config || {},
           inputSchema: full.input_schema_template || { type: 'object', properties: {} },
         };
       }
@@ -3024,7 +3059,12 @@ const AgentLoadouts = () => {
                           {regularAgents.map(agent => (
                             <div
                               key={agent.id}
-                              onClick={() => setSelectedItem({ type: 'agent', data: agent })}
+                              onClick={() => {
+                                // Agents render in the agents-mode center panel; leave
+                                // Tools mode so the selection is actually visible.
+                                setCenterMode('agents');
+                                setSelectedItem({ type: 'agent', data: agent });
+                              }}
                               className={`group p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${selectedItem?.type === 'agent' && selectedItem.data.id === agent.id
                                 ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
                                 : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50'
@@ -3087,7 +3127,12 @@ const AgentLoadouts = () => {
                           {deepAgents.map(agent => (
                             <div
                               key={agent.id}
-                              onClick={() => setSelectedItem({ type: 'agent', data: agent })}
+                              onClick={() => {
+                                // Agents render in the agents-mode center panel; leave
+                                // Tools mode so the selection is actually visible.
+                                setCenterMode('agents');
+                                setSelectedItem({ type: 'agent', data: agent });
+                              }}
                               className={`group p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${selectedItem?.type === 'agent' && selectedItem.data.id === agent.id
                                 ? 'bg-white dark:bg-gray-800 border-primary shadow-sm ring-1 ring-primary/20'
                                 : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-primary/50'

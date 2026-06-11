@@ -104,7 +104,7 @@ class SequentialConfig(BaseModel):
         json_schema_extra = {
             "example": {
                 "max_retries": 3,
-                "default_model": "gpt-5.4",  # GPT-4o for standard tasks
+                "default_model": "gpt-5.4",  # GPT-5.4 for standard tasks
                 "temperature": 0.7,
                 "enable_qa_validation": True,
                 "strict_qa_threshold": 0.7,
@@ -134,7 +134,7 @@ class RomanLegionTier(BaseModel):
     
     model: ModelChoice = Field(
         ...,
-        description="LLM model identifier for this tier (e.g., 'gpt-5.4-mini', 'gpt-5.4', 'o1-mini')"
+        description="LLM model identifier for this tier (e.g., 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5')"
     )
     
     max_retries: int = Field(
@@ -234,7 +234,7 @@ class RomanLegionConfig(BaseModel):
                 "tiers": [
                     {"name": "Hastati", "model": "gpt-5.4-mini", "max_retries": 2, "temperature": 0.7},
                     {"name": "Principes", "model": "gpt-5.4", "max_retries": 1, "temperature": 0.7},
-                    {"name": "Triarii", "model": "claude-sonnet-4-20250514", "max_retries": 1, "temperature": 0.5}
+                    {"name": "Triarii", "model": "claude-sonnet-4-6", "max_retries": 1, "temperature": 0.5}
                 ],
                 "enable_tier_escalation": True,
                 "enable_qa_gate": True,
@@ -278,7 +278,7 @@ class QuorumSensingConfig(BaseModel):
     )
     
     models: List[str] = Field(
-        default=["gpt-5.4", "gpt-5.4", "gpt-5.4"],  # GPT-4o for parallel execution
+        default=["gpt-5.4", "gpt-5.4", "gpt-5.4"],  # GPT-5.4 for parallel execution
         min_items=1,
         description="List of models to use for parallel agents (can repeat for diversity through randomness)"
     )
@@ -347,7 +347,7 @@ class QuorumSensingConfig(BaseModel):
             "example": {
                 "parallel_agents": 3,
                 "minimum_quorum": 2,
-                "models": ["gpt-5.4", "claude-sonnet-3.5", "gpt-5.4"],
+                "models": ["gpt-5.4", "claude-sonnet-4-6", "gpt-5.4"],
                 "consensus_method": "WEIGHTED_SCORE",
                 "timeout_seconds": 600,
                 "enable_diversity": True,

@@ -51,7 +51,9 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
 
   const cycleModel = useCallback((direction: 1 | -1) => {
     if (isControlNode) return;
-    const options = cloudModels.length > 0 ? cloudModels : localModels;
+    // Cycle across the combined list so nodes on a local model stay anchored
+    // to their actual position instead of jumping to the cloud list.
+    const options = [...cloudModels, ...localModels];
     if (options.length === 0) return;
 
     const currentIndex = options.findIndex((model) => model.id === modelName);
@@ -295,11 +297,12 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
                 setShowModelDropdown(!showModelDropdown);
               }}
               onWheel={(e) => {
-                e.preventDefault();
+                // No preventDefault: React attaches wheel listeners as passive.
+                // The `nowheel` class tells ReactFlow to skip canvas zoom here.
                 e.stopPropagation();
                 cycleModel(e.deltaY > 0 ? 1 : -1);
               }}
-              className="text-xs font-medium px-3 py-1 rounded-full nodrag"
+              className="text-xs font-medium px-3 py-1 rounded-full nodrag nowheel"
               title="Click to choose a model. Scroll to cycle models."
               style={{
                 color: isDarkTheme ? 'var(--color-text-muted)' : 'var(--color-background-light)',

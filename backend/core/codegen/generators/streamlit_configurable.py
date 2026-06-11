@@ -170,9 +170,13 @@ MIDDLEWARE = {{
 MODELS = {{
     "gpt-5.5": {{"provider": "openai", "display": "GPT-5.5"}},
     "gpt-5.4": {{"provider": "openai", "display": "GPT-5.4"}},
+    "gpt-5.4-mini": {{"provider": "openai", "display": "GPT-5.4 Mini"}},
+    "claude-fable-5": {{"provider": "anthropic", "display": "Claude Fable 5"}},
     "claude-opus-4-8": {{"provider": "anthropic", "display": "Claude Opus 4.8"}},
+    "claude-sonnet-4-6": {{"provider": "anthropic", "display": "Claude Sonnet 4.6"}},
     "claude-haiku-4-5": {{"provider": "anthropic", "display": "Claude Haiku 4.5"}},
     "gemini-3.1-pro-preview": {{"provider": "google", "display": "Gemini 3.1 Pro"}},
+    "gemini-2.5-flash": {{"provider": "google", "display": "Gemini 2.5 Flash"}},
 }}
 
 # ============================================================

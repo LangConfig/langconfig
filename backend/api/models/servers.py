@@ -1,6 +1,7 @@
 """
 Model server API for local LLM discovery.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -117,7 +118,8 @@ async def create_server(server_data: ModelServerCreate, db: Session = Depends(ge
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    sync_result = discovery_service.sync_server(server, db)
+    # sync_server performs blocking network discovery — run it off the event loop
+    sync_result = await asyncio.to_thread(discovery_service.sync_server, server, db)
     if sync_result.errors:
         servers = get_model_servers(db)
         for item in servers:
@@ -159,7 +161,8 @@ async def sync_server(server_id: str, db: Session = Depends(get_db)):
             detail=f"Model server with ID {server_id} not found",
         )
 
-    result = discovery_service.sync_server(target, db)
+    # sync_server performs blocking network discovery — run it off the event loop
+    result = await asyncio.to_thread(discovery_service.sync_server, target, db)
     for server in servers:
         if server.get("id") == server_id:
             server["last_sync_error"] = "; ".join(result.errors) if result.errors else None

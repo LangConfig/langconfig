@@ -573,11 +573,11 @@ from typing import Dict
 class CostTracker:
     """Track LLM costs across runs."""
 
-    # Pricing per 1M tokens (as of 2024)
+    # Pricing per 1M tokens (as of 2026)
     PRICING: Dict[str, Dict[str, float]] = {
-        "gpt-5.4": {"input": 5.00, "output": 15.00},
-        "gpt-5.4-mini": {"input": 0.15, "output": 0.60},
-        "claude-3-5-sonnet": {"input": 3.00, "output": 15.00}
+        "gpt-5.4": {"input": 2.50, "output": 15.00},
+        "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
+        "claude-sonnet-4-6": {"input": 3.00, "output": 15.00}
     }
 
     total_cost: float = 0.0
@@ -650,7 +650,7 @@ client = Anthropic()
 
 # Mark blocks for caching with cache_control
 response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
+    model="claude-sonnet-4-6",
     max_tokens=1024,
     system=[
         {
