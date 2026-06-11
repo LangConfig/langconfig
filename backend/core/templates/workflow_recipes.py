@@ -76,9 +76,9 @@ DEEP_RESEARCH_RECIPE = WorkflowRecipe(
             "data": {
                 "label": "Research Planner",
                 "agentType": "deep_research_planner",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Expert Research Strategist.
@@ -119,9 +119,9 @@ CRITICAL: Your response must be ONLY the JSON array, nothing else.""",
             "data": {
                 "label": "Field Researcher",
                 "agentType": "field_researcher",
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.4-mini",
                 "config": {
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.4-mini",
                     "fallback_models": ["gpt-5", "gemini-2.0-flash"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Diligent Data Collector and Analyst.
@@ -161,9 +161,9 @@ OUTPUT: A detailed summary of findings for the specific sub-question with inline
             "data": {
                 "label": "Report Writer",
                 "agentType": "report_writer",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.5,
                     "system_prompt": """ROLE: Expert Technical Writer and Research Analyst.
@@ -223,7 +223,7 @@ REVISION MODE (if critique provided):
                 "model": "gpt-5",
                 "config": {
                     "model": "gpt-5",
-                    "fallback_models": ["claude-sonnet-4-5-20250929"],
+                    "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Meticulous Editor and Quality Assurance Specialist.
 EXPERTISE: Technical editing, fact-checking, academic standards, research methodology.
@@ -379,7 +379,7 @@ LEARNING_RESEARCH_RECIPE = WorkflowRecipe(
                 "model": "gpt-5",
                 "config": {
                     "model": "gpt-5",
-                    "fallback_models": ["claude-sonnet-4-5-20250929"],
+                    "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Project Knowledge Archivist and Gap Analyst.
 
@@ -428,9 +428,9 @@ OUTPUT FORMAT:
             "data": {
                 "label": "Learning Research Planner",
                 "agentType": "learning_research_planner",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: AI Operations Research Strategist.
@@ -470,9 +470,9 @@ CRITICAL: Output must be valid JSON that can be parsed. No preamble, no markdown
             "data": {
                 "label": "Specialized Researcher",
                 "agentType": "learning_external_researcher",
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.4-mini",
                 "config": {
-                    "model": "gpt-4o-mini",
+                    "model": "gpt-5.4-mini",
                     "fallback_models": ["gpt-5", "gemini-2.0-flash"],
                     "temperature": 0.3,
                     "system_prompt": """ROLE: Technical Research Specialist.
@@ -524,9 +524,9 @@ OUTPUT FORMAT:
             "data": {
                 "label": "Knowledge Synthesizer",
                 "agentType": "learning_synthesizer",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.5,
                     "system_prompt": """ROLE: Senior AI Operations Consultant and Technical Advisor.
@@ -586,7 +586,7 @@ OUTPUT FORMAT:
                 "model": "gpt-5",
                 "config": {
                     "model": "gpt-5",
-                    "fallback_models": ["claude-sonnet-4-5-20250929"],
+                    "fallback_models": ["claude-sonnet-4-6"],
                     "temperature": 0.2,
                     "system_prompt": """ROLE: Knowledge Management Specialist (The Learning Loop).
 
@@ -698,9 +698,9 @@ RESEARCH_CONTENT_EDITOR_RECIPE = WorkflowRecipe(
             "data": {
                 "label": "Deep Researcher",
                 "agentType": "EXECUTE",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.6,
                     "max_tokens": 4000,
@@ -746,9 +746,9 @@ After completing your report, hand it over to the Editor who will proofread and 
             "data": {
                 "label": "Editor",
                 "agentType": "EXECUTE",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-4-6",
                 "config": {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                     "fallback_models": ["gpt-5"],
                     "temperature": 0.7,
                     "max_tokens": 4000,

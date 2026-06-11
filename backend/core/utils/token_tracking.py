@@ -13,7 +13,7 @@ for all LangChain/LangGraph agent executions.
 import logging
 from typing import Dict, Any, List, Optional, Union
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 # IMPORTANT: LangChain v1.0 - callbacks moved to langchain_core
 from langchain_core.callbacks import BaseCallbackHandler
@@ -305,7 +305,7 @@ def create_token_tracking_callback(
         Configured TokenTrackingCallback instance
     """
     if not session_id:
-        session_id = f"{task_id}_{datetime.utcnow().timestamp()}"
+        session_id = f"{task_id}_{datetime.now(timezone.utc).timestamp()}"
     
     return TokenTrackingCallback(
         session_id=session_id,

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime
 
 from db.database import get_db
 from models.core import Project, ProjectStatus, IndexingStatus
@@ -37,6 +38,8 @@ class ProjectResponse(BaseModel):
     configuration: dict
     indexing_status: IndexingStatus
     workflow_profile_id: Optional[int]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -83,7 +86,7 @@ async def create_project(
         raise HTTPException(status_code=400, detail="Project with this name already exists")
 
     # Set default configuration if not provided
-    config = project.configuration or {"default_model": "gpt-4o"}
+    config = project.configuration or {"default_model": "gpt-5.4"}
 
     db_project = Project(
         name=project.name,

@@ -30,8 +30,10 @@ class ToolTemplateType(str, Enum):
     IMAGE_OPENAI_DALLE3 = "image_openai_dalle3"
     IMAGE_OPENAI_SORA = "image_openai_sora"
     IMAGE_OPENAI_GPT_IMAGE_1_5 = "image_openai_gpt_image_1_5"  # GPT-Image-1.5 (December 2025)
+    IMAGE_OPENAI_GPT_IMAGE_2 = "image_openai_gpt_image_2"  # GPT Image 2
     IMAGE_GEMINI_IMAGEN3 = "image_gemini_imagen3"
     IMAGE_GEMINI_NANO_BANANA = "image_gemini_nano_banana"  # Nano Banana (Gemini 2.5 Flash Image)
+    IMAGE_GEMINI_NANO_BANANA_2 = "image_gemini_nano_banana_2"  # Nano Banana 2 (Gemini 3.1 Flash Image)
     VIDEO_GEMINI_VEO3 = "video_gemini_veo3"
     VIDEO_GEMINI_VEO31 = "video_gemini_veo31"
     DATABASE_POSTGRES = "database_postgres"

@@ -6,16 +6,15 @@
 """Test PostgreSQL connection"""
 from db.database import engine
 from sqlalchemy import text
+import pytest
 
 def test_connection():
     try:
         with engine.connect() as conn:
-            result = conn.execute(text('SELECT 1'))
+            conn.execute(text('SELECT 1'))
             print('PostgreSQL connection successful')
-            return True
     except Exception as e:
-        print(f'PostgreSQL connection failed: {e}')
-        return False
+        pytest.skip(f'PostgreSQL connection unavailable: {e}')
 
 if __name__ == '__main__':
     test_connection()

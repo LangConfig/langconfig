@@ -92,8 +92,8 @@ def get_compaction_llm() -> BaseChatModel:
     global _compaction_llm
 
     if _compaction_llm is None:
-        # Default to gpt-4o-mini for fast, cheap compression
-        model_name = getattr(settings, 'COMPACTOR_MODEL_NAME', 'gpt-4o-mini')
+        # Default to gpt-5.4-mini for fast, cheap compression
+        model_name = getattr(settings, 'COMPACTOR_MODEL_NAME', 'gpt-5.4-mini')
 
         logger.info(f"Initializing Context Compactor LLM: {model_name}")
 

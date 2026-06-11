@@ -26,6 +26,7 @@ from typing import List, Dict, Any
 import logging
 
 from core.agents.factory import AgentFactory
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from core.utils.token_tracking import create_token_tracking_callback
 from models.agent_config_schema import (
     AgentConfigV2,
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 def basic_agent_config():
     """Basic agent configuration for testing."""
     return {
-        "model": "claude-haiku-4-5-20251015",
+        "model": "claude-haiku-4-5",
         "temperature": 0.7,
         "max_tokens": 4096,
         "system_prompt": "You are a helpful AI assistant.",
@@ -73,7 +74,7 @@ def complex_agent_config():
         "streaming": True,
         "enable_parallel_tools": True,
         "enable_memory": False,
-        "fallback_models": ["claude-haiku-4-5-20251015"],
+        "fallback_models": ["claude-haiku-4-5"],
         "interrupt_before": ["agent"],
         "interrupt_after": ["tools"],
     }
@@ -83,7 +84,7 @@ def complex_agent_config():
 def routing_agent_config():
     """Agent configuration with dynamic model routing enabled."""
     return {
-        "model": "claude-haiku-4-5-20251015",
+        "model": "claude-haiku-4-5",
         "temperature": 0.7,
         "system_prompt": "Complex reasoning task.",
         "native_tools": ["web_search"] * 10,  # Many tools suggest complex task
@@ -94,7 +95,7 @@ def routing_agent_config():
 
 
 # =============================================================================
-Critical Bug Fixes Tests
+# Critical Bug Fixes Tests
 # =============================================================================
 
 class TestCriticalFixes:
@@ -164,7 +165,7 @@ class TestCriticalFixes:
         """Test enhanced configuration validation."""
         # Test invalid temperature
         invalid_config = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "temperature": 5.0,  # Invalid: > 2.0
             "system_prompt": "Test"
         }
@@ -175,7 +176,7 @@ class TestCriticalFixes:
 
         # Test invalid max_tokens
         invalid_config2 = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "max_tokens": 1000000,  # Invalid: > 500000
             "system_prompt": "Test"
         }
@@ -207,7 +208,7 @@ class TestCriticalFixes:
 
 
 # =============================================================================
-Schema & Architecture Tests
+# Schema & Architecture Tests
 # =============================================================================
 
 class TestSchemaV2:
@@ -228,7 +229,7 @@ class TestSchemaV2:
     def test_v1_to_v2_migration(self):
         """Test migration from V1 to V2 config format."""
         v1_config = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "native_tools": ["web_search"],
             "cli_tools": ["git"],
             "custom_tools": ["my_tool"],
@@ -244,7 +245,7 @@ class TestSchemaV2:
     def test_agent_config_v2_validation(self):
         """Test AgentConfigV2 Pydantic validation."""
         config = AgentConfigV2(
-            model="claude-haiku-4-5-20251015",
+            model="claude-haiku-4-5",
             temperature=0.7,
             tools=ToolConfig(native=["web_search"])
         )
@@ -255,7 +256,7 @@ class TestSchemaV2:
     def test_config_normalizer(self):
         """Test ConfigNormalizer utility."""
         v1_config = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "native_tools": ["web_search"],
         }
 
@@ -268,7 +269,7 @@ class TestSchemaV2:
 
 
 # =============================================================================
-Dynamic Model Routing Tests
+# Dynamic Model Routing Tests
 # =============================================================================
 
 class TestModelRouting:
@@ -279,7 +280,7 @@ class TestModelRouting:
         assert len(model_registry._models) > 0, "Registry should have models"
 
         # Test getting a model
-        haiku = model_registry.get_model("claude-haiku-4-5-20251015")
+        haiku = model_registry.get_model("claude-haiku-4-5")
         assert haiku is not None, "Should find Haiku model"
         assert haiku.display_name == "Claude Haiku 4.5", "Should have correct name"
 
@@ -309,7 +310,7 @@ class TestModelRouting:
         router = ModelRouter()
 
         selected = router.route(
-            original_model="claude-opus-4-5-20250514",
+            original_model="claude-opus-4-8",
             context_length=1000,
             tool_count=2,
             strategy="cost_optimized",
@@ -318,7 +319,7 @@ class TestModelRouting:
 
         # Should route to cheaper model for simple task
         selected_info = model_registry.get_model(selected)
-        opus_info = model_registry.get_model("claude-opus-4-5-20250514")
+        opus_info = model_registry.get_model("claude-opus-4-8")
 
         assert selected_info.cost_per_1m_input <= opus_info.cost_per_1m_input, \
             "Should select cheaper or equal cost model"
@@ -328,7 +329,7 @@ class TestModelRouting:
         router = ModelRouter()
 
         selected = router.route(
-            original_model="claude-haiku-4-5-20251015",
+            original_model="claude-haiku-4-5",
             context_length=50000,
             tool_count=15,
             strategy="performance_optimized",
@@ -341,8 +342,13 @@ class TestModelRouting:
             "Performance-optimized should select high quality model"
 
     @pytest.mark.asyncio
-    async def test_routing_integration_in_agent_factory(self, routing_agent_config):
+    async def test_routing_integration_in_agent_factory(self, routing_agent_config, monkeypatch):
         """Test model routing integration in agent factory."""
+        async def fake_llm_factory(*args, **kwargs):
+            return FakeListChatModel(responses=["routing ok"])
+
+        monkeypatch.setattr(AgentFactory, "_create_llm_with_fallbacks", fake_llm_factory)
+
         agent_graph, tools, callbacks = await AgentFactory.create_agent(
             agent_config=routing_agent_config,
             project_id=1,
@@ -378,7 +384,7 @@ class TestWorkflowIntegration:
     async def test_agent_with_multiple_tools(self):
         """Test agent creation with multiple tools for parallel execution."""
         config = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "native_tools": ["web_search", "calculator", "file_read"],
             "enable_parallel_tools": True,
             "streaming": True,
@@ -406,14 +412,14 @@ class TestValidationAndErrors:
         """Test that model registry validates known models."""
         from core.agents.factory import SUPPORTED_MODELS
 
-        assert "claude-haiku-4-5-20251015" in SUPPORTED_MODELS, "Haiku should be supported"
-        assert "claude-opus-4-5-20250514" in SUPPORTED_MODELS, "Opus should be supported"
-        assert "gpt-5-turbo" in SUPPORTED_MODELS, "GPT-5 Turbo should be supported"
+        assert "claude-haiku-4-5" in SUPPORTED_MODELS, "Haiku should be supported"
+        assert "claude-opus-4-8" in SUPPORTED_MODELS, "Opus should be supported"
+        assert "gpt-5.4" in SUPPORTED_MODELS, "GPT-5 Turbo should be supported"
 
     def test_validation_catches_mutual_exclusivity(self):
         """Test that validation catches structured output + tools conflict."""
         config = {
-            "model": "claude-haiku-4-5-20251015",
+            "model": "claude-haiku-4-5",
             "enable_structured_output": True,
             "native_tools": ["web_search"],
         }

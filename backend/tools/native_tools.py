@@ -87,6 +87,23 @@ TOOL_NAME_MAP = {
     "sequential_thinking": "reasoning_chain",
     "thinking": "reasoning_chain",
     "reasoning": "reasoning_chain",
+    "calculator": "calculator",
+    "calculate": "calculator",
+
+    # Privacy/audio/image tools
+    "pii": "pii_redact",
+    "redact": "pii_redact",
+    "anonymize": "pii_redact",
+    "pii_redact": "pii_redact",
+    "pii_detect": "pii_detect",
+    "detect_pii": "pii_detect",
+    "pii_scan": "pii_detect",
+    "transcribe": "audio_transcribe",
+    "stt": "audio_transcribe",
+    "speech_to_text": "audio_transcribe",
+    "audio_transcribe": "audio_transcribe",
+    "generate_image": "generate_image",
+    "image_generation": "generate_image",
 }
 
 
@@ -1244,6 +1261,48 @@ Note: This is a reasoning framework. The agent should fill in the actual analysi
     return reasoning_template
 
 
+@tool
+def calculator(expression: str) -> str:
+    """
+    Evaluate a simple arithmetic expression.
+
+    Supports numbers, parentheses, and basic arithmetic operators. This is
+    intentionally small and does not execute names, function calls, or imports.
+    """
+    import ast
+    import operator
+
+    operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    def eval_node(node):
+        if isinstance(node, ast.Expression):
+            return eval_node(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in operators:
+            return operators[type(node.op)](eval_node(node.left), eval_node(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in operators:
+            return operators[type(node.op)](eval_node(node.operand))
+        raise ValueError("Only arithmetic expressions are supported")
+
+    try:
+        parsed = ast.parse(expression, mode="eval")
+        result = eval_node(parsed)
+        return str(result)
+    except Exception as e:
+        return f"Error calculating expression: {e}"
+
+
 # =============================================================================
 # Subagent Delegation Tools
 # =============================================================================
@@ -1301,6 +1360,101 @@ configured, this task will be executed by the main agent."""
 
 
 # =============================================================================
+# Image Generation Tool
+# =============================================================================
+
+@tool
+async def generate_image(
+    prompt: str,
+    size: str = "auto",
+    quality: str = "auto",
+    background: str = "auto",
+    output_format: str = "png",
+) -> str:
+    """
+    Generate an image with OpenAI GPT Image 2 and surface it as a UI artifact.
+
+    Args:
+        prompt: Detailed image generation prompt.
+        size: Output size. Use auto, 1024x1024, 1536x1024, or 1024x1536.
+        quality: Output quality. Use auto, low, medium, or high.
+        background: Background handling. Use auto, transparent, or opaque.
+        output_format: Image format. Use png, jpeg, or webp.
+    """
+    api_key = os.getenv("OPENAI_API_KEY") or ""
+    if not api_key:
+        return "Error: OpenAI API key is required. Set OPENAI_API_KEY in backend/.env."
+
+    valid_sizes = {"auto", "1024x1024", "1536x1024", "1024x1536"}
+    valid_quality = {"auto", "low", "medium", "high"}
+    valid_background = {"auto", "transparent", "opaque"}
+    valid_formats = {"png", "jpeg", "webp"}
+
+    if size not in valid_sizes:
+        return f"Error: size must be one of: {', '.join(sorted(valid_sizes))}"
+    if quality not in valid_quality:
+        return f"Error: quality must be one of: {', '.join(sorted(valid_quality))}"
+    if background not in valid_background:
+        return f"Error: background must be one of: {', '.join(sorted(valid_background))}"
+    if output_format not in valid_formats:
+        return f"Error: output_format must be one of: {', '.join(sorted(valid_formats))}"
+
+    payload = {
+        "model": "gpt-image-2",
+        "prompt": prompt,
+        "size": size,
+        "quality": quality,
+        "background": background,
+        "output_format": output_format,
+        "response_format": "b64_json",
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/images/generations",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        image = (data.get("data") or [{}])[0]
+        b64_data = image.get("b64_json")
+        if not b64_data:
+            return "Error: GPT Image 2 did not return image data."
+
+        mime_type = f"image/{output_format}"
+        from core.tools.factory import store_artifact
+
+        store_artifact({
+            "type": "image",
+            "data": b64_data,
+            "mimeType": mime_type,
+        })
+
+        size_kb = len(b64_data) * 3 // 4 // 1024
+        return f"Image generated successfully ({size_kb}KB). The image is available in the run artifacts."
+    except httpx.HTTPStatusError as e:
+        try:
+            error_msg = e.response.json().get("error", {}).get("message", str(e))
+        except Exception:
+            error_msg = str(e)
+        logger.error(f"GPT Image 2 API error: {error_msg}")
+        return f"Error: {error_msg}"
+    except httpx.TimeoutException:
+        return "Error: GPT Image 2 request timed out."
+    except Exception as e:
+        logger.error(f"GPT Image 2 generation failed: {e}", exc_info=True)
+        return f"Error generating image: {e}"
+
+
+# =============================================================================
 # Tool Loading Functions
 # =============================================================================
 
@@ -1348,12 +1502,35 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
         "memory_recall": memory_recall,
         # Reasoning tools
         "reasoning_chain": reasoning_chain,
+        "calculator": calculator,
         # Subagent delegation tools
         "task": task,
         "delegate": task,  # Alias for task
+        # Image generation
+        "generate_image": generate_image,
         # Note: Playwright tools are loaded separately via get_playwright_tools()
         # because they require async initialization
     }
+
+    try:
+        from tools.pii_tool import pii_redact, pii_detect
+        available_tools["pii_redact"] = pii_redact
+        available_tools["pii_detect"] = pii_detect
+        available_tools["pii"] = pii_redact
+        available_tools["redact"] = pii_redact
+        available_tools["anonymize"] = pii_redact
+        available_tools["detect_pii"] = pii_detect
+    except Exception as e:
+        logger.warning(f"PII tools unavailable: {e}")
+
+    try:
+        from tools.audio_transcribe_tool import audio_transcribe
+        available_tools["audio_transcribe"] = audio_transcribe
+        available_tools["transcribe"] = audio_transcribe
+        available_tools["stt"] = audio_transcribe
+        available_tools["speech_to_text"] = audio_transcribe
+    except Exception as e:
+        logger.warning(f"Audio transcription tool unavailable: {e}")
 
     tools = []
 
@@ -1414,8 +1591,14 @@ def get_available_tool_names() -> List[str]:
         "memory_recall",
         # Reasoning tools
         "reasoning_chain",
+        "calculator",
         # Subagent delegation tools
         "task",
+        # Privacy/audio/image tools
+        "pii_redact",
+        "pii_detect",
+        "audio_transcribe",
+        "generate_image",
     ]
 
 

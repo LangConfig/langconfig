@@ -119,7 +119,7 @@ class AgentConfigV2(BaseModel):
 
     # Base agent settings
     model: str = Field(
-        default="claude-haiku-4-5-20251015",
+        default="claude-haiku-4-5",
         description="LLM model identifier"
     )
     temperature: float = Field(

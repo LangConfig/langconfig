@@ -15,9 +15,11 @@ Usage:
 
 import requests
 import json
+import os
+import pytest
 from datetime import datetime
 
-BASE_URL = "http://localhost:8765/api/workflows"
+BASE_URL = os.getenv("WORKFLOW_VERSIONING_BASE_URL", "http://localhost:8780/api/workflows")
 
 def print_response(name, response):
     """Pretty print API response"""
@@ -33,6 +35,10 @@ def print_response(name, response):
 
 def test_workflow_versioning():
     """Test all workflow versioning endpoints"""
+    try:
+        requests.get(BASE_URL, timeout=1)
+    except requests.RequestException:
+        pytest.skip(f"Workflow API is not running at {BASE_URL}")
 
     print("\n" + "="*60)
     print("WORKFLOW VERSIONING API TEST")

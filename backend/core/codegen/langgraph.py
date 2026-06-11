@@ -225,7 +225,7 @@ class LangGraphCodeGenerator:
 
             Not checkpointed - passed at runtime.
             """
-            model_name: str = "gpt-4o"
+            model_name: str = "gpt-5.4"
             temperature: float = 0.7
             max_tokens: Optional[int] = None
             user_id: Optional[int] = None
@@ -489,7 +489,7 @@ class LangGraphCodeGenerator:
             logging.basicConfig(level=logging.INFO)
 
             workflow = {class_name}()
-            context = WorkflowContext(model_name="gpt-4o")
+            context = WorkflowContext(model_name="gpt-5.4")
 
             result = await workflow.run("Your task here", context=context)
 

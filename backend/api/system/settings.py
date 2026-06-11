@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from db.database import get_db
 from models.settings import Settings as SettingsModel
-from constants.models import ModelChoice
+from constants.models import DEFAULT_MODEL, ModelChoice
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -78,8 +78,8 @@ class WorkspaceSettings(BaseModel):
 
 
 class ModelDefaultsSettings(BaseModel):
-    primary_model: Optional[str] = "gpt-4o"
-    fallback_models: Optional[list[str]] = ["claude-sonnet-4-5"]
+    primary_model: Optional[str] = DEFAULT_MODEL.value
+    fallback_models: Optional[list[str]] = ["claude-sonnet-4-6"]
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 4096
     top_p: Optional[float] = 1.0
@@ -288,7 +288,7 @@ async def reset_settings(db: Session = Depends(get_db)):
     """Reset settings to defaults"""
     settings = get_or_create_settings(db)
 
-    settings.default_model = "gpt-4o"
+    settings.default_model = DEFAULT_MODEL.value
     settings.default_temperature = 0.7
     settings.max_tokens = 4096
     settings.embedding_model = "text-embedding-3-small"

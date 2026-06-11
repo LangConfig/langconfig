@@ -96,6 +96,8 @@ class LocalModelResponse(BaseModel):
     usage_count: int
     last_used_at: Optional[datetime]
     tags: List[str]
+    server_id: Optional[str] = None
+    auto_discovered: bool = False
     created_at: datetime
     updated_at: datetime
 

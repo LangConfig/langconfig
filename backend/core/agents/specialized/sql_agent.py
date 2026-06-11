@@ -68,7 +68,7 @@ When the user asks a question:
 
 async def create_sql_agent(
     database_uri: str,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     temperature: float = 0.0,
     enable_dynamic_routing: bool = False
 ) -> CompiledStateGraph:
@@ -80,7 +80,7 @@ async def create_sql_agent(
 
     Args:
         database_uri: Database connection string (e.g., "postgresql://user:pass@localhost:5432/mydb")
-        llm_model: LLM to use for query generation (default: gpt-4o for reliability)
+        llm_model: LLM to use for query generation (default: gpt-5.4 for reliability)
         temperature: Temperature for generation (default: 0.0 for deterministic SQL)
         enable_dynamic_routing: Enable dynamic model selection (default: False, use consistent model for SQL)
 
@@ -206,7 +206,7 @@ async def create_sql_agent(
 async def query_database(
     database_uri: str,
     query: str,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     include_schema: bool = False
 ) -> Dict[str, Any]:
     """

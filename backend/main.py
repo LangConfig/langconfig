@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"PostgreSQL initialization failed: {e}")
         logger.error("Make sure PostgreSQL is running: docker-compose up -d postgres")
-        raise
+        logger.warning("Continuing without database - most features will be unavailable")
 
     # Initialize LangGraph checkpointing for workflow persistence and HITL
     try:
@@ -241,8 +241,8 @@ app.add_middleware(
     allow_origins=[
         "tauri://localhost",
         "http://tauri.localhost",
-        "http://localhost:1420",  # Tauri default port
-        "http://127.0.0.1:1420",  # localhost IP equivalent
+        "http://localhost:1425",  # Tauri default port
+        "http://127.0.0.1:1425",  # localhost IP equivalent
         "http://localhost:5173",  # Vite dev server
         "http://127.0.0.1:5173",  # Vite dev server IP equivalent
     ],
@@ -267,6 +267,7 @@ from api.tasks import routes as tasks
 from api.knowledge import rag, store
 from api.system import settings, health, debug, background_tasks
 from api.models import local as local_models
+from api.models import servers as model_servers
 from api.models import capabilities as model_capabilities
 from api.workflows import execution as orchestration, checkpoints
 from api.agents import deep_agents as deepagents, routes as agents, generator as agent_generator
@@ -284,6 +285,8 @@ from api.presentations import router as presentations
 from api.schedules import router as schedules
 from api.triggers import router as triggers
 from api.webhooks import router as webhooks
+from api.audio import routes as audio
+from api.pii_profiles import routes as pii_profiles
 
 # Health check endpoints
 app.include_router(health.router)
@@ -301,6 +304,7 @@ app.include_router(background_tasks.router)  # Background task queue management
 app.include_router(workspace.router)  # Workspace file management
 app.include_router(settings.router)
 app.include_router(local_models.router, prefix="/api/local-models", tags=["local-models"])  # Local model configurations
+app.include_router(model_servers.router, prefix="/api/model-servers", tags=["model-servers"])  # Local model server discovery
 app.include_router(model_capabilities.router, prefix="/api/models", tags=["models"])  # Model capability profiles
 app.include_router(agents.router)  # Agent templates (preset agents)
 app.include_router(action_presets.router)  # Action presets library with enhanced metadata
@@ -318,6 +322,8 @@ app.include_router(presentations)  # Presentation generation
 app.include_router(schedules)  # Workflow cron scheduling
 app.include_router(triggers)  # Workflow event triggers (file watch, etc.)
 app.include_router(webhooks)  # Webhook receiver endpoints
+app.include_router(audio.router)  # Local audio upload/transcription
+app.include_router(pii_profiles.router)  # PII redaction profiles
 
 if __name__ == "__main__":
     import sys
@@ -333,6 +339,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="localhost",
-        port=8765,
+        port=8780,
         reload=True
     )

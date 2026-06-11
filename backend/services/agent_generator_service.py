@@ -47,9 +47,9 @@ async def generate_agent_config(request: GenerateAgentRequest) -> dict:
     """
     # Available options
     available_models = [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "claude-sonnet-4-5-20250929",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "claude-sonnet-4-6",
         "claude-haiku-4-5",
         "gemini-2.0-flash-exp"
     ]
@@ -103,9 +103,9 @@ Generate an optimal agent configuration for:
 
 INSTRUCTIONS:
 1. Select the best model for this task:
-   - gpt-4o: Complex reasoning, code generation, architecture
-   - gpt-4o-mini: Simple tasks, cost-effective
-   - claude-sonnet-4-5-20250929: Long context, detailed analysis
+   - gpt-5.4: Complex reasoning, code generation, architecture
+   - gpt-5.4-mini: Simple tasks, cost-effective
+   - claude-sonnet-4-6: Long context, detailed analysis
    - claude-haiku-4-5: Fast, simple tasks
    - gemini-2.0-flash-exp: Multimodal, fast prototyping
 
@@ -142,7 +142,7 @@ Return ONLY valid JSON with this exact structure:
     "temperature": 0.7,
     "system_prompt": "Detailed system prompt here...",
     "mcp_tools": ["tool1", "tool2"],
-    "reasoning": "I chose gpt-4o because... temperature 0.7 for... tools selected because...",
+    "reasoning": "I chose gpt-5.4 because... temperature 0.7 for... tools selected because...",
     "confidence_score": 0.85
 }}
 
@@ -161,7 +161,7 @@ IMPORTANT: Return ONLY the JSON object, no markdown, no explanations outside the
 
         # Call OpenAI API
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.4",
             messages=[
                 {
                     "role": "system",

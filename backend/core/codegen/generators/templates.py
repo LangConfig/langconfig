@@ -633,7 +633,7 @@ class TemplateGenerators:
 
 
             def create_deepagent(
-                model: str = "gpt-4o",
+                model: str = "gpt-5.4",
                 system_prompt: str = "You are a helpful assistant.",
                 **kwargs
             ):
@@ -641,7 +641,7 @@ class TemplateGenerators:
                 Create a DeepAgent for complex autonomous tasks.
 
                 Args:
-                    model: Model name to use (string like "gpt-4o" or "claude-sonnet-4-20250514")
+                    model: Model name to use (string like "gpt-5.4" or "claude-sonnet-4-20250514")
                     system_prompt: System prompt for the agent
                     **kwargs: Additional configuration
 

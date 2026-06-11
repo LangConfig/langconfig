@@ -7,6 +7,7 @@
 LangConfig Configuration
 Supports both .env file (local dev) and settings page (prod app)
 """
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
@@ -69,6 +70,12 @@ def get_api_key_from_db(key_name: str) -> Optional[str]:
 
 class Settings(BaseSettings):
     """Application settings with dual-source API key support"""
+
+    model_config = ConfigDict(
+        env_file=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Environment configuration
     environment: str = os.getenv("ENVIRONMENT", "development")  # development, production, or testing
@@ -156,13 +163,6 @@ class Settings(BaseSettings):
     # RAG
     chunk_size: int = 1000
     chunk_overlap: int = 200
-
-    class Config:
-        # Look for .env in parent directory (project root)
-        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignore extra fields from .env file
-
 
 # Global settings instance
 settings = Settings()

@@ -14,7 +14,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional, List, Annotated, TypedDict
-from datetime import datetime
+from datetime import datetime, timezone
 import operator
 
 from langgraph.graph import StateGraph, START, END
@@ -127,6 +127,13 @@ class SimpleWorkflowState(TypedDict):
 
     # Critic output for conditional routing
     critic_output: Annotated[Optional[str], pick_last]
+
+    # Deterministic tool-node handoff state
+    last_tool_output: Annotated[Optional[str], pick_last]
+    tool_result: Annotated[Optional[Any], pick_last]
+    current_directive: Annotated[Optional[str], pick_last]
+    handoff_summary: Annotated[Optional[str], pick_last]
+    audio_file_path: Annotated[Optional[str], pick_last]
 
 
 class SimpleWorkflowExecutor:
@@ -347,6 +354,11 @@ class SimpleWorkflowExecutor:
                 "custom_output_path": getattr(workflow, 'custom_output_path', None),
                 # Deferred node support: parallel branch outputs merged here
                 "branch_results": {},
+                "last_tool_output": None,
+                "tool_result": None,
+                "current_directive": query,
+                "handoff_summary": None,
+                "audio_file_path": input_data.get("audio_file_path"),
             }
 
             # 5. Create callback handler for detailed agent logging
@@ -1103,12 +1115,12 @@ class SimpleWorkflowExecutor:
                     "o3-mini": 4.00,
                     "o4-mini": 3.00,
                     # OpenAI GPT-4o Series
-                    "gpt-4o": 2.50,
-                    "gpt-4o-mini": 0.15,
+                    "gpt-5.4": 2.50,
+                    "gpt-5.4-mini": 0.15,
                     # Anthropic Claude 4.5
-                    "claude-opus-4-5": 15.00,
-                    "claude-sonnet-4-5": 3.00,
-                    "claude-sonnet-4-5-20250929": 3.00,
+                    "claude-opus-4-8": 15.00,
+                    "claude-sonnet-4-6": 3.00,
+                    "claude-sonnet-4-6": 3.00,
                     "claude-haiku-4-5": 1.00,
                     # Google Gemini 3
                     "gemini-3-pro-preview": 2.00,
@@ -1724,6 +1736,22 @@ class SimpleWorkflowExecutor:
             logger.info(f"[{display_name}] Executing agent (node: {node_id})")
 
             try:
+                try:
+                    from services.event_bus import get_event_bus
+                    event_bus = get_event_bus()
+                    channel = f"workflow:{state.get('workflow_id')}"
+                    await event_bus.publish(channel, {
+                        "type": "node_started",
+                        "data": {
+                            "node_id": node_id,
+                            "agent_label": display_name,
+                            "agent_type": agent_type,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    })
+                except Exception as event_error:
+                    logger.warning(f"[{display_name}] Failed to emit node_started: {event_error}")
+
                 # Get agent configuration from node data
                 agent_config = node_data.get("config", {})
                 logger.info(f"[{display_name}] RAW node_data keys: {list(node_data.keys())}")
@@ -1732,7 +1760,7 @@ class SimpleWorkflowExecutor:
                 # Get model with fallback - treat "none" as missing (control nodes use this)
                 model = agent_config.get("model")
                 if not model or model == "none":
-                    model = "gpt-4o-mini"  # Default fallback
+                    model = "gpt-5.4-mini"  # Default fallback
                 temperature = agent_config.get("temperature", 0.7)
                 system_prompt = agent_config.get("system_prompt", f"You are a {agent_type} agent.")
 
@@ -2066,7 +2094,7 @@ When your work is complete, deliver the final result and END."""
                     try:
                         from services.context_window_manager import ContextWindowManager, ContextStrategy
 
-                        model_name = agent_config.get("model", "gpt-4o")
+                        model_name = agent_config.get("model", "gpt-5.4")
 
                         # Get strategy from multiple possible sources (in priority order):
                         # 1. guardrails.compaction_strategy (DeepAgent UI)
@@ -2456,6 +2484,22 @@ When your work is complete, deliver the final result and END."""
 
             except Exception as e:
                 logger.error(f"[Node: {node_id}] Execution failed: {e}", exc_info=True)
+                try:
+                    from services.event_bus import get_event_bus
+                    event_bus = get_event_bus()
+                    channel = f"workflow:{state.get('workflow_id')}"
+                    await event_bus.publish(channel, {
+                        "type": "node_completed",
+                        "data": {
+                            "node_id": node_id,
+                            "agent_label": display_name,
+                            "status": "error",
+                            "error": str(e)[:500],
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    })
+                except Exception as event_error:
+                    logger.warning(f"[{display_name}] Failed to emit error node_completed: {event_error}")
                 return {
                     "messages": [],  # Always include messages key for reducer
                     "error_message": str(e),
@@ -2758,7 +2802,12 @@ When your work is complete, deliver the final result and END."""
             from core.workflows.nodes import execute_tool_node
 
             # Get tool configuration from node_data
-            node_config = node_data.get("config", {})
+            node_config = dict(node_data.get("config", {}))
+            node_config.setdefault("node_id", node_id)
+            node_config.setdefault("label", node_data.get("data", {}).get("label") or node_config.get("tool_id") or "Tool Node")
+            for key in ("tool_type", "tool_id", "tool_params"):
+                if key not in node_config and key in node_data:
+                    node_config[key] = node_data[key]
 
             logger.info(f"[TOOL_NODE {node_id}] Executing with config: {node_config}")
 

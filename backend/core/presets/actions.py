@@ -808,7 +808,7 @@ AIDER_EDIT = ActionPreset(
         "properties": {
             "files": {"type": "array", "items": {"type": "string"}, "description": "Files to edit."},
             "instruction": {"type": "string", "description": "Editing instruction."},
-            "model": {"type": "string", "default": "gpt-4o"},
+            "model": {"type": "string", "default": "gpt-5.4"},
             "yes_to_all": {"type": "boolean", "default": False}
         },
         "required": ["files", "instruction"]

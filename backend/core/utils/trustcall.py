@@ -76,8 +76,8 @@ class TrustcallValidator:
         self,
         llm_client,
         max_retries: int = 3,
-        patch_model: str = "gpt-4o-mini",  # Use cheap model for patches
-        extraction_model: str = "gpt-4o"
+        patch_model: str = "gpt-5.4-mini",  # Use cheap model for patches
+        extraction_model: str = "gpt-5.4"
     ):
         """
         Initialize Trustcall validator.

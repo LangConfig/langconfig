@@ -23,7 +23,7 @@ Task Lifecycle:
 
 import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
-from sqlalchemy.dialects.postgresql import JSONB
+from db.types import JSONBType
 from db.database import Base
 
 
@@ -55,7 +55,7 @@ class BackgroundTask(Base):
 
     # Task metadata
     task_type = Column(String(100), nullable=False, index=True)
-    payload = Column(JSONB, nullable=False, default=dict)
+    payload = Column(JSONBType, nullable=False, default=dict)
     priority = Column(Integer, nullable=False, default=50, index=True)  # Higher = more urgent
 
     # Task status
@@ -67,7 +67,7 @@ class BackgroundTask(Base):
     )  # PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
 
     # Task result
-    result = Column(JSONB, nullable=True)
+    result = Column(JSONBType, nullable=True)
     error = Column(Text, nullable=True)
 
     # Retry logic

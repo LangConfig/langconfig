@@ -51,6 +51,10 @@ from models.settings import Settings
 from models.execution_event import ExecutionEvent
 from models.background_task import BackgroundTask
 from models.custom_tool import CustomTool, ToolExecutionLog
+from models.pii_profile import PIIProfile
+from models.presentation_job import PresentationJob
+from models.workflow_schedule import WorkflowSchedule, ScheduledRunLog
+from models.workflow_trigger import WorkflowTrigger, TriggerLog
 
 # Set target metadata for autogenerate support
 target_metadata = Base.metadata

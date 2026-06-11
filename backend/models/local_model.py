@@ -77,6 +77,12 @@ class LocalModel(Base):
     tags = Column(JSON, default=list)
     # Example: ["coding", "fast", "7b"]
 
+    # Model server discovery metadata
+    server_id = Column(String, nullable=True, index=True)
+    # Soft reference to settings.model_servers[].id
+
+    auto_discovered = Column(Boolean, default=False, nullable=False)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.datetime.utcnow)
     updated_at = Column(DateTime(timezone=True),
@@ -103,6 +109,8 @@ class LocalModel(Base):
             "usage_count": self.usage_count,
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "tags": self.tags,
+            "server_id": self.server_id,
+            "auto_discovered": self.auto_discovered,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

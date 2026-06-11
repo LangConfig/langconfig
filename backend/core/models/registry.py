@@ -126,11 +126,11 @@ class ModelRegistry:
     def _initialize_registry(self):
         """Populate registry with known models."""
 
-        # Claude 4.x Models (Anthropic)
+        # Claude current generation (Anthropic)
         self.register(ModelInfo(
-            model_id="claude-opus-4-5-20250514",
+            model_id="claude-opus-4-8",
             provider=ModelProvider.ANTHROPIC,
-            display_name="Claude Opus 4.5",
+            display_name="Claude Opus 4.8",
             capabilities={
                 ModelCapability.STREAMING,
                 ModelCapability.TOOLS,
@@ -139,19 +139,19 @@ class ModelRegistry:
                 ModelCapability.PARALLEL_TOOLS,
                 ModelCapability.VISION
             },
-            max_context_tokens=200000,
-            max_output_tokens=16384,
-            cost_per_1m_input=15.0,
-            cost_per_1m_output=75.0,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+            cost_per_1m_input=5.0,
+            cost_per_1m_output=25.0,
             speed_rating=3,
             quality_rating=5,
             notes="Highest capability Claude model, best for complex reasoning"
         ))
 
         self.register(ModelInfo(
-            model_id="claude-sonnet-4-5-20250514",
+            model_id="claude-sonnet-4-6",
             provider=ModelProvider.ANTHROPIC,
-            display_name="Claude Sonnet 4.5",
+            display_name="Claude Sonnet 4.6",
             capabilities={
                 ModelCapability.STREAMING,
                 ModelCapability.TOOLS,
@@ -160,8 +160,8 @@ class ModelRegistry:
                 ModelCapability.PARALLEL_TOOLS,
                 ModelCapability.VISION
             },
-            max_context_tokens=200000,
-            max_output_tokens=8192,
+            max_context_tokens=1000000,
+            max_output_tokens=64000,
             cost_per_1m_input=3.0,
             cost_per_1m_output=15.0,
             speed_rating=4,
@@ -170,7 +170,7 @@ class ModelRegistry:
         ))
 
         self.register(ModelInfo(
-            model_id="claude-haiku-4-5-20251015",
+            model_id="claude-haiku-4-5",
             provider=ModelProvider.ANTHROPIC,
             display_name="Claude Haiku 4.5",
             capabilities={
@@ -182,19 +182,19 @@ class ModelRegistry:
                 ModelCapability.VISION
             },
             max_context_tokens=200000,
-            max_output_tokens=8192,
-            cost_per_1m_input=0.25,
-            cost_per_1m_output=1.25,
+            max_output_tokens=64000,
+            cost_per_1m_input=1.0,
+            cost_per_1m_output=5.0,
             speed_rating=5,
             quality_rating=3,
             notes="Fast and cost-effective Claude model"
         ))
 
-        # OpenAI GPT-5 Models
+        # OpenAI GPT-5 frontier models
         self.register(ModelInfo(
-            model_id="gpt-5-preview",
+            model_id="gpt-5.5",
             provider=ModelProvider.OPENAI,
-            display_name="GPT-5 Preview",
+            display_name="GPT-5.5",
             capabilities={
                 ModelCapability.STREAMING,
                 ModelCapability.TOOLS,
@@ -203,9 +203,9 @@ class ModelRegistry:
                 ModelCapability.PARALLEL_TOOLS,
                 ModelCapability.VISION
             },
-            max_context_tokens=128000,
-            max_output_tokens=16384,
-            cost_per_1m_input=10.0,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+            cost_per_1m_input=5.0,
             cost_per_1m_output=30.0,
             speed_rating=3,
             quality_rating=5,
@@ -213,9 +213,9 @@ class ModelRegistry:
         ))
 
         self.register(ModelInfo(
-            model_id="gpt-5-turbo",
+            model_id="gpt-5.4",
             provider=ModelProvider.OPENAI,
-            display_name="GPT-5 Turbo",
+            display_name="GPT-5.4",
             capabilities={
                 ModelCapability.STREAMING,
                 ModelCapability.TOOLS,
@@ -224,13 +224,55 @@ class ModelRegistry:
                 ModelCapability.PARALLEL_TOOLS,
                 ModelCapability.VISION
             },
-            max_context_tokens=128000,
-            max_output_tokens=16384,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
             cost_per_1m_input=2.5,
-            cost_per_1m_output=10.0,
+            cost_per_1m_output=15.0,
             speed_rating=4,
             quality_rating=4,
-            notes="Balanced GPT-5 model"
+            notes="Balanced GPT-5.4 model"
+        ))
+
+        self.register(ModelInfo(
+            model_id="gpt-5.4-mini",
+            provider=ModelProvider.OPENAI,
+            display_name="GPT-5.4 Mini",
+            capabilities={
+                ModelCapability.STREAMING,
+                ModelCapability.TOOLS,
+                ModelCapability.STRUCTURED_OUTPUT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.PARALLEL_TOOLS,
+                ModelCapability.VISION
+            },
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+            cost_per_1m_input=0.75,
+            cost_per_1m_output=4.5,
+            speed_rating=5,
+            quality_rating=4,
+            notes="Cost-efficient GPT-5.4 model for subagents and well-scoped tasks"
+        ))
+
+        self.register(ModelInfo(
+            model_id="gpt-5.4-nano",
+            provider=ModelProvider.OPENAI,
+            display_name="GPT-5.4 Nano",
+            capabilities={
+                ModelCapability.STREAMING,
+                ModelCapability.TOOLS,
+                ModelCapability.STRUCTURED_OUTPUT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.PARALLEL_TOOLS,
+                ModelCapability.VISION
+            },
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+            cost_per_1m_input=0.20,
+            cost_per_1m_output=1.25,
+            speed_rating=5,
+            quality_rating=3,
+            notes="Lowest-cost GPT-5.4 model for extraction, routing, and classification"
         ))
 
         # OpenAI o1 Models (Reasoning)
@@ -347,29 +389,6 @@ class ModelRegistry:
             speed_rating=5,
             quality_rating=3,
             notes="Fast and cost-effective Gemini model"
-        ))
-
-        # GPT-4o (multimodal)
-        self.register(ModelInfo(
-            model_id="gpt-4o",
-            provider=ModelProvider.OPENAI,
-            display_name="GPT-4o",
-            capabilities={
-                ModelCapability.STREAMING,
-                ModelCapability.TOOLS,
-                ModelCapability.STRUCTURED_OUTPUT,
-                ModelCapability.FUNCTION_CALLING,
-                ModelCapability.PARALLEL_TOOLS,
-                ModelCapability.VISION,
-                ModelCapability.AUDIO
-            },
-            max_context_tokens=128000,
-            max_output_tokens=16384,
-            cost_per_1m_input=2.5,
-            cost_per_1m_output=10.0,
-            speed_rating=4,
-            quality_rating=4,
-            notes="Multimodal GPT-4 with vision and audio"
         ))
 
         logger.info(f"✓ Model registry initialized with {len(self._models)} models")

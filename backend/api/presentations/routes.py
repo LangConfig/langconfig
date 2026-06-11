@@ -87,6 +87,12 @@ async def process_presentation_job(job_id: int):
     db = SessionLocal()
     try:
         await presentation_service.process_job(db, job_id)
+    except Exception as e:
+        logger.error(f"Background task failed for job {job_id}: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
     finally:
         db.close()
 

@@ -44,6 +44,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+async def _execute(request):
+    """Run a synchronous Google API request off the event loop."""
+    return await asyncio.to_thread(request.execute)
+
+
 class SlideContent:
     """Represents content for a single slide."""
     def __init__(
@@ -192,8 +197,10 @@ class PresentationService:
 
         # Generate based on format
         if job.output_format == PresentationFormat.GOOGLE_SLIDES.value:
-            result_url = await self._generate_google_slides(db, job.title, slides, job.theme)
+            result_url, image_failures = await self._generate_google_slides(db, job.title, slides, job.theme)
             job.mark_completed(result_url=result_url)
+            if image_failures:
+                job.error_message = f"Completed with {len(image_failures)} image error(s): {'; '.join(image_failures)}"
 
         elif job.output_format == PresentationFormat.PDF.value:
             file_path = await self._generate_pdf(job.id, job.title, slides, job.theme)
@@ -610,7 +617,7 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
             theme: Visual theme
 
         Returns:
-            URL to the created Google Slides presentation
+            Tuple of (URL to the created Google Slides presentation, list of image failure messages)
         """
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaIoBaseUpload
@@ -632,15 +639,15 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
 
         try:
             # Create presentation
-            presentation = slides_service.presentations().create(
-                body={'title': title}
-            ).execute()
+            presentation = await _execute(
+                slides_service.presentations().create(body={'title': title})
+            )
             presentation_id = presentation.get('presentationId')
 
             # Get the default slide (first slide created automatically)
-            slides_response = slides_service.presentations().get(
-                presentationId=presentation_id
-            ).execute()
+            slides_response = await _execute(
+                slides_service.presentations().get(presentationId=presentation_id)
+            )
             default_slide_id = slides_response['slides'][0]['objectId']
 
             # Build batch update requests
@@ -688,20 +695,28 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
 
             # Execute slide creation
             if requests:
-                slides_service.presentations().batchUpdate(
-                    presentationId=presentation_id,
-                    body={'requests': requests}
-                ).execute()
+                await _execute(
+                    slides_service.presentations().batchUpdate(
+                        presentationId=presentation_id,
+                        body={'requests': requests}
+                    )
+                )
 
             # Get updated presentation to find placeholder IDs
-            updated_presentation = slides_service.presentations().get(
-                presentationId=presentation_id
-            ).execute()
+            updated_presentation = await _execute(
+                slides_service.presentations().get(presentationId=presentation_id)
+            )
+
+            # Build lookup by objectId for safe slide access
+            slides_by_id = {s['objectId']: s for s in updated_presentation['slides']}
 
             # Add content to slides
             content_requests = []
             for i, slide_content in enumerate(slides):
-                slide = updated_presentation['slides'][i]
+                slide = slides_by_id.get(f'slide_{i}')
+                if not slide:
+                    logger.warning(f"Slide slide_{i} not found in presentation, skipping content")
+                    continue
                 slide_id = slide['objectId']
 
                 # Find placeholders
@@ -747,16 +762,22 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
 
             # Execute content updates
             if content_requests:
-                slides_service.presentations().batchUpdate(
-                    presentationId=presentation_id,
-                    body={'requests': content_requests}
-                ).execute()
+                await _execute(
+                    slides_service.presentations().batchUpdate(
+                        presentationId=presentation_id,
+                        body={'requests': content_requests}
+                    )
+                )
 
             # Handle images - upload to Drive and insert
+            image_failures = []
             for i, slide_content in enumerate(slides):
                 if slide_content.slide_type == "image" and slide_content.image_data:
                     try:
-                        slide = updated_presentation['slides'][i]
+                        slide = slides_by_id.get(f'slide_{i}')
+                        if not slide:
+                            image_failures.append(f"Image {i}: slide not found")
+                            continue
                         slide_id = slide['objectId']
 
                         # Upload image to Drive
@@ -772,23 +793,29 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
                             'mimeType': slide_content.image_mime_type
                         }
 
-                        uploaded_file = drive_service.files().create(
-                            body=file_metadata,
-                            media_body=media,
-                            fields='id, webContentLink'
-                        ).execute()
+                        uploaded_file = await _execute(
+                            drive_service.files().create(
+                                body=file_metadata,
+                                media_body=media,
+                                fields='id, webContentLink'
+                            )
+                        )
 
                         # Make file publicly accessible
-                        drive_service.permissions().create(
-                            fileId=uploaded_file['id'],
-                            body={'type': 'anyone', 'role': 'reader'}
-                        ).execute()
+                        await _execute(
+                            drive_service.permissions().create(
+                                fileId=uploaded_file['id'],
+                                body={'type': 'anyone', 'role': 'reader'}
+                            )
+                        )
 
                         # Get direct download link
-                        file_info = drive_service.files().get(
-                            fileId=uploaded_file['id'],
-                            fields='webContentLink'
-                        ).execute()
+                        file_info = await _execute(
+                            drive_service.files().get(
+                                fileId=uploaded_file['id'],
+                                fields='webContentLink'
+                            )
+                        )
 
                         image_url = file_info.get('webContentLink', '').replace('&export=download', '')
 
@@ -813,19 +840,26 @@ The presentation uses Reveal.js (loaded from CDN) and requires an internet conne
                             }
                         }]
 
-                        slides_service.presentations().batchUpdate(
-                            presentationId=presentation_id,
-                            body={'requests': image_requests}
-                        ).execute()
+                        await _execute(
+                            slides_service.presentations().batchUpdate(
+                                presentationId=presentation_id,
+                                body={'requests': image_requests}
+                            )
+                        )
 
                     except Exception as e:
                         logger.warning(f"Failed to add image to Google Slide: {e}")
+                        image_failures.append(f"Image {i}: {e}")
+
+            # Log partial image failures
+            if image_failures:
+                logger.warning(f"Some images failed to upload: {image_failures}")
 
             # Return the presentation URL
             presentation_url = f"https://docs.google.com/presentation/d/{presentation_id}/edit"
             logger.info(f"Created Google Slides presentation: {presentation_url}")
 
-            return presentation_url
+            return presentation_url, image_failures
 
         except Exception as e:
             logger.error(f"Failed to create Google Slides: {e}")

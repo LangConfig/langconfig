@@ -836,7 +836,7 @@ if __name__ == "__main__":
 
             name = node_data.get("name") or node_data.get("label") or node_id
             system_prompt = node_config.get("system_prompt", "You are a helpful assistant.")
-            model = node_config.get("model") or node_data.get("model") or "gpt-4o"
+            model = node_config.get("model") or node_data.get("model") or "gpt-5.4"
             native_tools = node_config.get("native_tools", [])
             custom_tools = node_config.get("custom_tools", [])
 
@@ -1298,7 +1298,7 @@ def init_session_state():
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
         "google_api_key": os.getenv("GOOGLE_API_KEY", ""),
         # Model selection
-        "selected_model": "gpt-5.2",
+        "selected_model": "gpt-5.5",
         # Mode selection (chat vs task)
         "app_mode": "task",  # "chat" or "task"
         # Chat mode state
@@ -1503,9 +1503,9 @@ def get_task_run_details(idx: int) -> Optional[Dict]:
 
 # Available models for selection
 AVAILABLE_MODELS = {
-    "claude-opus-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.5"},
+    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.5"},
     "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Haiku 4.5"},
-    "gpt-5.2": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.2"},
+    "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.2"},
     "gemini-3-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY", "display": "Gemini 3 Pro"},
 }
 
@@ -1611,7 +1611,7 @@ async def run_chat_streaming(prompt: str, response_container, tools_container) -
     try:
         # Get agent config
         agent = st.session_state.agent_configs[0] if st.session_state.agent_configs else {}
-        model_name = st.session_state.selected_model or agent.get("model", "gpt-4o")
+        model_name = st.session_state.selected_model or agent.get("model", "gpt-5.4")
         system_prompt = agent.get("system_prompt", "You are a helpful assistant.")
 
         # Get API key for the model

@@ -28,7 +28,7 @@ Usage:
     >>> context = WorkflowContext(
     ...     user_id=123,
     ...     project_id=456,
-    ...     model_name="gpt-4o"
+    ...     model_name="gpt-5.4"
     ... )
     >>> result = await execute_workflow(
     ...     workflow=compiled_graph,
@@ -151,7 +151,7 @@ async def execute_workflow(
         >>> context = WorkflowContext(
         ...     user_id=current_user.id,
         ...     project_id=123,
-        ...     model_name="gpt-4o",
+        ...     model_name="gpt-5.4",
         ...     jira_email=user.jira_email,
         ...     jira_api_token=user.jira_token
         ... )

@@ -19,7 +19,7 @@ Run with: pytest tests/test_phase1_critical_safety.py -v
 import pytest
 import asyncio
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import patch, MagicMock
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -291,7 +291,7 @@ class TestForeignKeyValidation:
             version_id=test_version.id,
             execution_results={"output": "success"},
             status="success",
-            started_at=datetime.utcnow()
+            started_at=datetime.now(UTC)
         )
 
         with managed_transaction(db_session, "create_execution"):
@@ -368,7 +368,7 @@ class TestExportStatusTracking:
         with managed_transaction(db_session, "set_completed"):
             test_workflow.export_status = 'completed'
             test_workflow.export_error = None
-            test_workflow.last_export_at = datetime.utcnow()
+            test_workflow.last_export_at = datetime.now(UTC)
 
         db_session.refresh(test_workflow)
         assert test_workflow.export_status == 'completed'
@@ -454,7 +454,7 @@ class TestIntegration:
                 version_id=v1.id,
                 execution_results={"output": "v1 result"},
                 status="success",
-                started_at=datetime.utcnow()
+                started_at=datetime.now(UTC)
             )
             db_session.add(execution)
 

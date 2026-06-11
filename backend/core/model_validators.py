@@ -143,6 +143,22 @@ workflow_validator.register_fields({
     "blueprint": {
         "permission": PermissionLevel.PUBLIC,
         "validator": lambda v: v is None or validate_json_dict(v)
+    },
+    "is_template": {
+        "permission": PermissionLevel.PUBLIC,
+        "validator": lambda v: isinstance(v, bool)
+    },
+    "template_category": {
+        "permission": PermissionLevel.PUBLIC,
+        "validator": lambda v: v is None or isinstance(v, str)
+    },
+    "template_icon": {
+        "permission": PermissionLevel.PUBLIC,
+        "validator": lambda v: v is None or isinstance(v, str)
+    },
+    "template_tags": {
+        "permission": PermissionLevel.PUBLIC,
+        "validator": lambda v: v is None or validate_json_list(v)
     }
 })
 

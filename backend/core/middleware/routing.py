@@ -17,7 +17,7 @@ Usage:
 
     router = ModelRouter()
     selected_model = router.route(
-        original_model="claude-haiku-4-5-20251015",
+        original_model="claude-haiku-4-5",
         context_length=5000,
         tool_count=10,
         strategy="cost_optimized"

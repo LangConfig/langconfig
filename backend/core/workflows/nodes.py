@@ -20,10 +20,13 @@ Key Enhancements:
 
 import logging
 import asyncio
+import re
+import time
 from datetime import datetime
+from datetime import timezone
 from typing import Dict, Any, Optional, List
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
 
 # Core State Management
 from .graph_state import (
@@ -42,6 +45,86 @@ from core.agents.factory import AgentFactory
 from langchain_core.vectorstores import VectorStore
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Template Interpolation for Tool Node Params
+# =============================================================================
+
+_TEMPLATE_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
+
+
+def _resolve_template_string(value: str, state: Dict[str, Any]) -> str:
+    """Resolve {{var}} templates in a tool parameter string."""
+    def _replace(match):
+        var = match.group(1).strip()
+
+        if var in ("directive", "input", "query"):
+            return str(
+                state.get("query")
+                or state.get("current_directive")
+                or state.get("original_directive")
+                or ""
+            )
+
+        if var in ("previous_output", "last_tool_output"):
+            tool_out = state.get("last_tool_output")
+            if tool_out:
+                return str(tool_out)
+            messages = state.get("messages") or []
+            if messages:
+                return str(getattr(messages[-1], "content", messages[-1]))
+            return ""
+
+        if var == "messages.last":
+            messages = state.get("messages") or []
+            if messages:
+                last = messages[-1]
+                return str(getattr(last, "content", last))
+            return ""
+
+        if var.startswith("state."):
+            return str(state.get(var[len("state."):], ""))
+
+        return match.group(0)
+
+    return _TEMPLATE_RE.sub(_replace, value)
+
+
+def _resolve_tool_params(params: Any, state: Dict[str, Any]) -> Any:
+    """Walk params recursively and resolve templates in string values."""
+    if isinstance(params, str):
+        return _resolve_template_string(params, state)
+    if isinstance(params, dict):
+        return {k: _resolve_tool_params(v, state) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_resolve_tool_params(v, state) for v in params]
+    return params
+
+
+async def _emit_node_event(
+    event_type: str,
+    state: WorkflowState,
+    node_id: str,
+    label: str,
+    **extra_data: Any,
+) -> None:
+    """Publish node lifecycle events without letting telemetry break execution."""
+    try:
+        from services.event_bus import get_event_bus
+        event_bus = get_event_bus()
+        channel = f"workflow:{state.get('workflow_id')}"
+        await event_bus.publish(channel, {
+            "type": event_type,
+            "data": {
+                "node_id": node_id,
+                "agent_label": label,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **extra_data,
+            },
+        })
+    except Exception as e:
+        logger.warning(f"[{label}] Failed to emit {event_type} event: {e}")
 
 
 # =============================================================================
@@ -71,11 +154,22 @@ async def execute_tool_node(
         State updates with tool execution results
     """
     task_id = state.get("task_id", 0)
-    logger.info(f"[TOOL_NODE] Starting tool execution for task {task_id}")
+    node_id = (node_tool_config or {}).get("node_id") or f"tool_node_task_{task_id}"
+    label = (node_tool_config or {}).get("label") or (node_tool_config or {}).get("tool_id") or "Tool Node"
+    start_time = time.perf_counter()
+
+    await _emit_node_event("node_started", state, node_id, label)
+    logger.info(f"[TOOL_NODE {label}] Starting tool execution for task {task_id}")
 
     if not node_tool_config:
         error_msg = "Tool node configuration is missing"
-        logger.error(f"[TOOL_NODE] {error_msg}")
+        logger.error(f"[TOOL_NODE {label}] {error_msg}")
+        await _emit_node_event(
+            "node_completed", state, node_id, label,
+            status="error",
+            error=error_msg,
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+        )
         return {
             **_update_status(WorkflowStatus.FAILED_EXECUTION, "execute_tool", error_msg),
             "execution_failed": True
@@ -83,9 +177,10 @@ async def execute_tool_node(
 
     tool_type = node_tool_config.get("tool_type")  # "mcp", "cli", or "custom"
     tool_id = node_tool_config.get("tool_id")
-    tool_params = node_tool_config.get("tool_params", {})
+    raw_tool_params = node_tool_config.get("tool_params", {})
+    tool_params = _resolve_tool_params(raw_tool_params, state)
 
-    logger.info(f"[TOOL_NODE] Tool type: {tool_type}, Tool ID: {tool_id}, Params: {tool_params}")
+    logger.info(f"[TOOL_NODE {label}] Tool type: {tool_type}, Tool ID: {tool_id}, Params: {tool_params}")
 
     try:
         # Load the tool based on type
@@ -101,7 +196,7 @@ async def execute_tool_node(
                 raise ValueError(f"Custom tool '{tool_id}' not found")
 
             tool = custom_tools[0]
-            logger.info(f"[TOOL_NODE] Loaded custom tool: {tool.name}")
+            logger.info(f"[TOOL_NODE {label}] Loaded custom tool: {tool.name}")
 
         elif tool_type == "mcp":
             # Load MCP tool
@@ -112,7 +207,7 @@ async def execute_tool_node(
                 raise ValueError(f"MCP tool '{tool_id}' not found")
 
             tool = mcp_tools[0]
-            logger.info(f"[TOOL_NODE] Loaded MCP tool: {tool.name}")
+            logger.info(f"[TOOL_NODE {label}] Loaded MCP tool: {tool.name}")
 
         elif tool_type == "cli":
             # Load CLI tool
@@ -123,12 +218,12 @@ async def execute_tool_node(
                 raise ValueError(f"CLI tool '{tool_id}' not found")
 
             tool = cli_tools[0]
-            logger.info(f"[TOOL_NODE] Loaded CLI tool: {tool.name}")
+            logger.info(f"[TOOL_NODE {label}] Loaded CLI tool: {tool.name}")
         else:
             raise ValueError(f"Unknown tool type: {tool_type}")
 
         # Execute the tool with parameters
-        logger.info(f"[TOOL_NODE] Executing tool '{tool.name}' with params: {tool_params}")
+        logger.info(f"[TOOL_NODE {label}] Executing tool '{tool.name}' with params: {tool_params}")
 
         # Call tool (handles both sync and async)
         if hasattr(tool, 'ainvoke'):
@@ -139,18 +234,43 @@ async def execute_tool_node(
             # Fallback: call as function
             result = await tool(**tool_params) if asyncio.iscoroutinefunction(tool) else tool(**tool_params)
 
-        logger.info(f"[TOOL_NODE] Tool execution successful. Result: {str(result)[:200]}...")
+        result_str = str(result)
+        logger.info(f"[TOOL_NODE {label}] Tool execution successful. Result: {result_str[:200]}...")
+
+        context_msg = SystemMessage(
+            content=f"[Output from tool `{tool.name}`]\n\n{result_str}"
+        )
+        prompt_msg = HumanMessage(
+            content=f"Continue with your task using the output from `{tool.name}` above."
+        )
+
+        await _emit_node_event(
+            "node_completed", state, node_id, label,
+            status="success",
+            tool_name=tool.name,
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+            output_preview=result_str[:200],
+        )
 
         # Update state with tool result
         return {
             **_update_status(WorkflowStatus.EXECUTING, "execute_tool"),
             "tool_result": result,
-            "last_tool_output": str(result)
+            "last_tool_output": result_str,
+            "current_directive": result_str,
+            "handoff_summary": result_str,
+            "messages": [context_msg, prompt_msg],
         }
 
     except Exception as e:
         error_msg = f"Tool execution failed: {str(e)}"
-        logger.error(f"[TOOL_NODE] {error_msg}", exc_info=True)
+        logger.error(f"[TOOL_NODE {label}] {error_msg}", exc_info=True)
+        await _emit_node_event(
+            "node_completed", state, node_id, label,
+            status="error",
+            error=str(e),
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+        )
         return {
             **_update_status(WorkflowStatus.FAILED_EXECUTION, "execute_tool", error_msg),
             "execution_failed": True,

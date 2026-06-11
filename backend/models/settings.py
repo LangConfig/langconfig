@@ -42,7 +42,7 @@ class Settings(Base):
     chunk_overlap = Column(Integer, default=200)
 
     # Model Defaults
-    default_model = Column(String, default="gpt-4o")
+    default_model = Column(String, default="gpt-5.4")
     default_temperature = Column(Float, default=0.7)
     max_tokens = Column(Integer, default=4096)
 
@@ -51,6 +51,7 @@ class Settings(Base):
     local_base_url = Column(String, default="http://localhost:11434/v1")
     local_model_name = Column(String, default="llama3.2:latest")
     local_api_key = Column(String, nullable=True)
+    model_servers = Column(JSON, default=list)
 
     # Workspace Settings
     workspace_path = Column(String, default="")
@@ -61,8 +62,8 @@ class Settings(Base):
     workspace_backup_before_edit = Column(Boolean, default=True)
 
     # Model Defaults Advanced
-    primary_model = Column(String, default="gpt-4o")
-    fallback_models = Column(JSON, default=lambda: ["claude-sonnet-4-5"])
+    primary_model = Column(String, default="gpt-5.4")
+    fallback_models = Column(JSON, default=lambda: ["claude-sonnet-4-6"])
     temperature = Column(Float, default=0.7)
     max_tokens_default = Column(Integer, default=4096)
     top_p = Column(Float, default=1.0)

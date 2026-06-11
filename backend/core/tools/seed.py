@@ -24,13 +24,14 @@ DEFAULT_CUSTOM_TOOLS: List[Dict[str, Any]] = [
     {
         "tool_id": "image_generation",
         "name": "Nano Banana Pro (Image Generator)",
-        "description": "AI image generation using Gemini 3 Pro Image - Google's best model with 2K/4K output, text rendering, and character consistency. Ultra-fast generation (2-5 seconds) at ~$0.01-0.03 per image.",
+        "description": "Studio-quality AI image generation using Gemini 3 Pro Image — Google's highest-quality image model. Reasoning-driven generation for maximum factual accuracy, complex graphic design, and high-fidelity product mockups. Supports 512px-4K output, 14 aspect ratios, Google Search grounding, subject consistency via reference images, accurate text rendering, and conversational multi-turn editing. $0.134/image.",
         "tool_type": ToolType.IMAGE_VIDEO,
         "template_type": ToolTemplateType.IMAGE_GEMINI_NANO_BANANA,
         "implementation_config": {
             "provider": "google",
             "model": "gemini-3-pro-image-preview",
             "aspect_ratio": "1:1",
+            "image_size": "1K",
             "number_of_images": 1,
             "safety_filter_level": "block_some",
             "timeout": 45
@@ -40,7 +41,7 @@ DEFAULT_CUSTOM_TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Detailed image generation prompt describing the desired image"
+                    "description": "Detailed image generation prompt. Pro excels at complex graphic design, factual accuracy, and precise text rendering."
                 },
                 "negative_prompt": {
                     "type": "string",
@@ -49,8 +50,13 @@ DEFAULT_CUSTOM_TOOLS: List[Dict[str, Any]] = [
                 },
                 "aspect_ratio": {
                     "type": "string",
-                    "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, or 3:4",
+                    "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 4:5, 5:4, 4:1, 1:4, 8:1, 1:8, or 21:9",
                     "default": "1:1"
+                },
+                "image_size": {
+                    "type": "string",
+                    "description": "Output resolution: 512px (fast/cheap), 1K (default), 2K (high quality), or 4K (production)",
+                    "default": "1K"
                 },
                 "style": {
                     "type": "string",
@@ -65,7 +71,117 @@ DEFAULT_CUSTOM_TOOLS: List[Dict[str, Any]] = [
         "is_advanced_mode": False,
         "is_public": True,
         "category": "image_video",
-        "tags": ["image", "generation", "google", "gemini", "nano-banana", "fast", "featured", "workflow"]
+        "tags": ["image", "generation", "google", "gemini", "nano-banana", "pro", "studio", "featured", "workflow"]
+    },
+    {
+        "tool_id": "image_generation_nb2",
+        "name": "Nano Banana 2 (Image Generator)",
+        "description": "High-volume AI image generation using Gemini 3.1 Flash Image. Pro-level quality at Flash speed: vibrant lighting, rich textures, sharp details. 50% cheaper than Nano Banana Pro ($0.067/image). Supports 512px-4K output, 14 aspect ratios, Google Image Search grounding, subject consistency via reference images, accurate text rendering, and data visualizations.",
+        "tool_type": ToolType.IMAGE_VIDEO,
+        "template_type": ToolTemplateType.IMAGE_GEMINI_NANO_BANANA_2,
+        "implementation_config": {
+            "provider": "google",
+            "model": "gemini-3.1-flash-image-preview",
+            "aspect_ratio": "1:1",
+            "image_size": "1K",
+            "number_of_images": 1,
+            "safety_filter_level": "block_some",
+            "enable_image_search": False,
+            "thinking_level": "minimal",
+            "timeout": 45
+        },
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Detailed image generation prompt. The model follows complex instructions precisely and can render accurate text, diagrams, and infographics."
+                },
+                "negative_prompt": {
+                    "type": "string",
+                    "description": "Elements to avoid in the image (optional)",
+                    "default": ""
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 4:5, 5:4, 4:1, 1:4, 8:1, 1:8, or 21:9",
+                    "default": "1:1"
+                },
+                "image_size": {
+                    "type": "string",
+                    "description": "Output resolution: 512px (fast/cheap), 1K (default), 2K (high quality), or 4K (production)",
+                    "default": "1K"
+                },
+                "style": {
+                    "type": "string",
+                    "description": "Image style: photorealistic, artistic, anime, illustration, or default",
+                    "default": "default"
+                }
+            },
+            "required": ["prompt"]
+        },
+        "output_format": "json",
+        "is_template_based": True,
+        "is_advanced_mode": False,
+        "is_public": True,
+        "category": "image_video",
+        "tags": ["image", "generation", "google", "gemini", "nano-banana-2", "flash", "4k", "fast", "featured", "workflow", "grounding", "batch"]
+    },
+    {
+        "tool_id": "openai_image_generation",
+        "name": "GPT Image 2 (Image Generator)",
+        "description": "OpenAI GPT Image 2 generation with artifact delivery for chat and workflow runs. Supports flexible output sizing, quality controls, background handling, and PNG/JPEG/WebP outputs.",
+        "tool_type": ToolType.IMAGE_VIDEO,
+        "template_type": ToolTemplateType.IMAGE_OPENAI_GPT_IMAGE_2,
+        "implementation_config": {
+            "provider": "openai",
+            "model": "gpt-image-2",
+            "size": "auto",
+            "quality": "auto",
+            "background": "auto",
+            "output_format": "png",
+            "timeout": 120
+        },
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Detailed image generation prompt."
+                },
+                "size": {
+                    "type": "string",
+                    "description": "Image size: auto, 1024x1024, 1536x1024, or 1024x1536",
+                    "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                    "default": "auto"
+                },
+                "quality": {
+                    "type": "string",
+                    "description": "Image quality: auto, low, medium, or high",
+                    "enum": ["auto", "low", "medium", "high"],
+                    "default": "auto"
+                },
+                "background": {
+                    "type": "string",
+                    "description": "Background: auto, transparent, or opaque",
+                    "enum": ["auto", "transparent", "opaque"],
+                    "default": "auto"
+                },
+                "output_format": {
+                    "type": "string",
+                    "description": "Output image format: png, jpeg, or webp",
+                    "enum": ["png", "jpeg", "webp"],
+                    "default": "png"
+                }
+            },
+            "required": ["prompt"]
+        },
+        "output_format": "json",
+        "is_template_based": True,
+        "is_advanced_mode": False,
+        "is_public": True,
+        "category": "image_video",
+        "tags": ["image", "generation", "openai", "gpt-image-2", "artifact", "featured", "workflow"]
     },
     {
         "tool_id": "video_generation",

@@ -80,7 +80,7 @@ Always:
 
 async def create_dataframe_agent(
     df: pd.DataFrame,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     temperature: float = 0.1,
     enable_dynamic_routing: bool = False,
     allow_dangerous_code: bool = True
@@ -93,7 +93,7 @@ async def create_dataframe_agent(
 
     Args:
         df: Pandas DataFrame to analyze
-        llm_model: LLM to use (default: gpt-4o for reliability)
+        llm_model: LLM to use (default: gpt-5.4 for reliability)
         temperature: Temperature for generation (default: 0.1 for consistent analysis)
         enable_dynamic_routing: Enable dynamic model selection (default: False)
         allow_dangerous_code: Allow pandas operations (required, default: True)
@@ -179,7 +179,7 @@ async def create_dataframe_agent(
 async def analyze_file(
     file_path: str,
     query: str = "Analyze this dataset and provide key insights",
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     file_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -253,7 +253,7 @@ async def analyze_file(
 async def analyze_dataframe(
     df: pd.DataFrame,
     query: str,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     include_summary: bool = True
 ) -> Dict[str, Any]:
     """

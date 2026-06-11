@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Default Configuration Constants
-DEFAULT_MODEL = "claude-haiku-4-5-20251015"
+DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_TEMPERATURE = 0.5
 DEFAULT_MAX_TOKENS = 30000
 
@@ -67,16 +67,12 @@ MAX_MAX_TOKENS = 500000
 REASONING_NODE = "agent"
 TOOLS_NODE = "tools"
 
-# Supported Models Registry (for validation) - Updated December 4, 2025
+# Supported Models Registry (for validation) - Updated June 5, 2026
 SUPPORTED_MODELS = {
-    # OpenAI - GPT-5 Series (Current)
-    "gpt-5.1",
-    # OpenAI - GPT-4o Series
-    "gpt-4o", "gpt-4o-mini",
-    # Anthropic - Claude 4.5 (with and without date suffixes)
-    "claude-opus-4-5", "claude-opus-4-5-20250514",
-    "claude-sonnet-4-5", "claude-sonnet-4-5-20250514", "claude-sonnet-4-5-20250929",
-    "claude-haiku-4-5", "claude-haiku-4-5-20251015",
+    # OpenAI - GPT-5 frontier series
+    "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+    # Anthropic - Claude current generation
+    "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5",
     # Google - Gemini 3 (Current)
     "gemini-3-pro-preview",
     # Google - Gemini 2.5
@@ -192,7 +188,7 @@ class AgentFactory:
         for interrupt_field in ["interrupt_before", "interrupt_after"]:
             interrupt_val = agent_config.get(interrupt_field)
             if interrupt_val and isinstance(interrupt_val, list):
-                valid_nodes = {REASONING_NODE, TOOLS_NODE}
+                valid_nodes = {REASONING_NODE, "model", TOOLS_NODE}
                 for node in interrupt_val:
                     if node not in valid_nodes:
                         logger.warning(f"{interrupt_field} contains unknown node '{node}'. Valid nodes: {valid_nodes}")
@@ -660,14 +656,19 @@ class AgentFactory:
             # Add HITL (Human-in-the-Loop) parameters
             # interrupt_before: List of node names to pause before execution
             # interrupt_after: List of node names to pause after execution
-            # Common node names: ["agent"], ["tools"]
+            # Common node names: ["model"], ["tools"]. Accept legacy "agent" as
+            # an alias because LangChain v1.3 compiles the reasoning node as "model".
             # FIX: Support custom node lists, not just hardcoded ["agent"]
+            def normalize_interrupt_nodes(value):
+                nodes = value if isinstance(value, list) else ["agent"]
+                return ["model" if node == "agent" else node for node in nodes]
+
             if interrupt_before:
-                nodes = interrupt_before if isinstance(interrupt_before, list) else ["agent"]
+                nodes = normalize_interrupt_nodes(interrupt_before)
                 create_agent_kwargs["interrupt_before"] = nodes
                 logger.info(f"✓ HITL: Interrupt before nodes: {nodes}")
             if interrupt_after:
-                nodes = interrupt_after if isinstance(interrupt_after, list) else ["agent"]
+                nodes = normalize_interrupt_nodes(interrupt_after)
                 create_agent_kwargs["interrupt_after"] = nodes
                 logger.info(f"✓ HITL: Interrupt after nodes: {nodes}")
 
@@ -1254,8 +1255,24 @@ You have been equipped with the following tools: {', '.join(tool_names)}
             )
 
         else:
-            logger.warning(f"Unknown model '{model_name}', defaulting to OpenAI-compatible (Ensure API/Base URL configured).")
-            return ChatOpenAI(model=model_name, temperature=temperature, max_tokens=max_tokens, streaming=streaming)
+            api_base = getattr(settings, 'OPENAI_API_BASE', None)
+            if config.get("allow_custom_model") or api_base:
+                logger.warning(
+                    f"Unknown model '{model_name}', using OpenAI-compatible configuration because custom models are enabled."
+                )
+                params = {
+                    "model": model_name,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "streaming": streaming,
+                }
+                if api_base:
+                    params["base_url"] = api_base
+                return ChatOpenAI(**params)
+
+            raise ValueError(
+                f"Unsupported model '{model_name}'. Use a supported model or set allow_custom_model with an OpenAI-compatible base URL."
+            )
 
 
     @staticmethod

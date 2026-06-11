@@ -17,6 +17,9 @@ import asyncio
 import logging
 import sys
 from typing import List
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Manual integration script; run directly when API/model services are configured.")
 
 # Set up logging to see middleware messages
 logging.basicConfig(

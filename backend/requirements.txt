@@ -11,16 +11,18 @@ alembic==1.13.3
 psycopg[binary]>=3.2.0
 psycopg-pool>=3.2.0
 
-# LangChain v1.0 + LangGraph (latest versions)
-langchain>=1.2.7
-langchain-core>=1.2.7
+# LangChain v1.0 + LangGraph
+langchain>=1.3.2,<2
+langchain-core>=1.4.0,<2
 langchain-openai>=1.0.1
-langchain-anthropic>=1.2.0
-langchain-google-genai>=4.1.2
-langchain-community==0.4.1  # Pinned version for stability
+langchain-anthropic>=1.4.3,<2
+langchain-google-genai>=4.2.2,<5
+langchain-community>=0.4.1,<0.5  # Pinned major line for stability
 langchain-postgres
-langgraph>=1.0.7
-langgraph-checkpoint-postgres
+langgraph>=1.2.2,<1.3
+langgraph-checkpoint-postgres>=3.1.0,<4
+langgraph-prebuilt>=1.0.0
+langgraph-sdk>=0.3.0,<0.4
 # Multi-agent and dynamic tool libraries
 langgraph-supervisor
 langgraph-swarm
@@ -49,7 +51,7 @@ python-magic-bin>=0.4.14; platform_system=="Windows"  # File type detection on W
 fastapi-mcp>=0.1.0
 
 # DeepAgents - Agent harness (requires Python >=3.11)
-deepagents>=0.2.4
+deepagents>=0.6.7,<0.7
 
 # Real-time Monitoring (SSE for desktop app streaming)
 sse-starlette>=2.1.3
@@ -60,6 +62,9 @@ sse-starlette>=2.1.3
 
 # Browser Automation
 playwright>=1.48.0  # For browser tool (requires: python -m playwright install chromium)
+
+# Local audio transcription
+faster-whisper>=1.0.0
 
 # Security & Utilities
 cryptography

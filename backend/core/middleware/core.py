@@ -24,11 +24,11 @@ Example:
     >>> from core.middleware.core import TimestampMiddleware, SummarizationMiddleware
     >>>
     >>> agent = create_agent(
-    ...     model="anthropic:claude-sonnet-4-5",
+    ...     model="anthropic:claude-sonnet-4-6",
     ...     tools=tools,
     ...     middleware=[
     ...         TimestampMiddleware(),
-    ...         SummarizationMiddleware(model="anthropic:claude-sonnet-4-5", max_tokens_before_summary=1000)
+    ...         SummarizationMiddleware(model="anthropic:claude-sonnet-4-6", max_tokens_before_summary=1000)
     ...     ]
     ... )
 """
@@ -269,7 +269,7 @@ def dynamic_prompt(func: Callable) -> Callable:
         ...         return base
         ...
         ... agent = create_agent(
-        ...     model="openai:gpt-4o",
+        ...     model="openai:gpt-5.4",
         ...     tools=tools,
         ...     middleware=[adaptive_prompt]
         ... )
@@ -552,10 +552,10 @@ class CostTrackingMiddleware(AgentMiddleware):
 
         # Cost per 1K tokens (updated 10/19/2025)
         self.costs = {
-            "gpt-4o-mini": 0.00015,
-            "gpt-4o": 0.0025,
+            "gpt-5.4-mini": 0.00015,
+            "gpt-5.4": 0.0025,
             "gpt-5": 0.010,
-            "claude-sonnet-4-5-20250929": 0.003,
+            "claude-sonnet-4-6": 0.003,
             "claude-3.5-sonnet": 0.003,
             "gemini-2.5-pro": 0.0035,
             "o1-preview": 0.015
@@ -603,7 +603,7 @@ class CostTrackingMiddleware(AgentMiddleware):
                 completion_tokens = usage.get('completion_tokens', 0)
 
                 # Get model from runtime
-                model_name = getattr(runtime, 'model', 'gpt-4o')
+                model_name = getattr(runtime, 'model', 'gpt-5.4')
                 if hasattr(model_name, 'model_name'):
                     model_name = model_name.model_name
 
@@ -712,7 +712,7 @@ class SummarizationMiddleware(AgentMiddleware):
     Example:
         >>> middleware = [
         ...     SummarizationMiddleware(
-        ...         model="anthropic:claude-sonnet-4-5",
+        ...         model="anthropic:claude-sonnet-4-6",
         ...         max_tokens_before_summary=1000
         ...     )
         ... ]
@@ -1161,7 +1161,7 @@ def create_middleware_from_config(middleware_config: Dict[str, Any]) -> AgentMid
 
     elif middleware_type == "summarization":
         return SummarizationMiddleware(
-            model=middleware_config.get("model", "gpt-4o-mini"),
+            model=middleware_config.get("model", "gpt-5.4-mini"),
             max_tokens_before_summary=middleware_config.get("max_tokens_before_summary", 1000),
             keep_last_n_messages=middleware_config.get("keep_last_n_messages", 5)
         )
@@ -1237,14 +1237,14 @@ def create_middleware_from_config(middleware_config: Dict[str, Any]) -> AgentMid
         try:
             from langchain.agents.middleware import SummarizationMiddleware as LC11SummarizationMiddleware
             return LC11SummarizationMiddleware(
-                model=middleware_config.get("model", "gpt-4o-mini"),
+                model=middleware_config.get("model", "gpt-5.4-mini"),
                 trigger=middleware_config.get("trigger", ("fraction", 0.8)),
                 keep=middleware_config.get("keep", ("messages", 10)),
             )
         except ImportError:
             # Fall back to our local SummarizationMiddleware
             return SummarizationMiddleware(
-                model=middleware_config.get("model", "gpt-4o-mini"),
+                model=middleware_config.get("model", "gpt-5.4-mini"),
                 max_tokens_before_summary=middleware_config.get("max_tokens_before_summary", 1000),
                 keep_last_n_messages=middleware_config.get("keep_last_n_messages", 5)
             )

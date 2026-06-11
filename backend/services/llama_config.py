@@ -85,7 +85,7 @@ def initialize_llama_index_settings(
         if litellm_proxy_url and litellm_api_key:
             logger.info(f"Configuring LLM with LiteLLM proxy: {litellm_proxy_url}")
             Settings.llm = OpenAI(
-                model="gpt-4o-mini",
+                model="gpt-5.4-mini",
                 api_base=f"{litellm_proxy_url}/v1",
                 api_key=litellm_api_key
             )

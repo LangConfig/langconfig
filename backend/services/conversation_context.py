@@ -490,7 +490,7 @@ class ConversationContextService:
             from langchain_core.prompts import ChatPromptTemplate
 
             # Use a cheap, fast model for summarization
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0)
 
             # Build conversation text
             conversation_text = "\n\n".join([

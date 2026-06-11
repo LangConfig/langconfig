@@ -15,9 +15,9 @@ ScheduledRunLog: Tracks individual scheduled execution attempts.
 import datetime
 import enum
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.database import Base
+from db.types import JSONBType
 
 
 class ScheduleRunStatus(str, enum.Enum):
@@ -74,7 +74,7 @@ class WorkflowSchedule(Base):
     enabled = Column(Boolean, nullable=False, default=True)
 
     # Execution settings
-    default_input_data = Column(JSONB, nullable=False, default=dict)
+    default_input_data = Column(JSONBType, nullable=False, default=dict)
     max_concurrent_runs = Column(Integer, nullable=False, default=1)
     timeout_minutes = Column(Integer, nullable=False, default=60)
     idempotency_key_template = Column(String(255), nullable=True)

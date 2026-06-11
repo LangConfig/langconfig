@@ -78,7 +78,7 @@ Always explain:
 
 async def create_json_agent(
     json_data: Union[Dict, List, str],
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     temperature: float = 0.0,
     max_value_length: int = 4000
 ) -> CompiledStateGraph:
@@ -90,7 +90,7 @@ async def create_json_agent(
 
     Args:
         json_data: JSON object to work with (dict, list, or JSON string)
-        llm_model: LLM to use (default: gpt-4o for precise extraction)
+        llm_model: LLM to use (default: gpt-5.4 for precise extraction)
         temperature: Temperature for generation (default: 0.0 for deterministic results)
         max_value_length: Maximum length of values to return (default: 4000)
 
@@ -194,7 +194,7 @@ async def create_json_agent(
 async def query_json(
     json_data: Union[Dict, List, str],
     query: str,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-5.4",
     include_schema: bool = False
 ) -> Dict[str, Any]:
     """

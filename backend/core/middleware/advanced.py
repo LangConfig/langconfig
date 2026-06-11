@@ -56,8 +56,8 @@ class MultiModelRoutingMiddleware(AgentMiddleware):
 
     Example:
         >>> models = {
-        ...     "fast": ModelConfig("gpt-4o-mini", 0.00015, 500, 0.7, 16000),
-        ...     "balanced": ModelConfig("gpt-4o", 0.0025, 1000, 0.9, 128000),
+        ...     "fast": ModelConfig("gpt-5.4-mini", 0.00015, 500, 0.7, 16000),
+        ...     "balanced": ModelConfig("gpt-5.4", 0.0025, 1000, 0.9, 128000),
         ...     "powerful": ModelConfig("gpt-5", 0.010, 2000, 0.95, 200000)
         ... }
         >>> middleware = [MultiModelRoutingMiddleware(models)]
@@ -324,7 +324,7 @@ class ABTestingMiddleware(AgentMiddleware):
 
     Example:
         >>> variants = {
-        ...     "control": {"model": "gpt-4o", "temperature": 0.7},
+        ...     "control": {"model": "gpt-5.4", "temperature": 0.7},
         ...     "treatment": {"model": "gpt-5", "temperature": 0.5}
         ... }
         >>> middleware = [

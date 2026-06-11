@@ -27,8 +27,8 @@ GENERAL_PURPOSE_AGENT = AgentTemplate(
     category=AgentCategory.RESEARCH,
     
     # Model Configuration
-    model="gpt-4o",  # Good balance of capability and cost
-    fallback_models=["claude-sonnet-4-5-20250929", "gpt-5"],
+    model="gpt-5.4",  # Good balance of capability and cost
+    fallback_models=["claude-sonnet-4-6", "gpt-5"],
     temperature=0.5,
     
     # System Prompt

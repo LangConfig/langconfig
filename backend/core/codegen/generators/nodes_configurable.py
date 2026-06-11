@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Available models for runtime selection
 AVAILABLE_MODELS = {
-    "claude-opus-4-5": {
+    "claude-opus-4-8": {
         "provider": "anthropic",
         "class": "ChatAnthropic",
         "import": "from langchain_anthropic import ChatAnthropic",
@@ -36,7 +36,7 @@ AVAILABLE_MODELS = {
         "import": "from langchain_anthropic import ChatAnthropic",
         "api_key_env": "ANTHROPIC_API_KEY"
     },
-    "gpt-5.2": {
+    "gpt-5.5": {
         "provider": "openai",
         "class": "ChatOpenAI",
         "import": "from langchain_openai import ChatOpenAI",
@@ -392,7 +392,7 @@ class ConfigurableNodeGenerators:
                 node_config_top.get("model") or
                 node_data.get("model") or
                 node_config_nested.get("model") or
-                "gpt-5.2"
+                "gpt-5.5"
             )
 
             system_prompt = (
@@ -452,8 +452,8 @@ logger = logging.getLogger(__name__)
 
 # Available models for runtime selection
 AVAILABLE_MODELS = {
-    "claude-opus-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
-    "gpt-5.2": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
+    "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
+    "gpt-5.5": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
     "gemini-3-pro-preview": {"provider": "google", "api_key_env": "GOOGLE_API_KEY"},
 }
 

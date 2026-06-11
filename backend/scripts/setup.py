@@ -155,7 +155,7 @@ def start_database():
         print_warning("Docker not available - skipping container start")
         return True
 
-def init_database():
+def init_database(reset_db: bool = False):
     """Initialize database tables from SQLAlchemy models."""
     print_step("Initializing database tables...")
     
@@ -184,16 +184,26 @@ def init_database():
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
         
-        if existing_tables:
-            # Tables exist - drop them for clean setup using CASCADE
-            print_warning("Existing tables found - dropping for clean setup...")
+        if existing_tables and not reset_db:
+            print_success("Existing database detected - preserving tables and data")
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", "head"],
+                    cwd=backend_path,
+                    check=True,
+                )
+                print_success("Database migrations applied")
+            except subprocess.CalledProcessError as e:
+                print_warning(f"Alembic migration failed (check manually): {e}")
+            return True
+
+        if existing_tables and reset_db:
+            print_warning("Existing tables found - reset requested, dropping schema...")
             with engine.begin() as conn:
-                # Drop all tables with CASCADE to handle foreign key dependencies
                 conn.execute(text("DROP SCHEMA public CASCADE"))
                 conn.execute(text("CREATE SCHEMA public"))
                 conn.execute(text("GRANT ALL ON SCHEMA public TO langconfig"))
                 conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
-                # Re-enable extensions after schema drop
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""))
             print_success("Old tables dropped")
@@ -213,7 +223,7 @@ def init_database():
                 """))
                 conn.execute(text("DELETE FROM alembic_version"))
                 conn.execute(text(
-                    "INSERT INTO alembic_version (version_num) VALUES ('006_skills_system')"
+                    "INSERT INTO alembic_version (version_num) VALUES ('018_add_workflow_templates')"
                 ))
             print_success("Alembic version marked as current")
         except Exception as e:
@@ -291,6 +301,29 @@ def seed_custom_tools():
         print_warning(f"Custom tool seeding failed (non-fatal): {e}")
         return True
 
+def seed_langconfig_dev_data():
+    """Seed generic LangConfig project/workflow demo data."""
+    print_step("Seeding generic LangConfig demo data...")
+
+    root = get_project_root()
+    backend_path = root / "backend"
+    init_script = backend_path / "db" / "seed_langconfig_dev.py"
+
+    if not init_script.exists():
+        print_warning("LangConfig demo data seed script not found - skipping")
+        return True
+
+    try:
+        subprocess.run(
+            [sys.executable, str(init_script)],
+            cwd=backend_path, check=True
+        )
+        print_success("Generic LangConfig demo data seeded")
+        return True
+    except subprocess.CalledProcessError as e:
+        print_warning(f"LangConfig demo data seeding failed (non-fatal): {e}")
+        return True
+
 def print_next_steps():
     """Print instructions for what to do next."""
     print(f"\n{Colors.GREEN}{Colors.BOLD}Setup Complete!{Colors.RESET}\n")
@@ -325,6 +358,10 @@ def main():
         "--skip-playwright", action="store_true",
         help="Skip Playwright browser installation"
     )
+    parser.add_argument(
+        "--reset-db", action="store_true",
+        help="DANGER: drop existing database tables before creating a fresh schema"
+    )
     args = parser.parse_args()
     
     print(f"\n{Colors.BOLD}LangConfig Setup{Colors.RESET}")
@@ -358,7 +395,7 @@ def main():
             success = False
     
     # Initialize database
-    if not init_database():
+    if not init_database(reset_db=args.reset_db):
         success = False
     
     # Seed templates
@@ -366,6 +403,9 @@ def main():
 
     # Seed custom tools
     seed_custom_tools()
+
+    # Seed generic project/workflow demo data
+    seed_langconfig_dev_data()
 
     # Playwright (optional)
     if not args.db_only and not args.skip_playwright:

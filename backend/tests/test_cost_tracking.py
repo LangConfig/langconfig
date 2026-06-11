@@ -11,6 +11,9 @@ Creates a simple multi-agent workflow and captures real cost metrics.
 import asyncio
 import sys
 import os
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Manual integration script; run directly when API/model services are configured.")
 
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))

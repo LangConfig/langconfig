@@ -10,7 +10,6 @@ Provides test database fixtures for isolated testing.
 """
 
 import pytest
-import asyncio
 import os
 import subprocess
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -22,20 +21,6 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://langconfig:langconfig_dev@localhost:5433/langconfig_test"
 )
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """
-    Create event loop for async tests.
-
-    This fixture ensures a single event loop is used for the entire test session,
-    which is necessary for session-scoped async fixtures.
-    """
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture(scope="session")

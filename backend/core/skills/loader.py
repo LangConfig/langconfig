@@ -191,7 +191,13 @@ class SkillLoader:
             if not frontmatter.get('description'):
                 raise ValueError("Missing required 'description' field in frontmatter")
             if not instructions:
-                raise ValueError("Missing required '## Instructions' section")
+                logger.debug(
+                    "Skill %s has no explicit '## Instructions' section; using markdown body",
+                    skill_dir,
+                )
+                instructions = body.strip()
+            if not instructions:
+                raise ValueError("Missing skill instructions")
 
             # Get file modification time (timezone-aware for DB comparison)
             file_stat = os.stat(skill_file)

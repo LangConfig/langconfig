@@ -10,7 +10,7 @@ class TestModelProfiles:
     def test_returns_capabilities_for_known_model(self):
         from core.agents.model_profiles import get_model_capabilities, clear_profile_cache
         clear_profile_cache()
-        caps = get_model_capabilities("gpt-4o")
+        caps = get_model_capabilities("gpt-5.4")
         assert caps is not None
         assert isinstance(caps.get("function_calling"), bool)
         assert caps["function_calling"] is True
@@ -29,13 +29,13 @@ class TestModelProfiles:
     def test_date_suffix_stripping(self):
         from core.agents.model_profiles import get_model_capabilities, clear_profile_cache
         clear_profile_cache()
-        caps = get_model_capabilities("claude-opus-4-5-20250514")
+        caps = get_model_capabilities("claude-opus-4-8")
         assert caps is not None
         assert caps.get("function_calling") is True
 
     def test_caching_works(self):
         from core.agents.model_profiles import get_model_capabilities, clear_profile_cache
         clear_profile_cache()
-        caps1 = get_model_capabilities("gpt-4o")
-        caps2 = get_model_capabilities("gpt-4o")
+        caps1 = get_model_capabilities("gpt-5.4")
+        caps2 = get_model_capabilities("gpt-5.4")
         assert caps1 is caps2  # Same object from cache

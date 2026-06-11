@@ -21,7 +21,7 @@ Example Usage:
     >>> context = WorkflowContext(
     ...     user_id=123,
     ...     project_id=456,
-    ...     model_name="gpt-4o",
+    ...     model_name="gpt-5.4",
     ...     jira_email="user@example.com",
     ...     jira_api_token="token123"
     ... )
@@ -74,7 +74,7 @@ class WorkflowContext:
     user_role: UserRole = UserRole.EDITOR
 
     # === Model Configuration ===
-    model_name: str = "gpt-4o"
+    model_name: str = "gpt-5.4"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     enable_model_routing: bool = True  # Use complexity-based routing
@@ -236,7 +236,7 @@ def context_from_request(request_data: Dict[str, Any]) -> WorkflowContext:
         ...     "user_id": 123,
         ...     "project_id": 456,
         ...     "config": {
-        ...         "model_name": "gpt-4o",
+        ...         "model_name": "gpt-5.4",
         ...         "enable_hitl": True
         ...     }
         ... }

@@ -164,7 +164,10 @@ class DeepAgentFactory:
         if filesystem_config and filesystem_config.enabled:
             try:
                 from deepagents.middleware.filesystem import FilesystemMiddleware
-                from deepagents.memory.backends import FilesystemBackend
+                try:
+                    from deepagents.memory.backends import FilesystemBackend
+                except ImportError:
+                    from deepagents.backends import FilesystemBackend
                 from services.workspace_manager import get_workspace_manager
 
                 # Get task workspace for file storage (with custom path override if configured)
@@ -177,7 +180,10 @@ class DeepAgentFactory:
                 )
 
                 # Use FilesystemBackend with task workspace as root (files persist to disk)
-                fs_backend = FilesystemBackend(root=str(workspace_path))
+                try:
+                    fs_backend = FilesystemBackend(root=str(workspace_path))
+                except TypeError:
+                    fs_backend = FilesystemBackend(root_dir=str(workspace_path))
                 fs_middleware = FilesystemMiddleware(backend=fs_backend)
                 instrumented_fs = instrument_deepagents_middleware(
                     fs_middleware,
@@ -188,6 +194,33 @@ class DeepAgentFactory:
             except ImportError as e:
                 logger.warning(f"FilesystemMiddleware not available: {e}")
 
+        # Todo middleware is part of the Deep Agents harness in current 0.6.x.
+        # Enable it when configured, or by default for task-planning workflows.
+        todo_config = next(
+            (m for m in config.middleware if m.type == MiddlewareType.TODO_LIST),
+            None
+        )
+        if todo_config is None or todo_config.enabled:
+            try:
+                try:
+                    from deepagents.middleware.todo import TodoListMiddleware
+                except ImportError:
+                    from langchain.agents.middleware.todo import TodoListMiddleware
+                todo_kwargs = todo_config.config if todo_config else {}
+                try:
+                    todo_middleware = TodoListMiddleware(**todo_kwargs)
+                except TypeError:
+                    logger.warning("TodoListMiddleware rejected config kwargs; falling back to defaults")
+                    todo_middleware = TodoListMiddleware()
+                instrumented_todo = instrument_deepagents_middleware(
+                    todo_middleware,
+                    callback_handler=callback_handler
+                )
+                middleware_instances.append(instrumented_todo)
+                logger.info("TodoListMiddleware initialized")
+            except ImportError as e:
+                logger.warning(f"TodoListMiddleware not available: {e}")
+
         # NOTE: SubAgentMiddleware is NOT manually created here.
         # The deepagents library automatically creates SubAgentMiddleware (with the `task` tool)
         # when `subagents=` is passed to create_deep_agent().
@@ -197,7 +230,7 @@ class DeepAgentFactory:
             logger.info(f"SubAgents configured ({len(subagents_config)}) - will be auto-initialized by create_deep_agent")
 
         # Get PostgreSQL checkpointer for conversation persistence
-        from core.workflows.checkpointing.manager import get_checkpointer
+        from core.workflows.checkpointing.manager import get_checkpointer, get_store
         checkpointer = get_checkpointer()
 
         if checkpointer:
@@ -217,6 +250,7 @@ class DeepAgentFactory:
 
         # Create DeepAgent with all components
         try:
+            agent_label = f"deep_agent_task_{task_id}"
             agent_kwargs = {
                 "model": config.model,
                 "tools": all_tools,
@@ -224,7 +258,27 @@ class DeepAgentFactory:
                 "middleware": middleware_instances if middleware_instances else None,
                 "subagents": subagents_config if subagents_config else None,
                 "checkpointer": checkpointer,
+                "name": getattr(config, 'agent_name', None) or agent_label,
+                "debug": getattr(config, 'debug', False),
             }
+
+            try:
+                store = get_store()
+                if store:
+                    agent_kwargs["store"] = store
+            except Exception:
+                pass
+
+            interrupt_on = getattr(config, 'interrupt_on', {})
+            if interrupt_on:
+                agent_kwargs["interrupt_on"] = interrupt_on
+
+            if getattr(config, 'enable_cache', False):
+                try:
+                    from langgraph.cache.memory import InMemoryCache
+                    agent_kwargs["cache"] = InMemoryCache()
+                except ImportError:
+                    logger.debug("InMemoryCache not available")
 
             # Debug logging for subagent configuration
             if subagents_config:
@@ -631,7 +685,7 @@ class DeepAgentFactory:
         default_tools = FILESYSTEM_TOOLS + ["web_search"]
 
         config = {
-            "model": "claude-sonnet-4-5-20250929",
+            "model": "claude-sonnet-4-6",
             "temperature": 0.7,
             "system_prompt": "You are a helpful AI assistant with planning and research capabilities.",
             "tools": [],

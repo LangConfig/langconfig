@@ -71,10 +71,10 @@ class ModelSelector:
 
         # Track model usage for analytics (use all possible models from ModelRouter)
         self.model_usage = {
-            "gpt-4o-mini": 0,
-            "gpt-4o": 0,
+            "gpt-5.4-mini": 0,
+            "gpt-5.4": 0,
             "gpt-5": 0,
-            "claude-sonnet-4-5-20250929": 0,
+            "claude-sonnet-4-6": 0,
             "claude-3.5-sonnet": 0,
             "gemini-2.5-pro": 0,
             "o1-preview": 0
@@ -172,14 +172,14 @@ class ModelSelector:
                 "programming", "syntax", "algorithm", "security",
                 "architecture", "design system"
             ]):
-                model_name = "claude-sonnet-4-5-20250929"
+                model_name = "claude-sonnet-4-6"
                 temp = 0.3  # Lower temp for precise code
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
                 logger.info(f"🎯 Selected: Claude Sonnet 4.5 (POWERFUL tier - code task)")
 
             # RULE 2: Simple queries → GPT-4o-mini (FAST tier - BIGGEST SAVINGS!)
             elif message_count <= 2 and len(content) < 200:
-                model_name = "gpt-4o-mini"
+                model_name = "gpt-5.4-mini"
                 temp = 0.7
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
 
@@ -211,7 +211,7 @@ class ModelSelector:
 
             # RULE 5: Default → GPT-4o (STANDARD tier - balanced)
             else:
-                model_name = "gpt-4o"
+                model_name = "gpt-5.4"
                 temp = self.temperature
                 self.model_usage[model_name] = self.model_usage.get(model_name, 0) + 1
                 logger.info(f"🎯 Selected: GPT-4o (STANDARD tier - balanced, message #{message_count})")
@@ -273,18 +273,18 @@ class ModelSelector:
                 cost_per_1k[model_name] = tier_config['cost_per_1k_tokens']
             # Add any missing models with default estimates
             cost_per_1k.setdefault("gpt-5", 0.010)
-            cost_per_1k.setdefault("claude-sonnet-4-5-20250929", 0.003)
+            cost_per_1k.setdefault("claude-sonnet-4-6", 0.003)
             cost_per_1k.setdefault("gemini-2.5-pro", 0.0035)
         else:
             # Rough cost estimates (per 1K tokens) - average of input/output
             cost_per_1k = {
-                "gpt-4o-mini": 0.000375,  # ($0.15 + $0.60) / 2 per 1M
-                "gpt-4o": 0.00625,        # ($2.50 + $10) / 2 per 1M
+                "gpt-5.4-mini": 0.000375,  # ($0.15 + $0.60) / 2 per 1M
+                "gpt-5.4": 0.00625,        # ($2.50 + $10) / 2 per 1M
                 "gpt-5": 0.00625,          # ($2.50 + $10) / 2 per 1M
                 "gpt-5-mini": 0.00125,     # ($0.50 + $2) / 2 per 1M
                 "gpt-5-nano": 0.000375,    # ($0.15 + $0.60) / 2 per 1M
-                "claude-sonnet-4-5-20250929": 0.009,  # ($3 + $15) / 2 per 1M
-                "claude-haiku-4-5-20251015": 0.00075,  # ($0.25 + $1.25) / 2 per 1M
+                "claude-sonnet-4-6": 0.009,  # ($3 + $15) / 2 per 1M
+                "claude-haiku-4-5": 0.00075,  # ($0.25 + $1.25) / 2 per 1M
                 "gemini-2.5-pro": 0.003125,  # ($1.25 + $5) / 2 per 1M
                 "gemini-2.5-flash": 0.0001875  # ($0.075 + $0.30) / 2 per 1M
             }

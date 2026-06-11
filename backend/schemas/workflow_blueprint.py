@@ -262,7 +262,7 @@ class BlueprintNode(BaseModel):
                 "handler_function": "workflow_nodes.execute_code_node",
                 "metadata": {"icon": "code", "color": "blue"},
                 "agent_config": {
-                    "model": "gpt-4o",
+                    "model": "gpt-5.4",
                     "temperature": 0.7,
                     "system_prompt": "You are a code execution specialist.",
                     "max_retries": 2

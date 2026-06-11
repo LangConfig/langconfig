@@ -39,7 +39,7 @@ def create_deep_code_researcher() -> DeepAgentConfig:
     - Subagent delegation for specialized analysis
     """
     return DeepAgentConfig(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         temperature=0.3,  # Lower for precise analysis
         system_prompt="""You are an expert code researcher with deep analytical capabilities.
 
@@ -114,7 +114,7 @@ def create_deep_architect() -> DeepAgentConfig:
     - Documentation generation
     """
     return DeepAgentConfig(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         temperature=0.7,
         system_prompt="""You are a senior software architect with expertise in system design.
 
@@ -181,7 +181,7 @@ def create_deep_debugger() -> DeepAgentConfig:
     - Hypothesis tracking
     """
     return DeepAgentConfig(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         temperature=0.2,  # Very precise for debugging
         system_prompt="""You are an expert debugger with systematic investigation skills.
 
@@ -248,7 +248,7 @@ def create_deep_document_writer() -> DeepAgentConfig:
     - Context management for long documents
     """
     return DeepAgentConfig(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         temperature=0.7,
         system_prompt="""You are a technical writer specializing in clear, comprehensive documentation.
 
@@ -326,7 +326,7 @@ def create_deep_test_engineer() -> DeepAgentConfig:
     - Coverage analysis
     """
     return DeepAgentConfig(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-4-6",
         temperature=0.4,
         system_prompt="""You are a test engineering expert focused on comprehensive test coverage.
 

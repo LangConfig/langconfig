@@ -12,6 +12,9 @@ This script tests the Playwright tools to ensure they're working correctly.
 import asyncio
 import sys
 from pathlib import Path
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Manual Playwright smoke script; run directly after installing browsers.")
 
 # Add backend directory to path
 backend_dir = Path(__file__).parent

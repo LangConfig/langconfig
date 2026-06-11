@@ -863,6 +863,80 @@ OpenAI's latest image generation model, released December 16, 2025. 4x faster th
     tags=["image", "generation", "openai", "gpt-image-1.5", "fast", "text-rendering", "editing", "featured"]
 )
 
+IMAGE_OPENAI_GPT_IMAGE_2_TEMPLATE = ToolTemplate(
+    template_id="image_openai_gpt_image_2",
+    name="GPT Image 2 Generator",
+    description="Generate high-quality images with OpenAI GPT Image 2. Outputs are returned as base64 image artifacts for workflow and chat rendering.",
+    category="image_video",
+    tool_type=ToolType.IMAGE_VIDEO,
+    icon="🖼️",
+    priority=90,
+    is_featured=True,
+    config_template={
+        "tool_type": "image_video",
+        "template_type": "image_openai_gpt_image_2",
+        "implementation_config": {
+            "provider": "openai",
+            "model": "gpt-image-2",
+            "api_key": "",
+            "size": "auto",
+            "quality": "auto",
+            "background": "auto",
+            "output_format": "png",
+            "timeout": 120
+        }
+    },
+    input_schema_template={
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "Detailed image generation prompt."
+            },
+            "size": {
+                "type": "string",
+                "description": "Image size: auto, 1024x1024, 1536x1024, or 1024x1536",
+                "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                "default": "auto"
+            },
+            "quality": {
+                "type": "string",
+                "description": "Image quality: auto, low, medium, or high",
+                "enum": ["auto", "low", "medium", "high"],
+                "default": "auto"
+            },
+            "background": {
+                "type": "string",
+                "description": "Background: auto, transparent, or opaque",
+                "enum": ["auto", "transparent", "opaque"],
+                "default": "auto"
+            },
+            "output_format": {
+                "type": "string",
+                "description": "Output image format: png, jpeg, or webp",
+                "enum": ["png", "jpeg", "webp"],
+                "default": "png"
+            }
+        },
+        "required": ["prompt"]
+    },
+    required_user_fields=["api_key"],
+    setup_instructions="""
+1. Get your OpenAI API key from https://platform.openai.com/api-keys
+2. Ensure your account has access to gpt-image-2
+3. Paste your API key below or set OPENAI_API_KEY in backend/.env
+
+GPT Image 2 image outputs are stored as LangConfig artifacts so they can render in chat and workflow execution panels without putting base64 in the agent transcript.
+""",
+    example_use_cases=[
+        "Generate product mockups and concept art",
+        "Create diagrams, visual notes, and presentation images",
+        "Generate assets for workflow reports",
+        "Create images with transparent backgrounds for compositing"
+    ],
+    tags=["image", "generation", "openai", "gpt-image-2", "artifact", "featured"]
+)
+
 IMAGE_GEMINI_IMAGEN3_TEMPLATE = ToolTemplate(
     template_id="image_gemini_imagen3",
     name="Imagen 3 Image Generator",
@@ -919,7 +993,13 @@ Note: Imagen 3 offers high-quality photorealistic and artistic image generation.
 IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
     template_id="image_gemini_nano_banana",
     name="Nano Banana Pro (Gemini 3 Pro Image)",
-    description="High-quality AI image generation using Gemini 3 Pro Image - Google's best model with 2K/4K output, text rendering, and character consistency",
+    description=(
+        "Studio-quality AI image generation using Gemini 3 Pro Image — Google's highest-quality "
+        "image model. Reasoning-driven generation for maximum factual accuracy, complex graphic "
+        "design, and high-fidelity product mockups. Supports 512px-4K output, 14 aspect ratios, "
+        "Google Search grounding, subject consistency (up to 6 objects + 5 characters via reference "
+        "images), accurate text rendering, and conversational multi-turn editing. $0.134/image."
+    ),
     category="image_video",
     tool_type=ToolType.IMAGE_VIDEO,
     icon="🍌",
@@ -932,6 +1012,7 @@ IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
             "provider": "google",
             "model": "gemini-3-pro-image-preview",
             "aspect_ratio": "1:1",
+            "image_size": "1K",
             "number_of_images": 1,
             "safety_filter_level": "block_some",
             "timeout": 45
@@ -942,7 +1023,7 @@ IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": "Detailed image generation prompt"
+                "description": "Detailed image generation prompt. Pro excels at complex graphic design, factual accuracy, and precise text rendering."
             },
             "negative_prompt": {
                 "type": "string",
@@ -951,8 +1032,13 @@ IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
             },
             "aspect_ratio": {
                 "type": "string",
-                "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, or 3:4",
+                "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 4:5, 5:4, 4:1, 1:4, 8:1, 1:8, or 21:9",
                 "default": "1:1"
+            },
+            "image_size": {
+                "type": "string",
+                "description": "Output resolution: 512px (fast/cheap), 1K (default), 2K (high quality), or 4K (production)",
+                "default": "1K"
             },
             "style": {
                 "type": "string",
@@ -964,39 +1050,149 @@ IMAGE_GEMINI_NANO_BANANA_TEMPLATE = ToolTemplate(
     },
     required_user_fields=[],
     setup_instructions="""
-🍌 **Nano Banana (Gemini 2.5 Flash Image)**
+🍌 **Nano Banana Pro (Gemini 3 Pro Image)**
 
 API Key: Configured in Settings page
 
-**Features:**
-- Ultra-fast image generation (2-5 seconds)
-- Multimodal inputs (text + reference images)
-- Character consistency across generations
-- Image editing (inpainting, outpainting, blending)
-- High-resolution output with upscaling
-- Natural scene reconstruction
+**What makes Pro different from NB2:**
+Pro is the precision tool — it uses advanced reasoning (Thinking) to plan images
+before generating them. This means higher factual accuracy, better spatial
+understanding, and more reliable complex compositions. Use Pro for hero images
+and anything where getting it right on the first try matters.
+
+**Key Capabilities:**
+- Studio-quality generation with reasoning-driven image planning
+- Up to 4K resolution (512px / 1K / 2K / 4K)
+- 14 aspect ratios including ultrawide (8:1, 21:9) and tall (1:4, 1:8)
+- Accurate text rendering for logos, signage, labels, and mockups
+- Subject consistency via reference images (up to 6 objects + 5 characters)
+- Google Search grounding for factually accurate subjects
+- Multi-turn conversational editing ("move the logo to the left")
+- Complex graphic design and high-fidelity product mockups
 
 💰 **Pricing:**
-~$0.01-0.03 per image (significantly cheaper than DALL-E 3)
+$0.134 per image
+Input tokens: $2.00/M | Output tokens: $8.00/M
 
-✨ **Best For:**
-- Rapid prototyping and iteration
-- Batch image generation
-- Character-consistent artwork
-- Marketing visuals & social media graphics
-- Illustrated blog posts and articles
-- Image blending and composition
+⚡ **When to use Pro vs NB2:**
+- **Pro**: Hero images, product photography, complex designs, factual accuracy, maximum quality
+- **NB2**: Batch generation, rapid prototyping, automated pipelines, cost-sensitive workflows
 """,
     example_use_cases=[
-        "Generate marketing visuals from research reports",
-        "Create consistent character artwork for stories",
-        "Produce illustrations for blog posts and articles",
-        "Generate social media graphics in bulk",
-        "Create mockups and prototypes with visual elements",
-        "Blend multiple images into cohesive compositions",
-        "Add visual elements to automated content"
+        "Generate high-fidelity product mockups and packaging designs",
+        "Create hero images for landing pages and campaigns",
+        "Produce accurate data visualizations and infographics",
+        "Generate images with precise text rendering (logos, signage, labels)",
+        "Create character-consistent artwork with reference images",
+        "Complex graphic design compositions with spatial accuracy",
+        "Multi-turn editing workflows for iterative refinement"
     ],
-    tags=["image", "generation", "google", "gemini", "nano-banana", "fast", "featured", "workflow"]
+    tags=["image", "generation", "google", "gemini", "nano-banana", "pro", "studio", "featured", "workflow"]
+)
+
+IMAGE_GEMINI_NANO_BANANA_2_TEMPLATE = ToolTemplate(
+    template_id="image_gemini_nano_banana_2",
+    name="Nano Banana 2 (Gemini 3.1 Flash Image)",
+    description=(
+        "High-volume AI image generation using Gemini 3.1 Flash Image. "
+        "Pro-level quality at Flash speed: vibrant lighting, rich textures, sharp details. "
+        "50% cheaper than Nano Banana Pro ($0.067/image vs $0.134). "
+        "Supports 512px-4K output, 14 aspect ratios (including ultrawide 8:1, 21:9), "
+        "Google Image Search grounding for real-world accuracy, subject consistency "
+        "(up to 10 objects + 4 characters via reference images), accurate text rendering, "
+        "data visualizations, and conversational multi-turn editing."
+    ),
+    category="image_video",
+    tool_type=ToolType.IMAGE_VIDEO,
+    icon="🍌",
+    priority=95,
+    is_featured=True,
+    config_template={
+        "tool_type": "image_video",
+        "template_type": "image_gemini_nano_banana_2",
+        "implementation_config": {
+            "provider": "google",
+            "model": "gemini-3.1-flash-image-preview",
+            "aspect_ratio": "1:1",
+            "image_size": "1K",
+            "number_of_images": 1,
+            "safety_filter_level": "block_some",
+            "enable_image_search": False,
+            "thinking_level": "minimal",
+            "timeout": 45
+        }
+    },
+    input_schema_template={
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "Detailed image generation prompt. The model follows complex instructions precisely and can render accurate text, diagrams, and infographics."
+            },
+            "negative_prompt": {
+                "type": "string",
+                "description": "Elements to avoid in the image (optional)",
+                "default": ""
+            },
+            "aspect_ratio": {
+                "type": "string",
+                "description": "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 4:5, 5:4, 4:1, 1:4, 8:1, 1:8, or 21:9",
+                "default": "1:1"
+            },
+            "image_size": {
+                "type": "string",
+                "description": "Output resolution: 512px (fast/cheap), 1K (default), 2K (high quality), or 4K (production)",
+                "default": "1K"
+            },
+            "style": {
+                "type": "string",
+                "description": "Image style: photorealistic, artistic, anime, illustration, or default",
+                "default": "default"
+            }
+        },
+        "required": ["prompt"]
+    },
+    required_user_fields=[],
+    setup_instructions="""
+🍌 **Nano Banana 2 (Gemini 3.1 Flash Image)**
+
+API Key: Configured in Settings page
+
+**What makes NB2 different from Nano Banana Pro:**
+NB2 is the high-volume workhorse — same visual quality tier as Pro but optimized
+for speed and cost. Use Pro when you need maximum factual accuracy on a single
+hero image. Use NB2 when you're generating at scale, iterating fast, or building
+automated pipelines.
+
+**Key Capabilities:**
+- Vibrant lighting, rich textures, sharp details at Flash speed
+- Up to 4K resolution (512px / 1K / 2K / 4K)
+- 14 aspect ratios including ultrawide (8:1, 21:9) and tall (1:4, 1:8)
+- Accurate text rendering for marketing mockups, greeting cards, diagrams
+- Data visualizations, infographics, and chart generation
+- Google Image Search grounding — generates imagery verified against real-world info
+- Subject consistency via reference images (up to 10 objects + 4 characters)
+- Multi-turn conversational editing ("make the background a sunset")
+
+💰 **Pricing:**
+$0.067 per image (50% cheaper than Pro's $0.134)
+Input tokens: $0.50/M | Output tokens: $3.00/M
+
+⚡ **When to use NB2 vs Pro:**
+- **NB2**: Batch generation, rapid prototyping, automated pipelines, social media, e-commerce
+- **Pro**: Hero images, maximum factual accuracy, complex reasoning about image content
+""",
+    example_use_cases=[
+        "Generate product images for e-commerce listings at scale",
+        "Create consistent multi-character illustrations for stories or campaigns",
+        "Produce marketing mockups with accurate text and branding",
+        "Generate social media graphics across multiple aspect ratios",
+        "Build data visualizations, infographics, and diagrams from data",
+        "Create grounded images verified against real-world references via Search",
+        "Rapid batch generation for A/B testing visual content",
+        "Multi-turn image editing workflows (generate then refine)"
+    ],
+    tags=["image", "generation", "google", "gemini", "nano-banana-2", "flash", "4k", "fast", "featured", "workflow", "grounding", "batch"]
 )
 
 VIDEO_GEMINI_VEO3_TEMPLATE = ToolTemplate(
@@ -1309,8 +1505,10 @@ def initialize_tool_templates():
     ToolTemplateRegistry.register(IMAGE_OPENAI_DALLE3_TEMPLATE)
     ToolTemplateRegistry.register(VIDEO_OPENAI_SORA_TEMPLATE)
     ToolTemplateRegistry.register(IMAGE_OPENAI_GPT_IMAGE_1_5_TEMPLATE)  # Featured: GPT-Image-1.5 - 4x faster with enhanced editing
+    ToolTemplateRegistry.register(IMAGE_OPENAI_GPT_IMAGE_2_TEMPLATE)  # Featured: GPT Image 2 - artifact-first image generation
     ToolTemplateRegistry.register(IMAGE_GEMINI_IMAGEN3_TEMPLATE)
     ToolTemplateRegistry.register(IMAGE_GEMINI_NANO_BANANA_TEMPLATE)  # Featured: Ultra-fast & cost-effective
+    ToolTemplateRegistry.register(IMAGE_GEMINI_NANO_BANANA_2_TEMPLATE)  # Featured: Pro quality at Flash speed, 4K output
     ToolTemplateRegistry.register(VIDEO_GEMINI_VEO3_TEMPLATE)
     ToolTemplateRegistry.register(VIDEO_GEMINI_VEO31_TEMPLATE)  # Featured: Text-to-video, image-to-video, video extension
 

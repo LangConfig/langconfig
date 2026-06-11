@@ -328,15 +328,14 @@ def test_format_error():
 # Test: Tool Creation Integration
 # =============================================================================
 
-@pytest.mark.asyncio
-async def test_create_tool_validates_implementation(sample_api_tool_config):
+def test_create_tool_validates_implementation(sample_api_tool_config):
     """Test that create_tool validates implementation config"""
     # Remove required field
     invalid_config = sample_api_tool_config.copy()
     invalid_config["implementation_config"]["url"] = ""
 
     with pytest.raises(ValueError, match="Invalid implementation config"):
-        await ToolFactory.create_tool(invalid_config)
+        asyncio.run(ToolFactory.create_tool(invalid_config))
 
 
 # =============================================================================

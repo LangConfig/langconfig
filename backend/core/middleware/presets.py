@@ -95,7 +95,7 @@ PRESET_CONFIGS: Dict[str, Dict[str, Any]] = {
         "recommended_for": ["High-volume workflows", "Budget constraints", "Long conversations"],
         "middleware": [
             {"type": "timestamp"},
-            {"type": "summarization", "model": "gpt-4o-mini", "max_tokens_before_summary": 800, "keep_last_n_messages": 3},
+            {"type": "summarization", "model": "gpt-5.4-mini", "max_tokens_before_summary": 800, "keep_last_n_messages": 3},
             {"type": "cost_tracking"},
             {"type": "logging", "log_inputs": False, "log_outputs": False},  # Minimal logging
         ],
@@ -225,8 +225,8 @@ MIDDLEWARE_CATALOG: Dict[str, Dict[str, Any]] = {
             {
                 "name": "model",
                 "type": "select",
-                "options": ["gpt-4o-mini", "gpt-4o", "claude-3-5-haiku-20241022"],
-                "default": "gpt-4o-mini",
+                "options": ["gpt-5.4-mini", "gpt-5.4", "claude-haiku-4-5"],
+                "default": "gpt-5.4-mini",
                 "description": "Model for summarization (cheaper is better)"
             },
             {

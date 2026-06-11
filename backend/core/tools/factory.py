@@ -1266,18 +1266,131 @@ class ToolFactory:
 
         # Route to appropriate generator
         if provider == "openai":
-            if "dalle" in model.lower():
+            if "gpt-image" in model.lower() or template_type == ToolTemplateType.IMAGE_OPENAI_GPT_IMAGE_2.value:
+                return await ToolFactory._create_openai_gpt_image_tool(tool_config, impl_config)
+            elif "dalle" in model.lower():
                 return await ToolFactory._create_openai_dalle_tool(tool_config, impl_config)
             elif "sora" in model.lower():
                 return await ToolFactory._create_openai_sora_tool(tool_config, impl_config)
         elif provider == "google":
-            # Nano Banana (Gemini 2.5 Flash Image), Imagen 3, and Veo all use the same routing
+            # Nano Banana, Nano Banana 2, Imagen 3, and Veo all use the same routing
             if "imagen" in model.lower() or "gemini" in model.lower() or "flash" in model.lower():
                 return await ToolFactory._create_gemini_imagen_tool(tool_config, impl_config)
             elif "veo" in model.lower():
                 return await ToolFactory._create_gemini_veo_tool(tool_config, impl_config)
 
         raise ValueError(f"Unsupported image/video provider/model: {provider}/{model}")
+
+    @staticmethod
+    async def _create_openai_gpt_image_tool(
+        tool_config: Dict[str, Any],
+        impl_config: Dict[str, Any]
+    ) -> BaseTool:
+        """Create OpenAI GPT Image 2 image generation tool."""
+        api_key = impl_config.get("api_key") or os.getenv("OPENAI_API_KEY") or ""
+        model = impl_config.get("model", "gpt-image-2")
+        default_size = impl_config.get("size", "auto")
+        default_quality = impl_config.get("quality", "auto")
+        default_background = impl_config.get("background", "auto")
+        default_output_format = impl_config.get("output_format", "png")
+        timeout = impl_config.get("timeout", 120)
+
+        if not api_key:
+            raise ValueError("OpenAI API key is required for GPT Image 2. Set OPENAI_API_KEY in backend/.env or configure tool settings.")
+
+        valid_sizes = {"auto", "1024x1024", "1536x1024", "1024x1536"}
+        valid_qualities = {"auto", "low", "medium", "high"}
+        valid_backgrounds = {"auto", "transparent", "opaque"}
+        valid_formats = {"png", "jpeg", "webp"}
+
+        async def generate_gpt_image(
+            prompt: str,
+            size: Optional[str] = None,
+            quality: Optional[str] = None,
+            background: Optional[str] = None,
+            output_format: Optional[str] = None,
+        ) -> str:
+            """Generate an image with GPT Image 2 and store the image as a UI artifact."""
+            resolved_size = size or default_size
+            resolved_quality = quality or default_quality
+            resolved_background = background or default_background
+            resolved_format = output_format or default_output_format
+
+            if resolved_size not in valid_sizes:
+                return f"Error: size must be one of: {', '.join(sorted(valid_sizes))}"
+            if resolved_quality not in valid_qualities:
+                return f"Error: quality must be one of: {', '.join(sorted(valid_qualities))}"
+            if resolved_background not in valid_backgrounds:
+                return f"Error: background must be one of: {', '.join(sorted(valid_backgrounds))}"
+            if resolved_format not in valid_formats:
+                return f"Error: output_format must be one of: {', '.join(sorted(valid_formats))}"
+
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "size": resolved_size,
+                "quality": resolved_quality,
+                "background": resolved_background,
+                "output_format": resolved_format,
+                "response_format": "b64_json",
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        "https://api.openai.com/v1/images/generations",
+                        json=payload,
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+
+                image = (data.get("data") or [{}])[0]
+                b64_data = image.get("b64_json")
+                if not b64_data:
+                    logger.error(f"GPT Image 2 response missing b64_json: {data}")
+                    return "Error: GPT Image 2 did not return image data."
+
+                mime_type = f"image/{resolved_format}"
+                image_size_kb = len(b64_data) * 3 // 4 // 1024
+                store_artifact({
+                    "type": "image",
+                    "data": b64_data,
+                    "mimeType": mime_type,
+                })
+                logger.info(f"Stored GPT Image 2 artifact ({image_size_kb}KB)")
+                return f"Image generated successfully ({image_size_kb}KB). The image has been created and is displayed to the user."
+            except httpx.HTTPStatusError as e:
+                error_data = e.response.json() if e.response.headers.get("content-type") == "application/json" else {}
+                error_msg = error_data.get("error", {}).get("message", str(e))
+                logger.error(f"GPT Image 2 API error: {error_msg}")
+                return f"Error: {error_msg}"
+            except httpx.TimeoutException:
+                logger.error("GPT Image 2 request timed out")
+                return f"Error: Request timed out after {timeout}s"
+            except Exception as e:
+                logger.error(f"GPT Image 2 generation failed: {e}", exc_info=True)
+                return f"Error: {str(e)}"
+
+        args_schema = ToolFactory._create_pydantic_args_schema(
+            tool_config["input_schema"],
+            tool_config["tool_id"]
+        )
+
+        tool = StructuredTool.from_function(
+            coroutine=generate_gpt_image,
+            name=tool_config["tool_id"],
+            description=tool_config["description"],
+            args_schema=args_schema,
+            handle_tool_error=True
+        )
+
+        logger.info(f"Created GPT Image 2 tool: {tool_config['name']}")
+        return tool
 
     @staticmethod
     async def _create_openai_dalle_tool(
@@ -1453,7 +1566,7 @@ class ToolFactory:
         tool_config: Dict[str, Any],
         impl_config: Dict[str, Any]
     ) -> BaseTool:
-        """Create Google Gemini Imagen 3 / Nano Banana (Gemini 2.5 Flash Image) generation tool"""
+        """Create Google Gemini Imagen 3 / Nano Banana / Nano Banana 2 generation tool"""
         # Fallback chain: tool config -> settings -> env vars
         api_key = (
             impl_config.get("api_key") or
@@ -1464,9 +1577,13 @@ class ToolFactory:
         )
         model = impl_config.get("model", "gemini-3-pro-image-preview")
         default_aspect_ratio = impl_config.get("aspect_ratio", "1:1")
-        num_images = impl_config.get("num_images", 1)
+        num_images = impl_config.get("number_of_images") or impl_config.get("num_images", 1)
         safety_filter = impl_config.get("safety_filter_level", "block_most")
         timeout = impl_config.get("timeout", 60)
+        # Nano Banana 2 specific options
+        default_image_size = impl_config.get("image_size")
+        enable_image_search = impl_config.get("enable_image_search", False)
+        thinking_level = impl_config.get("thinking_level")  # "minimal" or "High" (NB2 only)
 
         if not api_key:
             raise ValueError("Google API key is required for Imagen/Nano Banana. Set GEMINI_API_KEY in .env or configure in tool settings.")
@@ -1479,16 +1596,18 @@ class ToolFactory:
             aspect_ratio: Optional[str] = None,
             style: Optional[str] = None,
             quality: Optional[str] = None,
-            negative_prompt: Optional[str] = None
+            negative_prompt: Optional[str] = None,
+            image_size: Optional[str] = None
         ) -> str:
-            """Generate an image using Imagen 3 or Nano Banana (Gemini 2.5 Flash Image)
+            """Generate an image using Imagen 3, Nano Banana, or Nano Banana 2
 
             Args:
                 prompt: Description of the image to generate
-                aspect_ratio: Image aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4)
+                aspect_ratio: Image aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 4:5, 5:4, 4:1, 1:4, 8:1, 1:8, 21:9)
                 style: Optional style modifier (e.g., 'vivid', 'natural', 'photorealistic')
                 quality: Optional quality setting (e.g., 'standard', 'hd')
                 negative_prompt: Elements to avoid in the generated image
+                image_size: Output resolution (512px, 1K, 2K, 4K) - Nano Banana 2 only
             """
             try:
                 # Enhance prompt with style if provided
@@ -1516,6 +1635,31 @@ class ToolFactory:
                             "maxOutputTokens": 8192,
                         }
                     }
+
+                    # imageConfig: aspect ratio works for all Gemini image models,
+                    # imageSize is Nano Banana 2+ only (ignored by older models)
+                    resolved_size = image_size or default_image_size
+                    resolved_ratio = aspect_ratio or default_aspect_ratio
+                    if resolved_size or resolved_ratio:
+                        image_config = {}
+                        if resolved_ratio:
+                            image_config["aspectRatio"] = resolved_ratio
+                        if resolved_size:
+                            image_config["imageSize"] = resolved_size
+                        payload["generationConfig"]["imageConfig"] = image_config
+
+                    # Nano Banana 2: image search grounding
+                    if enable_image_search:
+                        payload["tools"] = [
+                            {"google_search": {}},
+                            {"image_search": {}}
+                        ]
+
+                    # Nano Banana 2: controllable thinking level
+                    if thinking_level:
+                        payload["generationConfig"]["thinkingConfig"] = {
+                            "thinkingLevel": thinking_level
+                        }
 
                     headers = {
                         "Content-Type": "application/json"

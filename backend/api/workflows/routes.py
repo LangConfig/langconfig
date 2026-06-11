@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, timedelta
 import logging
 from collections import defaultdict
@@ -42,6 +42,10 @@ class WorkflowProfileCreate(BaseModel):
     output_schema: Optional[str] = None
     blueprint: Optional[dict] = None
     custom_output_path: Optional[str] = None  # Custom output directory for file writes
+    is_template: bool = False
+    template_category: Optional[str] = None
+    template_icon: Optional[str] = None
+    template_tags: Optional[List[str]] = None
 
 
 class WorkflowProfileUpdate(BaseModel):
@@ -54,9 +58,15 @@ class WorkflowProfileUpdate(BaseModel):
     blueprint: Optional[dict] = None
     lock_version: Optional[int] = Field(None, description="Current lock version for optimistic locking")
     custom_output_path: Optional[str] = None  # Custom output directory for file writes
+    is_template: Optional[bool] = None
+    template_category: Optional[str] = None
+    template_icon: Optional[str] = None
+    template_tags: Optional[List[str]] = None
 
 
 class WorkflowProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     project_id: Optional[int]
@@ -67,11 +77,25 @@ class WorkflowProfileResponse(BaseModel):
     blueprint: Optional[dict]
     lock_version: int  # For optimistic locking
     custom_output_path: Optional[str]  # Custom output directory for file writes
+    is_template: bool
+    template_category: Optional[str]
+    template_icon: Optional[str]
+    template_tags: Optional[List[str]]
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+
+class WorkflowForkRequest(BaseModel):
+    name: Optional[str] = Field(None, description="Name for the forked workflow")
+    project_id: Optional[int] = Field(None, description="Target project for the fork")
+    as_template: bool = Field(False, description="Whether the fork should remain a reusable template")
+
+
+class WorkflowTemplateRequest(BaseModel):
+    is_template: bool = Field(True, description="Promote or demote this workflow as a template")
+    category: Optional[str] = Field(None, description="Generic template category")
+    icon: Optional[str] = Field(None, description="UI icon key")
+    tags: Optional[List[str]] = Field(None, description="Searchable template tags")
 
 
 # Endpoints
@@ -80,6 +104,8 @@ async def list_workflows(
     skip: int = 0,
     limit: int = 100,
     project_id: Optional[int] = None,
+    is_template: Optional[bool] = None,
+    template_category: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """List all workflow profiles, optionally filtered by project"""
@@ -87,6 +113,10 @@ async def list_workflows(
 
     if project_id is not None:
         query = query.filter(WorkflowProfile.project_id == project_id)
+    if is_template is not None:
+        query = query.filter(WorkflowProfile.is_template == is_template)
+    if template_category:
+        query = query.filter(WorkflowProfile.template_category == template_category)
 
     workflows = query.order_by(desc(WorkflowProfile.updated_at)).offset(skip).limit(limit).all()
     return workflows
@@ -320,6 +350,88 @@ async def update_workflow(
             status_code=500,
             detail=f"Failed to update workflow: {str(e)}"
         )
+
+
+def _unique_workflow_name(db: Session, requested_name: str) -> str:
+    """Return a workflow name that does not collide with existing profiles."""
+    base_name = requested_name.strip()
+    if not base_name:
+        base_name = "Untitled Workflow"
+
+    existing = db.query(WorkflowProfile).filter(
+        WorkflowProfile.name.ilike(base_name)
+    ).first()
+    if not existing:
+        return base_name
+
+    counter = 2
+    while db.query(WorkflowProfile).filter(
+        WorkflowProfile.name.ilike(f"{base_name} ({counter})")
+    ).first():
+        counter += 1
+    return f"{base_name} ({counter})"
+
+
+@router.post("/{workflow_id}/fork", response_model=WorkflowProfileResponse, status_code=201)
+async def fork_workflow(
+    workflow_id: int,
+    request: WorkflowForkRequest,
+    db: Session = Depends(get_db)
+):
+    """Create an independent editable copy of a workflow or template."""
+    source = db.query(WorkflowProfile).filter(WorkflowProfile.id == workflow_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source workflow not found")
+
+    fork_name = _unique_workflow_name(db, request.name or f"Copy of {source.name}")
+    fork = WorkflowProfile(
+        name=fork_name,
+        description=source.description,
+        project_id=request.project_id,
+        strategy_type=source.strategy_type,
+        configuration=source.configuration or {"nodes": [], "edges": []},
+        schema_output_config=source.schema_output_config,
+        output_schema=source.output_schema,
+        blueprint=source.blueprint,
+        custom_output_path=source.custom_output_path,
+        is_template=request.as_template,
+        template_category=source.template_category if request.as_template else None,
+        template_icon=source.template_icon if request.as_template else None,
+        template_tags=source.template_tags if request.as_template else None,
+    )
+    db.add(fork)
+    db.commit()
+    db.refresh(fork)
+    return fork
+
+
+@router.patch("/{workflow_id}/template", response_model=WorkflowProfileResponse)
+async def update_workflow_template_status(
+    workflow_id: int,
+    request: WorkflowTemplateRequest,
+    db: Session = Depends(get_db)
+):
+    """Promote a workflow to a reusable template or demote it back to a regular workflow."""
+    workflow = db.query(WorkflowProfile).filter(WorkflowProfile.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    workflow.is_template = request.is_template
+    if request.is_template:
+        if request.category is not None:
+            workflow.template_category = request.category
+        if request.icon is not None:
+            workflow.template_icon = request.icon
+        if request.tags is not None:
+            workflow.template_tags = request.tags
+    else:
+        workflow.template_category = None
+        workflow.template_icon = None
+        workflow.template_tags = None
+
+    db.commit()
+    db.refresh(workflow)
+    return workflow
 
 
 def _should_auto_export(workflow: WorkflowProfile) -> bool:
@@ -964,6 +1076,8 @@ class WorkflowVersionCreate(BaseModel):
 
 
 class WorkflowVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     workflow_id: int
     version_number: int
@@ -973,9 +1087,6 @@ class WorkflowVersionResponse(BaseModel):
     is_current: bool
     created_by: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class WorkflowExecutionCreate(BaseModel):
@@ -1092,6 +1203,8 @@ class WorkflowExecutionCreate(BaseModel):
 
 
 class WorkflowExecutionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     workflow_id: int
     version_id: int
@@ -1103,9 +1216,6 @@ class WorkflowExecutionResponse(BaseModel):
     error_message: Optional[str]
     started_at: Optional[datetime]
     completed_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class VersionComparisonResponse(BaseModel):
@@ -1612,12 +1722,12 @@ async def get_workflow_cost_metrics(
             "o3-mini": 4.00,
             "o4-mini": 3.00,
             # OpenAI GPT-4o Series
-            "gpt-4o": 2.50,
-            "gpt-4o-mini": 0.15,
+            "gpt-5.4": 2.50,
+            "gpt-5.4-mini": 0.15,
             # Anthropic Claude 4.5
-            "claude-opus-4-5": 15.00,
-            "claude-sonnet-4-5": 3.00,
-            "claude-sonnet-4-5-20250929": 3.00,
+            "claude-opus-4-8": 15.00,
+            "claude-sonnet-4-6": 3.00,
+            "claude-sonnet-4-6": 3.00,
             "claude-haiku-4-5": 1.00,
             # Google Gemini 3
             "gemini-3-pro-preview": 2.00,
@@ -1766,8 +1876,8 @@ def _generate_config_diff(config1: dict, config2: dict) -> dict:
 
     Example:
         Old: {"nodes": [{"id": "1", "name": "Agent 1", "config": {"model": "gpt-4"}}]}
-        New: {"nodes": [{"id": "1", "name": "Agent 1", "config": {"model": "gpt-4o"}}]}
-        Diff detects: nodes[0].config.model changed from "gpt-4" to "gpt-4o"
+        New: {"nodes": [{"id": "1", "name": "Agent 1", "config": {"model": "gpt-5.4"}}]}
+        Diff detects: nodes[0].config.model changed from "gpt-4" to "gpt-5.4"
     """
     try:
         from deepdiff import DeepDiff

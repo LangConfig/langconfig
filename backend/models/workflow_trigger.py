@@ -16,9 +16,9 @@ import datetime
 import enum
 import secrets
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.database import Base
+from db.types import JSONBType
 
 
 class TriggerType(str, enum.Enum):
@@ -80,7 +80,7 @@ class WorkflowTrigger(Base):
     enabled = Column(Boolean, nullable=False, default=True)
 
     # Trigger-specific configuration
-    config = Column(JSONB, nullable=False, default=dict)
+    config = Column(JSONBType, nullable=False, default=dict)
     """
     Config structure by trigger type:
 
@@ -198,7 +198,7 @@ class TriggerLog(Base):
 
     # What caused the trigger
     trigger_source = Column(String(255), nullable=True)  # IP address, file path, etc.
-    trigger_payload = Column(JSONB, nullable=True)  # Incoming data
+    trigger_payload = Column(JSONBType, nullable=True)  # Incoming data
 
     # Task reference
     task_id = Column(

@@ -71,7 +71,7 @@ class AgentTemplate(BaseModel):
     # Detailed docs live in /docs/agents/{template_id}.md
 
     # Model Configuration (Enhanced for Resilience - Chapter 12/16)
-    model: str = Field(default="gpt-4o", description="Primary model")
+    model: str = Field(default="gpt-5.4", description="Primary model")
     fallback_models: Sequence[str] = Field(
         default_factory=list,
         description="Models to use if the primary fails (e.g., rate limits, errors)."
@@ -253,7 +253,7 @@ ARCHITECT_AGENT = AgentTemplate(
         "security-architecture", "scalability", "cloud-architecture", "mermaid-diagrams"
     ],
 
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     fallback_models=["gpt-5", "gemini-2.5-pro"],
     temperature=0.3,
     system_prompt="""ROLE: Senior Software Architect.
@@ -285,7 +285,7 @@ CODE_IMPLEMENTER = AgentTemplate(
     ],
 
     model="gpt-5",
-    fallback_models=["claude-sonnet-4-5-20250929", "gpt-4o"],
+    fallback_models=["claude-sonnet-4-6", "gpt-5.4"],
     temperature=0.5,
     system_prompt="""ROLE: Software Engineer.
 EXPERTISE: Full-stack development, clean code principles (SOLID, DRY).
@@ -310,8 +310,8 @@ FAST_IMPLEMENTER = AgentTemplate(
 
     capabilities=["simple-crud", "quick-fixes", "boilerplate", "copy-modify", "speed-optimized"],
 
-    model="gpt-4o-mini",
-    fallback_models=["claude-3-5-haiku-20241022", "gemini-2.0-flash"],
+    model="gpt-5.4-mini",
+    fallback_models=["claude-haiku-4-5", "gemini-2.0-flash"],
     temperature=0.6,
     system_prompt="""ROLE: Junior Software Engineer (Efficient Executor).
 EXPERTISE: Rapid implementation of well-defined tasks.
@@ -335,7 +335,7 @@ REFACTOR_SPECIALIST = AgentTemplate(
 
     capabilities=["refactoring", "design-patterns", "solid-principles", "code-smells", "test-preservation"],
 
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     fallback_models=["gpt-5"],
     temperature=0.3,
     system_prompt="""ROLE: Refactoring Expert.
@@ -363,7 +363,7 @@ CODE_REVIEWER = AgentTemplate(
 
     capabilities=["code-review", "security-analysis", "best-practices", "pr-comments", "test-execution", "static-analysis"],
 
-    model="claude-sonnet-4-5-20250929",  # Claude 4.5 Sonnet - Excellent at code analysis
+    model="claude-sonnet-4-6",  # Claude 4.5 Sonnet - Excellent at code analysis
     fallback_models=["gpt-5"],
     temperature=0.2,  # Low temperature for consistent reviews
     output_schema_name="code_review",  # NEW: Structured output with CodeReviewOutput schema
@@ -407,7 +407,7 @@ TEST_GENERATOR = AgentTemplate(
     capabilities=["unit-testing", "integration-testing", "test-coverage", "tdd"],
 
     model="gpt-5",  # GPT-5 - Excellent at writing tests
-    fallback_models=["claude-sonnet-4-5-20250929"],
+    fallback_models=["claude-sonnet-4-6"],
     temperature=0.4,
     system_prompt="""ROLE: QA Engineer & Test Automation Specialist.
 EXPERTISE: Unit testing, integration testing, test-driven development, Jest/Pytest/etc.
@@ -431,7 +431,7 @@ QA_VALIDATOR = AgentTemplate(
     capabilities=["automated-testing", "quality-gates", "linting", "ci-cd-validation"],
 
     model="gemini-2.0-flash",  # Fast and efficient for validation tasks
-    fallback_models=["gpt-4o-mini"],
+    fallback_models=["gpt-5.4-mini"],
     temperature=0.3,
     system_prompt="""ROLE: QA Validator (Automated Checks).
 EXPERTISE: Test execution, linting, type checking, quality gates.
@@ -456,7 +456,7 @@ DEVOPS_AGENT = AgentTemplate(
     capabilities=["ci-cd", "docker", "kubernetes", "terraform", "infrastructure-as-code"],
 
     model="gpt-5",  # GPT-5 for infrastructure tasks
-    fallback_models=["claude-sonnet-4-5-20250929"],
+    fallback_models=["claude-sonnet-4-6"],
     temperature=0.2,  # Low temperature for safety
     system_prompt="""ROLE: DevOps Expert (Restricted).
 EXPERTISE: CI/CD, Docker, Kubernetes, Terraform, Cloud Infrastructure.
@@ -482,7 +482,7 @@ RESEARCH_AGENT = AgentTemplate(
     capabilities=["code-analysis", "technology-research", "architecture-review", "best-practices"],
 
     model="gemini-2.5-pro",  # Large context window, excellent for research
-    fallback_models=["claude-sonnet-4-5-20250929", "gpt-5"],
+    fallback_models=["claude-sonnet-4-6", "gpt-5"],
     temperature=0.4,
     system_prompt="""ROLE: Technical Research Analyst.
 EXPERTISE: Code analysis, architecture review, technology evaluation, best practices research.
@@ -507,8 +507,8 @@ DOCUMENTATION_WRITER = AgentTemplate(
 
     capabilities=["technical-writing", "api-docs", "tutorials", "markdown", "code-examples"],
 
-    model="gpt-4o-mini",  # Cost-effective for documentation
-    fallback_models=["claude-3-5-haiku-20241022"],
+    model="gpt-5.4-mini",  # Cost-effective for documentation
+    fallback_models=["claude-haiku-4-5"],
     temperature=0.6,
     output_schema_name="documentation",  # NEW: Structured output with DocumentationOutput schema
     enable_structured_output=True,  # NEW: Type-safe documentation responses
@@ -535,7 +535,7 @@ TASK_PLANNER = AgentTemplate(
     capabilities=["task-decomposition", "mcgs-planning", "dependency-analysis", "estimation", "milestone-planning", "approach-comparison"],
 
     model="gpt-5",  # GPT-5 for strategic planning
-    fallback_models=["claude-sonnet-4-5-20250929"],
+    fallback_models=["claude-sonnet-4-6"],
     temperature=0.3,
     output_schema_name="task_plan",  # Structured output with TaskPlanOutput schema (includes MCGS)
     enable_structured_output=True,  # Type-safe task planning responses
@@ -600,8 +600,8 @@ SQL_DATABASE_AGENT = AgentTemplate(
     name="SQL Database Query Agent",
     description="Queries SQL databases using natural language. Examines schemas, writes SELECT queries, and provides insights. Provides structured output with query results. Read-only and safe for production use.",
     category=AgentCategory.RESEARCH,
-    model="gpt-4o",
-    fallback_models=["claude-sonnet-4-5-20250929"],
+    model="gpt-5.4",
+    fallback_models=["claude-sonnet-4-6"],
     temperature=0.0,  # Deterministic for SQL generation
     output_schema_name="sql_query",  # NEW: Structured output with SQLQueryResult schema
     enable_structured_output=True,  # NEW: Type-safe SQL query responses
@@ -647,8 +647,8 @@ PANDAS_DATAFRAME_AGENT = AgentTemplate(
     name="Data Analysis Agent (Pandas)",
     description="Analyzes CSV, Excel, and DataFrame data using Python/Pandas. Performs statistical analysis, finds patterns, detects outliers, and generates insights. Provides structured output with analysis results.",
     category=AgentCategory.RESEARCH,
-    model="gpt-4o",
-    fallback_models=["claude-sonnet-4-5-20250929"],
+    model="gpt-5.4",
+    fallback_models=["claude-sonnet-4-6"],
     temperature=0.1,  # Low temp for consistent data analysis
     output_schema_name="data_analysis",  # NEW: Structured output with DataAnalysisOutput schema
     enable_structured_output=True,  # NEW: Type-safe data analysis responses
@@ -695,8 +695,8 @@ JSON_QUERY_AGENT = AgentTemplate(
     name="JSON Query Agent",
     description="Navigates and queries large, complex JSON structures. Perfect for API responses, config files, and nested data. Extracts values, filters, and explains structure.",
     category=AgentCategory.RESEARCH,
-    model="gpt-4o",
-    fallback_models=["gpt-4o-mini"],
+    model="gpt-5.4",
+    fallback_models=["gpt-5.4-mini"],
     temperature=0.0,  # Deterministic for JSON extraction
     system_prompt="""You are a JSON data specialist.
 
@@ -739,8 +739,8 @@ JIRA_QA_TRIAGER = AgentTemplate(
     name="Jira QA Ticket Triager",
     description="Automates Jira ticket triage, analysis, and workflow management using Jira CLI tools. Fetches tickets, analyzes content, updates descriptions, adds labels, transitions status, and assigns tickets. Provides structured output with triage results.",
     category=AgentCategory.QA_VALIDATION,
-    model="claude-sonnet-4-5-20250929",  # Claude 4.5 Sonnet for reasoning about QA issues
-    fallback_models=["gpt-5", "gpt-4o"],
+    model="claude-sonnet-4-6",  # Claude 4.5 Sonnet for reasoning about QA issues
+    fallback_models=["gpt-5", "gpt-5.4"],
     temperature=0.4,
     output_schema_name="jira_triage",  # NEW: Structured output with JiraTriageOutput schema
     enable_structured_output=True,  # NEW: Type-safe triage responses
@@ -801,7 +801,7 @@ IMAGE_ILLUSTRATOR = AgentTemplate(
         "nano-banana", "prompt-extraction", "markdown-embedding"
     ],
 
-    model="gpt-4o-mini",  # Fast and cheap for parsing
+    model="gpt-5.4-mini",  # Fast and cheap for parsing
     fallback_models=["claude-haiku-4-5", "gemini-2.5-flash"],
     temperature=0.6,  # Moderate creativity
 
@@ -898,8 +898,8 @@ IMAGE_CREATOR = AgentTemplate(
         "creative-direction", "style-adaptation", "image-variations", "visual-concept-translation"
     ],
 
-    model="gpt-4o",  # GPT-4o is excellent at understanding visual concepts and prompt engineering
-    fallback_models=["claude-sonnet-4-5-20250929", "gemini-2.5-pro"],
+    model="gpt-5.4",  # GPT-4o is excellent at understanding visual concepts and prompt engineering
+    fallback_models=["claude-sonnet-4-6", "gemini-2.5-pro"],
     temperature=0.7,  # Higher temperature for creative prompt generation
 
     system_prompt="""ROLE: AI Image Generation Specialist & Creative Director.
@@ -973,8 +973,8 @@ PRESENTATION_GENERATOR = AgentTemplate(
         "title-generation", "speaker-notes", "presentation-design", "pitch-decks"
     ],
 
-    model="gpt-4o",
-    fallback_models=["claude-sonnet-4-5-20250929", "gpt-4o-mini"],
+    model="gpt-5.4",
+    fallback_models=["claude-sonnet-4-6", "gpt-5.4-mini"],
     temperature=0.3,  # Low temperature for consistent structuring
 
     output_schema_name="presentation_structure",

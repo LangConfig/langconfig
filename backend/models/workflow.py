@@ -13,6 +13,10 @@ from core.versioning import OptimisticLockMixin
 from enum import Enum
 import datetime
 
+
+def utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
 class WorkflowStrategy(str, Enum):
     """Available workflow orchestration strategies"""
     DEFAULT_SEQUENTIAL = "default_sequential"
@@ -66,16 +70,22 @@ class WorkflowProfile(Base, OptimisticLockMixin):
     # Optional: Visual workflow blueprint
     blueprint = Column(JSON, nullable=True)
 
+    # Template metadata for reusable workflow starters.
+    is_template = Column(Boolean, default=False, nullable=False, index=True)
+    template_category = Column(String(50), nullable=True, index=True)
+    template_icon = Column(String(50), nullable=True)
+    template_tags = Column(JSON, nullable=True, default=list)
+
     # Usage tracking
     usage_count = Column(Integer, default=0, nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
-        default=datetime.datetime.utcnow,
-        onupdate=datetime.datetime.utcnow,
+        default=utc_now,
+        onupdate=utc_now,
         nullable=False
     )
 
@@ -204,7 +214,7 @@ class WorkflowVersion(Base):
 
     # Metadata
     created_by = Column(String(100), nullable=True)  # User ID or name
-    created_at = Column(DateTime(timezone=True), default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     # Relationships
     executions = relationship("WorkflowExecution", back_populates="version", cascade="all, delete-orphan")
@@ -242,7 +252,7 @@ class WorkflowExecution(Base):
 
     # Timestamps
     started_at = Column(DateTime(timezone=True), nullable=True)
-    completed_at = Column(DateTime(timezone=True), default=datetime.datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     # Relationships
     version = relationship("WorkflowVersion", back_populates="executions")

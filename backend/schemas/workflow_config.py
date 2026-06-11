@@ -48,7 +48,7 @@ class SequentialConfig(BaseModel):
     )
     
     default_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Default LLM model to use for task execution"
     )
     
@@ -104,7 +104,7 @@ class SequentialConfig(BaseModel):
         json_schema_extra = {
             "example": {
                 "max_retries": 3,
-                "default_model": "gpt-4o",  # GPT-4o for standard tasks
+                "default_model": "gpt-5.4",  # GPT-4o for standard tasks
                 "temperature": 0.7,
                 "enable_qa_validation": True,
                 "strict_qa_threshold": 0.7,
@@ -134,7 +134,7 @@ class RomanLegionTier(BaseModel):
     
     model: ModelChoice = Field(
         ...,
-        description="LLM model identifier for this tier (e.g., 'gpt-4o-mini', 'gpt-4o', 'o1-mini')"
+        description="LLM model identifier for this tier (e.g., 'gpt-5.4-mini', 'gpt-5.4', 'o1-mini')"
     )
     
     max_retries: int = Field(
@@ -162,7 +162,7 @@ class RomanLegionTier(BaseModel):
         json_schema_extra = {
             "example": {
                 "name": "Hastati",
-                "model": "gpt-4o-mini",  # Economy model for basic tasks
+                "model": "gpt-5.4-mini",  # Economy model for basic tasks
                 "max_retries": 2,
                 "temperature": 0.7
             }
@@ -232,8 +232,8 @@ class RomanLegionConfig(BaseModel):
         json_schema_extra = {
             "example": {
                 "tiers": [
-                    {"name": "Hastati", "model": "gpt-4o-mini", "max_retries": 2, "temperature": 0.7},
-                    {"name": "Principes", "model": "gpt-4o", "max_retries": 1, "temperature": 0.7},
+                    {"name": "Hastati", "model": "gpt-5.4-mini", "max_retries": 2, "temperature": 0.7},
+                    {"name": "Principes", "model": "gpt-5.4", "max_retries": 1, "temperature": 0.7},
                     {"name": "Triarii", "model": "claude-sonnet-4-20250514", "max_retries": 1, "temperature": 0.5}
                 ],
                 "enable_tier_escalation": True,
@@ -278,7 +278,7 @@ class QuorumSensingConfig(BaseModel):
     )
     
     models: List[str] = Field(
-        default=["gpt-4o", "gpt-4o", "gpt-4o"],  # GPT-4o for parallel execution
+        default=["gpt-5.4", "gpt-5.4", "gpt-5.4"],  # GPT-4o for parallel execution
         min_items=1,
         description="List of models to use for parallel agents (can repeat for diversity through randomness)"
     )
@@ -347,7 +347,7 @@ class QuorumSensingConfig(BaseModel):
             "example": {
                 "parallel_agents": 3,
                 "minimum_quorum": 2,
-                "models": ["gpt-4o", "claude-sonnet-3.5", "gpt-4o"],
+                "models": ["gpt-5.4", "claude-sonnet-3.5", "gpt-5.4"],
                 "consensus_method": "WEIGHTED_SCORE",
                 "timeout_seconds": 600,
                 "enable_diversity": True,
@@ -443,7 +443,7 @@ class DeepResearchConfig(BaseModel):
     )
 
     researcher_model: ModelChoice = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="Model for conducting parallel research tasks"
     )
 
@@ -453,7 +453,7 @@ class DeepResearchConfig(BaseModel):
     )
 
     critic_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Model for evaluating report quality and providing feedback"
     )
 
@@ -490,10 +490,10 @@ class DeepResearchConfig(BaseModel):
         json_schema_extra = {
             "example": {
                 "max_reflection_iterations": 3,
-                "planner_model": "claude-3-5-sonnet-20240620",
-                "researcher_model": "gpt-4o-mini",
-                "writer_model": "claude-3-5-sonnet-20240620",
-                "critic_model": "gpt-4o",
+                "planner_model": "claude-sonnet-4-6",
+                "researcher_model": "gpt-5.4-mini",
+                "writer_model": "claude-sonnet-4-6",
+                "critic_model": "gpt-5.4",
                 "enable_web_search": True,
                 "enable_critique": True
             }
@@ -527,7 +527,7 @@ class LearningResearchConfig(BaseModel):
     )
 
     internal_reviewer_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Model for searching and reviewing internal project memory"
     )
 
@@ -537,7 +537,7 @@ class LearningResearchConfig(BaseModel):
     )
 
     researcher_model: ModelChoice = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="Model for conducting external research on knowledge gaps"
     )
 
@@ -547,7 +547,7 @@ class LearningResearchConfig(BaseModel):
     )
 
     curator_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Model for extracting insights and storing in memory"
     )
 
@@ -569,11 +569,11 @@ class LearningResearchConfig(BaseModel):
                 "enable_internal_review": True,
                 "enable_memory_storage": True,
                 "enable_web_search": True,
-                "internal_reviewer_model": "gpt-4o",
-                "planner_model": "claude-3-5-sonnet-20240620",
-                "researcher_model": "gpt-4o-mini",
-                "synthesizer_model": "claude-3-5-sonnet-20240620",
-                "curator_model": "gpt-4o",
+                "internal_reviewer_model": "gpt-5.4",
+                "planner_model": "claude-sonnet-4-6",
+                "researcher_model": "gpt-5.4-mini",
+                "synthesizer_model": "claude-sonnet-4-6",
+                "curator_model": "gpt-5.4",
                 "memory_importance_threshold": 7
             }
         }
@@ -623,12 +623,12 @@ class RLMConfig(BaseModel):
     )
     
     recursion_model: ModelChoice = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="Model for recursive sub-analysis (cheaper model for efficiency)"
     )
     
     synthesis_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Model for root-level synthesis and final answer generation"
     )
     
@@ -666,8 +666,8 @@ class RLMConfig(BaseModel):
                 "context_chunk_size": 50000,
                 "repl_type": "restricted_python",
                 "enable_parallelization": True,
-                "recursion_model": "gpt-4o-mini",
-                "synthesis_model": "gpt-4o",
+                "recursion_model": "gpt-5.4-mini",
+                "synthesis_model": "gpt-5.4",
                 "enable_code_execution": True,
                 "timeout_per_depth": 120,
                 "enable_cost_tracking": True
@@ -715,12 +715,12 @@ class RLMRAGHybridConfig(BaseModel):
     )
     
     recursion_model: ModelChoice = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="Model for recursive analysis"
     )
     
     synthesis_model: ModelChoice = Field(
-        default="gpt-4o",
+        default="gpt-5.4",
         description="Model for final synthesis"
     )
     
@@ -769,8 +769,8 @@ class RLMRAGHybridConfig(BaseModel):
                 "context_chunk_size": 50000,
                 "repl_type": "restricted_python",
                 "enable_parallelization": True,
-                "recursion_model": "gpt-4o-mini",
-                "synthesis_model": "gpt-4o",
+                "recursion_model": "gpt-5.4-mini",
+                "synthesis_model": "gpt-5.4",
                 "enable_hyde": True,
                 "enable_dna_augmentation": True,
                 "timeout_per_depth": 120,
@@ -802,8 +802,8 @@ def get_default_config(strategy: str) -> BaseModel:
         WorkflowStrategy.DEFAULT_SEQUENTIAL: SequentialConfig(),
         WorkflowStrategy.ROMAN_LEGION: RomanLegionConfig(
             tiers=[
-                RomanLegionTier(name="Hastati", model="gpt-4o-mini", max_retries=2),
-                RomanLegionTier(name="Principes", model="gpt-4o", max_retries=1),
+                RomanLegionTier(name="Hastati", model="gpt-5.4-mini", max_retries=2),
+                RomanLegionTier(name="Principes", model="gpt-5.4", max_retries=1),
                 RomanLegionTier(name="Triarii", model="o1-mini", max_retries=1)
             ]
         ),

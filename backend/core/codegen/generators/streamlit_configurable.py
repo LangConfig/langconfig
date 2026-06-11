@@ -63,7 +63,7 @@ class ConfigurableStreamlitGenerator:
 
             name = node_data.get("name") or node_data.get("label") or node_id
             system_prompt = node_config.get("system_prompt", "You are a helpful assistant.")
-            model = node_config.get("model") or node_data.get("model") or "gpt-4o"
+            model = node_config.get("model") or node_data.get("model") or "gpt-5.4"
             native_tools = node_config.get("native_tools", [])
             custom_tools = node_config.get("custom_tools", [])
 
@@ -168,9 +168,9 @@ MIDDLEWARE = {{
 }}
 
 MODELS = {{
-    "gpt-5.2": {{"provider": "openai", "display": "GPT-5.2"}},
-    "gpt-4o": {{"provider": "openai", "display": "GPT-4o"}},
-    "claude-opus-4-5": {{"provider": "anthropic", "display": "Claude Opus 4.5"}},
+    "gpt-5.5": {{"provider": "openai", "display": "GPT-5.2"}},
+    "gpt-5.4": {{"provider": "openai", "display": "GPT-4o"}},
+    "claude-opus-4-8": {{"provider": "anthropic", "display": "Claude Opus 4.5"}},
     "claude-haiku-4-5": {{"provider": "anthropic", "display": "Claude Haiku 4.5"}},
     "gemini-3-pro-preview": {{"provider": "google", "display": "Gemini 3 Pro"}},
 }}
@@ -468,7 +468,7 @@ def main():
             with c2:
                 if st.session_state.agents:
                     models = list(MODELS.keys())
-                    current = st.session_state.agents[0].get("model", "gpt-4o")
+                    current = st.session_state.agents[0].get("model", "gpt-5.4")
                     idx = models.index(current) if current in models else 0
                     st.session_state.agents[0]["model"] = st.selectbox(
                         "Model", models, idx,
@@ -494,7 +494,7 @@ def main():
                     "id": f"agent_{{len(st.session_state.agents)+1}}",
                     "name": f"Agent {{len(st.session_state.agents)+1}}",
                     "system_prompt": "You are helpful.",
-                    "model": "gpt-4o",
+                    "model": "gpt-5.4",
                     "tools": [],
                 }})
                 st.rerun()

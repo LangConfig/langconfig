@@ -20,8 +20,8 @@ Based on Domain Specialization (Chapter 7), Advanced RAG (Chapter 14), and Activ
 from core.agents.templates import AgentTemplate, AgentCategory
 
 # Use current model types
-MODEL_REASONING = "claude-sonnet-4-5-20250929"
-MODEL_FAST = "gpt-4o-mini"
+MODEL_REASONING = "claude-sonnet-4-6"
+MODEL_FAST = "gpt-5.4-mini"
 MODEL_BALANCED = "gpt-5"
 
 # =============================================================================

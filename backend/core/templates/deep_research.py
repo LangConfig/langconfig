@@ -22,8 +22,8 @@ Based on patterns from:
 from core.agents.templates import AgentTemplate, AgentCategory
 
 # Use current model types from your existing templates
-MODEL_REASONING = "claude-sonnet-4-5-20250929"  # Best for complex reasoning and writing
-MODEL_FAST = "gpt-4o-mini"  # Best for fast data gathering
+MODEL_REASONING = "claude-sonnet-4-6"  # Best for complex reasoning and writing
+MODEL_FAST = "gpt-5.4-mini"  # Best for fast data gathering
 MODEL_BALANCED = "gpt-5"  # Good balance for critique and general tasks
 
 # =============================================================================

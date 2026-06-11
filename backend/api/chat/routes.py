@@ -65,6 +65,7 @@ from models.deep_agent import DeepAgentTemplate, ChatSession, DeepAgentConfig, S
 from models.core import DocumentType, IndexingStatus
 from services.deepagent_factory import DeepAgentFactory
 from core.workflows.events.emitter import ExecutionEventCallbackHandler
+from core.streaming.adapters import normalize_stream_event
 from services.conversation_context import ConversationContextService
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,23 @@ def make_json_safe(obj):
             return None
 
 
+def sse_event(payload: Dict[str, Any]) -> str:
+    """Encode a payload as a Server-Sent Event data frame."""
+    return f"data: {json.dumps(make_json_safe(payload))}\n\n"
+
+
+def current_timestamp() -> str:
+    """Return an ISO timestamp for persisted chat messages."""
+    return datetime.utcnow().isoformat()
+
+
+def has_multimodal_blocks(blocks: Optional[List[Dict[str, Any]]]) -> bool:
+    """Whether content blocks include non-text UI-renderable content."""
+    if not blocks:
+        return False
+    return any(block.get("type") in {"image", "audio", "file", "resource"} for block in blocks if isinstance(block, dict))
+
+
 # =============================================================================
 # Request/Response Models
 # =============================================================================
@@ -103,6 +121,7 @@ def make_json_safe(obj):
 class StartChatRequest(BaseModel):
     """Request to start a new chat session."""
     agent_id: int
+    project_id: Optional[int] = None
     user_id: Optional[int] = None
 
 
@@ -110,12 +129,18 @@ class ChatMessage(BaseModel):
     """A single chat message."""
     role: str  # 'user' or 'assistant'
     content: str
+    timestamp: Optional[str] = None
+    content_blocks: Optional[List[Dict[str, Any]]] = None
+    artifacts: Optional[List[Dict[str, Any]]] = None
+    has_multimodal: Optional[bool] = None
+    banked: Optional[bool] = None
 
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a chat session."""
     session_id: str
     message: str
+    enable_hitl: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -131,6 +156,7 @@ class ChatSessionResponse(BaseModel):
     """Response with chat session details."""
     session_id: str
     agent_id: int
+    project_id: Optional[int] = None
     agent_name: str
     is_active: bool
     message_count: int
@@ -208,6 +234,7 @@ async def start_chat_session(
         session = ChatSession(
             session_id=session_id,
             agent_id=agent.id,
+            project_id=request.project_id or getattr(agent, "project_id", None),
             user_id=request.user_id,
             messages=[],
             metrics={
@@ -230,6 +257,7 @@ async def start_chat_session(
         return ChatSessionResponse(
             session_id=session.session_id,
             agent_id=agent.id,
+            project_id=session.project_id,
             agent_name=agent.name,
             is_active=session.is_active,
             message_count=len(session.messages),
@@ -447,12 +475,16 @@ async def send_message_stream(
         # Store session_id and agent config before entering generator
         # to avoid detached session issues
         session_id = session.session_id
+        session_project_id = getattr(session, "project_id", None)
         agent_config = agent.config.copy() if agent.config else {}
         agent_project_id = getattr(agent, 'project_id', None)
 
         async def generate_stream():
             """Generate streaming response."""
             full_response = ""
+            assistant_artifacts: List[Dict[str, Any]] = []
+            assistant_content_blocks: List[Dict[str, Any]] = []
+            artifact_cursor = 0
             all_context = ""
             rag_tokens_used = 0
 
@@ -471,14 +503,15 @@ async def send_message_stream(
                 logger.info(f"Before adding user message: total_messages={len(fresh_session.messages)}")
                 fresh_session.messages.append({
                     "role": "user",
-                    "content": request.message
+                    "content": request.message,
+                    "timestamp": current_timestamp()
                 })
                 flag_modified(fresh_session, "messages")
                 db.commit()  # Commit user message immediately
                 db.refresh(fresh_session)  # Refresh to confirm save
                 logger.info(f"✓ User message saved to DB: session={session_id}, total_messages={len(fresh_session.messages)}")
 
-                project_id = agent_project_id
+                project_id = session_project_id or agent_project_id
 
                 if project_id:
                     from services.context_retrieval import context_retriever
@@ -563,69 +596,98 @@ async def send_message_stream(
                 async for event in agent_instance.astream_events(
                     {"messages": [new_message]},
                     config={
-                        "configurable": {"thread_id": session_id},
+                        "configurable": {"thread_id": session_id, "enable_hitl": request.enable_hitl},
+                        "metadata": {"enable_hitl": request.enable_hitl},
                         "callbacks": [event_handler],
                         "recursion_limit": 500  # Increased from default 25 for complex tool chains
                     },
-                    version="v2"
+                    version="v3"
                 ):
                     kind = event.get("event")
+                    normalized_event = normalize_stream_event(event)
 
                     # Stream tool call events
-                    if kind == "on_tool_start":
-                        tool_data = event.get("data", {})
-                        # Tool name is in event["name"] for astream_events v2
-                        tool_name = event.get("name", "unknown")
-                        # Filter out non-serializable objects
-                        safe_data = make_json_safe(tool_data)
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name, 'data': safe_data})}\n\n"
+                    if normalized_event and normalized_event.get("type") == "tool_started":
+                        yield sse_event({
+                            "type": "tool_start",
+                            "tool_name": normalized_event.get("tool_name") or "unknown",
+                            "data": {
+                                "input": normalized_event.get("input"),
+                                "namespace": normalized_event.get("namespace"),
+                            },
+                        })
 
-                    elif kind == "on_tool_end":
-                        tool_data = event.get("data", {})
-                        tool_name = event.get("name", "unknown")
-                        # Filter out non-serializable objects
-                        safe_data = make_json_safe(tool_data)
-                        yield f"data: {json.dumps({'type': 'tool_end', 'tool_name': tool_name, 'data': safe_data})}\n\n"
+                    elif normalized_event and normalized_event.get("type") in {"tool_completed", "tool_error"}:
+                        tool_name = normalized_event.get("tool_name") or "unknown"
+                        yield sse_event({
+                            "type": "tool_end",
+                            "tool_name": tool_name,
+                            "data": {
+                                "output": normalized_event.get("output"),
+                                "error": normalized_event.get("error"),
+                                "namespace": normalized_event.get("namespace"),
+                            },
+                        })
+
+                        collected_artifacts = event_handler.get_collected_artifacts()
+                        new_artifacts = collected_artifacts[artifact_cursor:]
+                        artifact_cursor = len(collected_artifacts)
+                        for artifact in new_artifacts:
+                            artifact = make_json_safe(artifact)
+                            if not isinstance(artifact, dict):
+                                continue
+                            assistant_artifacts.append(artifact)
+                            if artifact.get("type") in {"image", "audio", "file", "resource"}:
+                                assistant_content_blocks.append(artifact)
+                            yield sse_event({
+                                "type": "tool_artifact",
+                                "tool_name": tool_name,
+                                "artifact": artifact,
+                            })
 
                     # Stream custom events (LangGraph-style progress bars, status badges, etc.)
                     elif kind == "on_custom_event" or (kind == "custom_event"):
                         custom_data = event.get("data", {})
                         safe_data = make_json_safe(custom_data)
-                        yield f"data: {json.dumps({'type': 'custom_event', 'data': safe_data})}\n\n"
+                        yield sse_event({"type": "custom_event", "data": safe_data})
 
                     # Stream LLM tokens as they're generated
-                    elif kind == "on_chat_model_stream":
-                        chunk_content = event.get("data", {}).get("chunk")
-                        if chunk_content and hasattr(chunk_content, "content"):
-                            token = chunk_content.content
+                    elif normalized_event and normalized_event.get("type") == "text_delta":
+                        token = normalized_event.get("text")
 
-                            # Ensure token is a string (handle cases where content might be a list of blocks)
-                            if isinstance(token, list):
-                                # Skip empty lists
-                                if not token:
-                                    continue
-                                # Extract text from content blocks: [{'text': '...', 'type': 'text'}, ...]
-                                parts = [
-                                    block.get("text", "") if isinstance(block, dict) else str(block)
-                                    for block in token
-                                ]
-                                # Join parts directly - streaming sends complete tokens
-                                token = "".join(parts)
-                            elif token is None:
+                        # Ensure token is a string (handle cases where content might be a list of blocks)
+                        if isinstance(token, list):
+                            # Skip empty lists
+                            if not token:
                                 continue
-                            elif not isinstance(token, str):
-                                token = str(token)
+                            # Extract text from content blocks: [{'text': '...', 'type': 'text'}, ...]
+                            parts = [
+                                block.get("text", "") if isinstance(block, dict) else str(block)
+                                for block in token
+                            ]
+                            # Join parts directly - streaming sends complete tokens
+                            token = "".join(parts)
+                        elif token is None:
+                            continue
+                        elif not isinstance(token, str):
+                            token = str(token)
 
-                            if token:
-                                full_response += token
-                                yield f"data: {json.dumps({'type': 'chunk', 'content': token})}\n\n"
+                        if token:
+                            full_response += token
+                            yield sse_event({"type": "chunk", "content": token})
 
                 # Send completion event
-                yield f"data: {json.dumps({'type': 'complete', 'content': full_response})}\n\n"
+                yield sse_event({
+                    "type": "complete",
+                    "content": full_response,
+                    "artifacts": assistant_artifacts,
+                    "content_blocks": assistant_content_blocks,
+                    "has_multimodal": has_multimodal_blocks(assistant_content_blocks),
+                })
 
             except Exception as e:
                 logger.error(f"Error in stream: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                yield sse_event({"type": "error", "message": str(e)})
 
             finally:
                 # Always save assistant message, even if there was an error
@@ -641,7 +703,11 @@ async def send_message_stream(
 
                             final_session.messages.append({
                                 "role": "assistant",
-                                "content": full_response
+                                "content": full_response,
+                                "timestamp": current_timestamp(),
+                                "artifacts": assistant_artifacts,
+                                "content_blocks": assistant_content_blocks,
+                                "has_multimodal": has_multimodal_blocks(assistant_content_blocks),
                             })
                             flag_modified(final_session, "messages")
 
@@ -724,11 +790,18 @@ async def get_session_metrics(
     rag_tokens = session.metrics.get("rag_context_tokens", 0)
 
     agent = db.query(DeepAgentTemplate).filter_by(id=session.agent_id).first()
-    model = "claude-sonnet-4-5-20250929"
+    model = "claude-sonnet-4-6"
     if agent and agent.config:
-        model = agent.config.get("model", "claude-sonnet-4-5-20250929")
+        model = agent.config.get("model", "claude-sonnet-4-6")
 
     MODEL_PRICING = {
+        "gpt-5.5": 17.5,
+        "gpt-5.4": 8.75,
+        "gpt-5.4-mini": 2.625,
+        "gpt-5.4-nano": 0.825,
+        "claude-opus-4-8": 15.0,
+        "claude-sonnet-4-6": 9.0,
+        "claude-haiku-4-5": 3.0,
         "claude-sonnet-4-5-20250929": 9.0,
         "claude-sonnet-4": 9.0,
         "claude-opus-4-20250514": 45.0,
@@ -848,14 +921,82 @@ async def end_chat_session(
     }
 
 
+@router.delete("/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    db: Session = Depends(get_db)
+):
+    """Delete a chat session, its uploaded session documents, and runtime state."""
+    session = db.query(ChatSession).filter(
+        ChatSession.session_id == session_id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    documents = db.query(SessionDocument).filter(
+        SessionDocument.session_id == session_id
+    ).all()
+    document_paths = [doc.file_path for doc in documents if doc.file_path]
+
+    db.delete(session)
+    db.commit()
+
+    removed_files = 0
+    for file_path in document_paths:
+        try:
+            from pathlib import Path
+            path = Path(file_path)
+            if path.exists() and path.is_file():
+                path.unlink()
+                removed_files += 1
+        except Exception as e:
+            logger.warning(f"Failed to remove session document {file_path}: {e}")
+
+    manager = get_session_manager()
+    removed = manager.remove_session(session_id)
+    active_agents.pop(session_id, None)
+
+    cleanup_success = False
+    try:
+        from core.workflows.checkpointing.utils import delete_thread_checkpoints
+        await delete_thread_checkpoints(thread_id=session_id)
+        cleanup_success = True
+    except Exception as e:
+        logger.warning(f"Failed to cleanup checkpoints for deleted session {session_id}: {e}")
+
+    logger.info(
+        "Deleted chat session %s (agent_removed=%s, checkpoints_cleaned=%s, files_removed=%s)",
+        session_id,
+        removed,
+        cleanup_success,
+        removed_files,
+    )
+
+    return {
+        "status": "success",
+        "message": "Session deleted",
+        "session_id": session_id,
+        "agent_removed": removed,
+        "checkpoints_cleaned": cleanup_success,
+        "files_removed": removed_files,
+    }
+
+
 @router.get("/sessions")
 async def list_chat_sessions(
     agent_id: Optional[int] = None,
+    project_id: Optional[int] = None,
+    include_uncategorized: bool = True,
     active_only: bool = False,
     limit: int = 50,  # Default to 50 most recent conversations
     db: Session = Depends(get_db)
 ):
-    """List all chat sessions, ordered by most recently updated first."""
+    """List chat sessions, ordered by most recently updated first.
+
+    When project_id is provided, include uncategorized sessions by default so
+    older conversations created before project scoping still remain reachable.
+    """
     query = db.query(ChatSession).join(
         DeepAgentTemplate,
         ChatSession.agent_id == DeepAgentTemplate.id
@@ -863,6 +1004,14 @@ async def list_chat_sessions(
 
     if agent_id:
         query = query.filter(ChatSession.agent_id == agent_id)
+
+    if project_id is not None and include_uncategorized:
+        query = query.filter(
+            (ChatSession.project_id == project_id) |
+            (ChatSession.project_id.is_(None))
+        )
+    elif project_id is not None:
+        query = query.filter(ChatSession.project_id == project_id)
 
     if active_only:
         query = query.filter(ChatSession.is_active == True)
@@ -888,6 +1037,7 @@ async def list_chat_sessions(
         result.append({
             "session_id": session.session_id,
             "agent_id": session.agent_id,
+            "project_id": session.project_id,
             "agent_name": agent.name if agent else "Unknown Agent",
             "is_active": session.is_active,
             "message_count": len(session.messages),
@@ -1104,6 +1254,83 @@ async def approve_hitl(
 # =============================================================================
 # Message Banking Endpoints (for Context Management)
 # =============================================================================
+
+
+@router.delete("/{session_id}/messages/{message_index}")
+async def delete_chat_message(
+    session_id: str,
+    message_index: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a user message from persisted chat history.
+
+    This resets the live runtime cache/checkpoints for the session because
+    LangGraph runtime memory may still contain the removed message.
+    """
+    session = db.query(ChatSession).filter(
+        ChatSession.session_id == session_id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if message_index < 0 or not session.messages or message_index >= len(session.messages):
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    message = session.messages[message_index]
+    if message.get("role") != "user":
+        raise HTTPException(status_code=400, detail="Only user messages can be deleted")
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    removed_message = session.messages.pop(message_index)
+
+    # Keep document attachments aligned with the shifted message indexes.
+    session_docs = db.query(SessionDocument).filter(
+        SessionDocument.session_id == session_id
+    ).all()
+    for doc in session_docs:
+        if doc.message_index is None:
+            continue
+        if doc.message_index == message_index:
+            doc.message_index = None
+        elif doc.message_index > message_index:
+            doc.message_index -= 1
+
+    session.is_active = False
+    session.ended_at = datetime.utcnow()
+    flag_modified(session, "messages")
+    db.commit()
+
+    manager = get_session_manager()
+    removed = manager.remove_session(session_id)
+    active_agents.pop(session_id, None)
+
+    cleanup_success = False
+    try:
+        from core.workflows.checkpointing.utils import delete_thread_checkpoints
+        cleanup_success = await delete_thread_checkpoints(thread_id=session_id)
+    except Exception as e:
+        logger.warning(f"Failed to cleanup checkpoints for session {session_id} after message delete: {e}")
+
+    logger.info(
+        "Deleted user message %s in chat session %s (runtime_reset=%s, checkpoints_cleaned=%s)",
+        message_index,
+        session_id,
+        removed,
+        cleanup_success,
+    )
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "message_index": message_index,
+        "deleted_role": removed_message.get("role"),
+        "runtime_reset": True,
+        "session_active": False,
+        "checkpoints_cleaned": cleanup_success,
+    }
 
 
 @router.post("/{session_id}/messages/{message_index}/bank")

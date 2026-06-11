@@ -110,6 +110,7 @@ class TransactionContext:
                         "committed": True
                     }
                 )
+                transaction_metrics.record_commit(duration_ms)
             except Exception as e:
                 logger.error(f"Transaction commit failed: {self.name} - {e}")
                 self.session.rollback()
@@ -135,6 +136,7 @@ class TransactionContext:
                     "error_message": str(exc_val)
                 }
             )
+            transaction_metrics.record_rollback(duration_ms)
 
         self._in_transaction = False
 
@@ -261,6 +263,7 @@ def managed_transaction(
                 is_deadlock = True
 
             if is_deadlock and attempts < max_retries:
+                transaction_metrics.record_deadlock()
                 # Retry with exponential backoff
                 delay = retry_delay * (2 ** (attempts - 1))
                 logger.warning(

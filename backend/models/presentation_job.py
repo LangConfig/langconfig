@@ -9,9 +9,9 @@ Presentation Job Database Model
 Tracks the status and results of presentation generation jobs.
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from db.database import Base
+from db.types import JSONBType
 import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
@@ -58,7 +58,7 @@ class PresentationJob(Base):
     theme = Column(String(50), default=PresentationTheme.DEFAULT.value)
 
     # Input items (array of selected artifact/file references)
-    input_items = Column(JSONB, nullable=False)
+    input_items = Column(JSONBType, nullable=False)
 
     # Result data
     result_url = Column(Text, nullable=True)  # Google Slides URL

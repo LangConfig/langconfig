@@ -482,6 +482,7 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
             event_type="CHAIN_START",
             data={
                 "agent_label": agent_label or node_name,  # Primary field for node matching
+                "node_id": node_id,
                 "run_id": str(run_id),
                 "parent_run_id": str(parent_run_id) if parent_run_id else None,
                 "tags": tags or [],
@@ -508,14 +509,43 @@ class ExecutionEventCallbackHandler(AsyncCallbackHandler):
         # Sanitize outputs if enabled
         sanitized_outputs = self._sanitize_arguments(outputs) if self.enable_sanitization else outputs
 
+        node_info = self.current_node_info.get(run_id, {})
+        agent_label = node_info.get("agent_label") or node_info.get("node_name")
+        node_id_for_event = node_info.get("node_id")
+
+        final_output = None
+        if isinstance(sanitized_outputs, dict):
+            final_output = (
+                sanitized_outputs.get("output")
+                or sanitized_outputs.get("result")
+                or sanitized_outputs.get("answer")
+            )
+            if not final_output and "messages" in sanitized_outputs:
+                messages = sanitized_outputs.get("messages") or []
+                for message in reversed(messages):
+                    content = getattr(message, "content", None)
+                    if content is None and isinstance(message, dict):
+                        content = message.get("content")
+                    if content:
+                        final_output = content
+                        break
+
+        event_data = {
+            "run_id": str(run_id),
+            "parent_run_id": str(parent_run_id) if parent_run_id else None,
+            "output_keys": list(sanitized_outputs.keys()) if isinstance(sanitized_outputs, dict) else [],
+            "success": True
+        }
+        if agent_label:
+            event_data["agent_label"] = agent_label
+        if node_id_for_event:
+            event_data["node_id"] = node_id_for_event
+        if final_output is not None:
+            event_data["output"] = str(final_output)[:10000]
+
         await self._emit_event(
             event_type="CHAIN_END",
-            data={
-                "run_id": str(run_id),
-                "parent_run_id": str(parent_run_id) if parent_run_id else None,
-                "output_keys": list(sanitized_outputs.keys()) if isinstance(sanitized_outputs, dict) else [],
-                "success": True
-            }
+            data=event_data
         )
 
         # Clean up node tracking to prevent memory leaks
@@ -1748,7 +1778,7 @@ async def execute_agent_workflow(project_id: int, task_id: int, user_input: str)
 
     # 2. Create agent using AgentFactory
     agent_config = {
-        "model": "gpt-4o",
+        "model": "gpt-5.4",
         "temperature": 0.7,
         "system_prompt": "You are a helpful assistant.",
         "mcp_tools": ["filesystem", "web_search"],

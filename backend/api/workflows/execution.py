@@ -68,7 +68,7 @@ class TaskExecutionRequest(BaseModel):
     """Request to execute a simple task"""
     project_id: int
     description: str
-    assigned_model: Optional[str] = "claude-sonnet-4"
+    assigned_model: Optional[str] = "claude-sonnet-4-6"
     workflow_profile_id: Optional[int] = None
 
 
@@ -130,12 +130,17 @@ async def execute_workflow(
     # Extract user's actual input from the run workflow modal
     user_input = request.input_data.get("query") or request.input_data.get("task") or request.input_data.get("input") or f"Workflow: {workflow.name}"
 
+    task_input_data = dict(request.input_data or {})
+    if request.continue_from_task_id:
+        task_input_data["continue_from_task_id"] = request.continue_from_task_id
+
     task = Task(
         project_id=request.project_id if request.project_id else None,
         description=user_input,  # Store the FULL user prompt (truncation happens in frontend)
         status=TaskStatus.QUEUED,
         assigned_model="default",
-        workflow_profile_id=request.workflow_id
+        workflow_profile_id=request.workflow_id,
+        execution_logs={"entries": [], "input_data": task_input_data},
         # Note: input_data and context_documents passed directly to executor
     )
     db.add(task)
@@ -148,7 +153,7 @@ async def execute_workflow(
         task_id=task.id,
         project_id=request.project_id,
         workflow_id=request.workflow_id,
-        input_data=request.input_data,
+        input_data=task_input_data,
         context_documents=request.context_documents,
         attachments=request.attachments,
         continue_from_task_id=request.continue_from_task_id
@@ -472,7 +477,10 @@ async def get_workflow_history(
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "error_message": task.error_message,
             "result": task.result,  # Contains formatted_output
+            "input_data": (task.execution_logs or {}).get("input_data", {}),
         }
+        if task_data["input_data"].get("continue_from_task_id"):
+            task_data["continue_from_task_id"] = task_data["input_data"]["continue_from_task_id"]
 
         # Calculate duration if completed
         if task.created_at and task.completed_at:

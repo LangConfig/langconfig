@@ -456,7 +456,7 @@ class NodeGenerators:
                 node_config_top.get("model") or
                 node_data.get("model") or
                 node_config_nested.get("model") or
-                "gpt-4o"
+                "gpt-5.4"
             )
 
             # Get system prompt

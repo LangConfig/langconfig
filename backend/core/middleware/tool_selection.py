@@ -19,7 +19,7 @@ Example Usage:
     )
 
     agent = create_agent(
-        model="gpt-4o",
+        model="gpt-5.4",
         tools=all_available_tools,
         middleware=[
             PermissionBasedToolMiddleware(),  # Filter by user role

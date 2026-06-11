@@ -69,7 +69,7 @@ class Project(Base):
 
     # Configuration
     configuration = Column(JSON, default=lambda: {
-        "default_model": "gpt-4o"
+        "default_model": "gpt-5.4"
     })
 
     # RAG/Indexing fields

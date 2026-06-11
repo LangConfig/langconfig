@@ -58,10 +58,8 @@ class SubAgentConfig(BaseModel):
             elif v_lower == 'compiled':
                 return SubAgentType.COMPILED
             else:
-                logger.warning(f"[SubAgentConfig] Unknown type '{v}', defaulting to DICTIONARY")
-                return SubAgentType.DICTIONARY
-        logger.warning(f"[SubAgentConfig] Unexpected type value {v!r}, defaulting to DICTIONARY")
-        return SubAgentType.DICTIONARY
+                raise ValueError(f"Invalid subagent type: {v}")
+        raise ValueError(f"Invalid subagent type: {v!r}")
 
     # For dictionary-based subagents
     template_id: Optional[str] = Field(None, description="Base template to use from AgentTemplateRegistry")
@@ -178,7 +176,7 @@ class GuardrailsConfig(BaseModel):
 class DeepAgentConfig(BaseModel):
     """Complete DeepAgent configuration (Pydantic model for validation)."""
     # Base agent settings
-    model: str = Field(default="claude-sonnet-4-5-20250929")
+    model: str = Field(default="claude-sonnet-4-6")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = None
     reasoning_effort: Optional[ReasoningEffort] = Field(
@@ -356,6 +354,7 @@ class ChatSession(Base):
 
     # Reference to agent
     agent_id = Column(Integer, ForeignKey("deep_agent_templates.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Session metadata
     session_id = Column(String(100), unique=True, nullable=False, index=True)

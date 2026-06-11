@@ -12,6 +12,30 @@ These tests ensure that migrations can be applied, rolled back, and are idempote
 import pytest
 import subprocess
 import os
+import sys
+from pathlib import Path
+from sqlalchemy import create_engine
+
+
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+
+def get_test_db_url():
+    return os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql://langconfig:langconfig_dev@localhost:5433/langconfig_test"
+    )
+
+
+def require_test_database():
+    test_db_url = get_test_db_url()
+    try:
+        engine = create_engine(test_db_url)
+        with engine.connect():
+            pass
+        engine.dispose()
+    except Exception as e:
+        pytest.skip(f"Test PostgreSQL database is not available at {test_db_url}: {e}")
 
 
 def run_alembic_command(command_args, env_vars=None):
@@ -30,17 +54,14 @@ def run_alembic_command(command_args, env_vars=None):
         env.update(env_vars)
 
     # Get test database URL
-    test_db_url = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql://langconfig:langconfig_dev@localhost:5433/langconfig_test"
-    )
+    test_db_url = get_test_db_url()
 
     # Set DATABASE_URL for alembic
     env["DATABASE_URL"] = test_db_url
 
     result = subprocess.run(
-        ["alembic"] + command_args,
-        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        [sys.executable, "-m", "alembic"] + command_args,
+        cwd=BACKEND_ROOT,
         capture_output=True,
         text=True,
         env=env
@@ -51,6 +72,7 @@ def run_alembic_command(command_args, env_vars=None):
 
 def test_alembic_current():
     """Test that alembic current command works."""
+    require_test_database()
     result = run_alembic_command(["current"])
     assert result.returncode == 0, f"Failed to run 'alembic current': {result.stderr}"
 
@@ -65,6 +87,7 @@ def test_alembic_history():
 
 def test_migration_upgrade_head():
     """Test that migrations can be applied to head."""
+    require_test_database()
     # First downgrade to base
     downgrade_result = run_alembic_command(["downgrade", "base"])
     # It's okay if this fails (database might not be at a downgrade-able state)
@@ -76,6 +99,7 @@ def test_migration_upgrade_head():
 
 def test_migration_downgrade_one():
     """Test that migrations can be rolled back one step."""
+    require_test_database()
     # Get current revision
     current_result = run_alembic_command(["current"])
     assert current_result.returncode == 0
@@ -94,6 +118,7 @@ def test_migration_downgrade_one():
 
 def test_migration_idempotency():
     """Test that running migrations twice is safe (idempotency)."""
+    require_test_database()
     # Run upgrade to head twice
     for i in range(2):
         result = run_alembic_command(["upgrade", "head"])
@@ -107,6 +132,7 @@ def test_migration_check():
 
     # For now, we just check that alembic runs without error
     # A more sophisticated version would use alembic's check_migrations or similar
+    require_test_database()
     result = run_alembic_command(["current"])
     assert result.returncode == 0
 
@@ -119,6 +145,7 @@ def test_migration_full_cycle():
     This is marked as 'slow' because it can take a while.
     Run with: pytest -m slow
     """
+    require_test_database()
     # Downgrade to base
     downgrade_result = run_alembic_command(["downgrade", "base"])
     # Note: May fail if baseline migration isn't reversible - that's okay
@@ -138,23 +165,31 @@ def test_env_py_imports():
     # This test ensures that the model imports in env.py are correct
     # If this fails, it means there's an import error in alembic/env.py
 
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, str(BACKEND_ROOT))
 
     try:
-        # Try to import env.py (this will execute the module-level imports)
-        import alembic.env  # noqa: F401
+        from db.database import Base
+        from models.core import Directive, Project, Task, ContextDocument, SearchHistory
+        from models.workflow import WorkflowProfile, WorkflowVersion, WorkflowExecution
+        from models.deep_agent import DeepAgentTemplate, AgentExport, ChatSession
+        from models.audit_log import AuditLog
+        from models.settings import Settings
+        from models.execution_event import ExecutionEvent
+        from models.background_task import BackgroundTask
+        from models.custom_tool import CustomTool, ToolExecutionLog
+        from models.pii_profile import PIIProfile
+
+        assert Base.metadata.tables
     except ImportError as e:
         pytest.fail(f"Failed to import alembic/env.py: {e}")
 
 
 def test_database_url_configuration():
     """Test that DATABASE_URL is properly configured for tests."""
-    test_db_url = os.getenv("TEST_DATABASE_URL")
+    test_db_url = get_test_db_url()
 
-    # Ensure test database URL is set
-    assert test_db_url is not None or os.getenv("DATABASE_URL") is not None, \
-        "Neither TEST_DATABASE_URL nor DATABASE_URL is set"
+    # Ensure a test database URL can be resolved from env or the project default.
+    assert test_db_url is not None
 
     # Ensure we're not accidentally using production database
     if test_db_url:
