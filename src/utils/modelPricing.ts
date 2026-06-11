@@ -10,7 +10,7 @@
  *
  * Accurate per-token pricing for different AI models.
  * Prices are per 1M tokens (input and output separately).
- * Updated December 2025.
+ * Updated June 2026.
  *
  * Sources:
  * - OpenAI: https://openai.com/api/pricing/
@@ -29,19 +29,27 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'o3-mini': { input: 4.00, output: 16.00 },
   'o4-mini': { input: 3.00, output: 12.00 },
 
-  // OpenAI GPT-5 Series
+  // OpenAI GPT-5 frontier series
+  'gpt-5.5': { input: 5.00, output: 30.00 },
+  'gpt-5.4': { input: 2.50, output: 15.00 },
+  'gpt-5.4-mini': { input: 0.75, output: 4.50 },
+  'gpt-5.4-nano': { input: 0.20, output: 1.25 },
+
+  // Legacy OpenAI display/cost support
   'gpt-5.2': { input: 5.00, output: 15.00 },
   'gpt-5.1': { input: 4.00, output: 12.00 },
-
-  // OpenAI GPT-4o Series
   'gpt-4o': { input: 2.50, output: 10.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
 
-  // Anthropic Claude 4.5
+  // Anthropic Claude current generation
+  'claude-opus-4-8': { input: 5.00, output: 25.00 },
+  'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
+  'claude-haiku-4-5': { input: 1.00, output: 5.00 },
+
+  // Legacy Anthropic display/cost support
   'claude-opus-4-5': { input: 15.00, output: 75.00 },
   'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
   'claude-sonnet-4-5-20250929': { input: 3.00, output: 15.00 },
-  'claude-haiku-4-5': { input: 1.00, output: 5.00 },
 
   // Google Gemini 3
   'gemini-3-pro-preview': { input: 2.00, output: 12.00 },

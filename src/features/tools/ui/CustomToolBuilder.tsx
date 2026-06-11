@@ -890,7 +890,7 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
                 onChange={(e) => {
                   const newProvider = e.target.value;
                   // Auto-select default model for each provider
-                  const defaultModel = newProvider === 'google' ? 'gemini-2.5-flash-image' : 'dall-e-3';
+                  const defaultModel = newProvider === 'google' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-2';
                   setImplementationConfig({
                     ...implementationConfig,
                     provider: newProvider,
@@ -904,8 +904,8 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
                   color: 'var(--color-text-primary)'
                 }}
               >
-                <option value="google">Google (Nano Banana, Imagen 3, Veo 3)</option>
-                <option value="openai">OpenAI (GPT-Image-1.5, DALL-E 3, Sora)</option>
+                <option value="google">Google (Nano Banana Pro/2, Imagen 3, Veo 3)</option>
+                <option value="openai">OpenAI (GPT Image 2, GPT-Image-1.5, DALL-E 3, Sora)</option>
               </select>
             </div>
 
@@ -914,7 +914,7 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
                 Model <span className="text-red-500">*</span>
               </label>
               <select
-                value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-2.5-flash-image' : 'dall-e-3')}
+                value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-2')}
                 onChange={(e) => setImplementationConfig({ ...implementationConfig, model: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border text-sm"
                 style={{
@@ -925,16 +925,18 @@ const CustomToolBuilder = ({ onClose, onBack, existingToolId, skipTemplateStep =
               >
                 {implementationConfig.provider === 'openai' ? (
                   <>
+                    <option value="gpt-image-2">GPT Image 2 (Image)</option>
                     <option value="gpt-image-1.5">GPT-Image-1.5 (Image)</option>
                     <option value="dall-e-3">DALL-E 3 (Image)</option>
                     <option value="sora">Sora (Video)</option>
                   </>
                 ) : (
                   <>
-                    <option value="gemini-2.5-flash-image">🍌 Nano Banana (Gemini 2.5 Flash) - RECOMMENDED</option>
+                    <option value="gemini-3.1-flash-image-preview">🍌 Nano Banana 2 (3.1 Flash) - RECOMMENDED</option>
+                    <option value="gemini-3-pro-image-preview">🍌 Nano Banana Pro (3 Pro Image)</option>
                     <option value="imagen-3">Imagen 3 (Image)</option>
+                    <option value="veo-3.1-fast-generate-preview">Veo 3.1 Fast (Video)</option>
                     <option value="veo-3">Veo 3 (Video)</option>
-                    <option value="veo-3.1">Veo 3.1 (Video)</option>
                   </>
                 )}
               </select>

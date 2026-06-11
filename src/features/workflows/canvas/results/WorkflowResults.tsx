@@ -15,7 +15,6 @@ import rehypeKatex from 'rehype-katex';
 import RealtimeExecutionPanel from '@/features/workflows/execution/RealtimeExecutionPanel';
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import { TaskHistoryEntry } from '../types';
-import { exportToPDF } from '@/utils/exportHelpers';
 import apiClient from '@/lib/api-client';
 
 // Types
@@ -544,6 +543,7 @@ const WorkflowResults = memo(function WorkflowResults({
                                         tokens: selectedHistoryTask?.result?.workflow_summary?.total_tokens || taskHistory[0]?.result?.workflow_summary?.total_tokens,
                                         cost: selectedHistoryTask?.result?.workflow_summary?.total_cost_usd || taskHistory[0]?.result?.workflow_summary?.total_cost_usd,
                                       };
+                                      const { exportToPDF } = await import('@/utils/exportHelpers');
                                       await exportToPDF(content, workflowName || 'Workflow_Results', metadata);
                                     } catch (error) {
                                       console.error('Failed to export PDF:', error);

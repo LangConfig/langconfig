@@ -20,6 +20,19 @@ export interface ValidationResult {
   warnings: ValidationError[];
 }
 
+const CONTROL_NODE_TYPES = new Set([
+  'START_NODE',
+  'END_NODE',
+  'CONDITIONAL_NODE',
+  'LOOP_NODE',
+  'HUMAN_REVIEW_NODE',
+]);
+
+const requiresAgentConfig = (agentType?: string): boolean => {
+  if (!agentType) return true;
+  return !CONTROL_NODE_TYPES.has(agentType) && agentType !== 'TOOL_NODE';
+};
+
 /**
  * Validates a workflow before saving or executing
  */
@@ -42,18 +55,44 @@ export function validateWorkflow(
   // Rule 2: All nodes must have required config
   nodes.forEach((node) => {
     const config = node.data?.config;
+    const agentType = config?.agentType || node.data?.agentType || node.type;
+    const nodeLabel = node.data?.label || node.id;
+
     if (!config) {
       errors.push({
         type: 'error',
-        message: `Node "${node.data?.label || node.id}" is missing configuration`,
+        message: `Node "${nodeLabel}" is missing configuration`,
         nodeId: node.id,
       });
+      return;
     }
 
-    if (!config?.model) {
+    if (agentType === 'TOOL_NODE') {
+      if (!config.tool_type) {
+        errors.push({
+          type: 'error',
+          message: `Tool node "${nodeLabel}" is missing a tool type`,
+          nodeId: node.id,
+        });
+      }
+      if (!config.tool_id) {
+        errors.push({
+          type: 'error',
+          message: `Tool node "${nodeLabel}" is missing a tool selection`,
+          nodeId: node.id,
+        });
+      }
+      return;
+    }
+
+    if (!requiresAgentConfig(agentType)) {
+      return;
+    }
+
+    if (!config.model) {
       errors.push({
         type: 'error',
-        message: `Node "${node.data?.label || node.id}" is missing model configuration`,
+        message: `Node "${nodeLabel}" is missing model configuration`,
         nodeId: node.id,
       });
     }
@@ -61,7 +100,7 @@ export function validateWorkflow(
     if (!config?.system_prompt || config.system_prompt.trim() === '') {
       warnings.push({
         type: 'warning',
-        message: `Node "${node.data?.label || node.id}" has empty system prompt`,
+        message: `Node "${nodeLabel}" has empty system prompt`,
         nodeId: node.id,
       });
     }

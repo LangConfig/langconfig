@@ -5,26 +5,28 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
+import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import ModernHeader from './components/layout/ModernHeader';
-import ModernAgentLibrary from './features/agents/ui/ModernAgentLibrary';
-import WorkflowCanvas, { WorkflowCanvasRef, WorkflowRecipe } from './features/workflows/canvas/WorkflowCanvas';
-import { TaskHistoryEntry } from './features/workflows/canvas/types';
-import WorkflowLibraryView from './features/workflows/library/WorkflowLibraryView';
-import NodeConfigPanel from './features/workflows/node-config/NodeConfigPanel';
-import SettingsView from './pages/SettingsPage';
-import KnowledgeBaseView from './features/knowledge/ui/KnowledgeBaseView';
-import AgentLoadouts from './features/agents/ui/AgentLoadouts';
-import { SkillLibrary } from './features/skills';
-import HomePage from './pages/HomePage';
-import CommunityPage from './pages/CommunityPage';
+import type { WorkflowCanvasRef, WorkflowRecipe } from './features/workflows/canvas/WorkflowCanvas';
+import type { TaskHistoryEntry } from './features/workflows/canvas/types';
 import { initializeTheme } from './lib/themes';
 import { ProjectProvider } from './contexts/ProjectContext';
 import { ToastProvider, ToastContainer } from './hooks/useToast';
-import { ChatProvider } from './features/chat/state/ChatContext';
-import GlobalChatModal from './features/chat/ui/GlobalChatModal';
+import { ChatProvider, useChat } from './features/chat/state/ChatContext';
 import apiClient from './lib/api-client';
+
+const ModernAgentLibrary = lazy(() => import('./features/agents/ui/ModernAgentLibrary'));
+const WorkflowCanvas = lazy(() => import('./features/workflows/canvas/WorkflowCanvas'));
+const WorkflowLibraryView = lazy(() => import('./features/workflows/library/WorkflowLibraryView'));
+const NodeConfigPanel = lazy(() => import('./features/workflows/node-config/NodeConfigPanel'));
+const SettingsView = lazy(() => import('./pages/SettingsPage'));
+const KnowledgeBaseView = lazy(() => import('./features/knowledge/ui/KnowledgeBaseView'));
+const AgentLoadouts = lazy(() => import('./features/agents/ui/AgentLoadouts'));
+const SkillLibrary = lazy(() => import('./features/skills/ui/SkillLibrary'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const CommunityPage = lazy(() => import('./pages/CommunityPage'));
+const GlobalChatModal = lazy(() => import('./features/chat/ui/GlobalChatModal'));
 
 type View = 'studio' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
 type WorkflowStatus = 'draft' | 'saved' | 'running' | 'completed' | 'failed';
@@ -108,6 +110,31 @@ interface SelectedNodeData {
   };
 }
 
+function RouteFallback({ label = 'Loading workspace' }: { label?: string }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background-light px-6 dark:bg-background-dark">
+      <div className="border-2 border-border-dark bg-panel-dark px-5 py-4 shadow-[4px_4px_0_var(--color-border-dark)]">
+        <div className="mb-2 h-1.5 w-28 overflow-hidden border border-border-dark bg-background-light">
+          <div className="h-full w-1/2 animate-pulse bg-primary" />
+        </div>
+        <p className="text-sm font-semibold uppercase tracking-wide text-text-primary">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function ChatModalHost() {
+  const { isOpen } = useChat();
+
+  if (!isOpen) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <GlobalChatModal />
+    </Suspense>
+  );
+}
+
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -120,7 +147,7 @@ function AppContent() {
   const [workflowName, setWorkflowName] = useState('Untitled Workflow');
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('draft');
   const [executing, setExecuting] = useState(false);
-  const [workflowTab, setWorkflowTab] = useState<'studio' | 'results'>('studio');
+  const [workflowTab, setWorkflowTab] = useState<'studio' | 'chat' | 'results'>('studio');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeData, setSelectedNodeData] = useState<SelectedNodeData | null>(null);
 
@@ -155,9 +182,9 @@ function AppContent() {
     if (location.pathname === '/results') {
       setWorkflowTab('results');
     } else if (location.pathname === '/studio') {
-      setWorkflowTab('studio');
+      setWorkflowTab(location.search.includes('tab=chat') ? 'chat' : 'studio');
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   // Map routes to views
   const currentView: View = (() => {
@@ -174,9 +201,9 @@ function AppContent() {
   })();
 
   // Handle tab changes within studio view
-  const handleTabChange = useCallback((tab: 'studio' | 'results') => {
+  const handleTabChange = useCallback((tab: 'studio' | 'chat' | 'results') => {
     setWorkflowTab(tab);
-    navigate(tab === 'results' ? '/results' : '/studio');
+    navigate(tab === 'results' ? '/results' : tab === 'chat' ? '/studio?tab=chat' : '/studio');
     // Auto-switch sidebar to history when going to results tab
     if (tab === 'results') {
       setSidebarPanel('history');
@@ -198,15 +225,15 @@ function AppContent() {
       const hasUnsaved = workflowCanvasRef.current.hasUnsavedChanges();
       if (hasUnsaved) {
         const confirmLeave = window.confirm(
-          'You have unsaved workflow changes. Do you want to save before leaving?\n\n' +
-          'Click OK to stay and save your changes.\n' +
-          'Click Cancel to leave without saving.'
+          'You have unsaved workflow changes that will be lost.\n\n' +
+          'Click OK to leave without saving.\n' +
+          'Click Cancel to stay and keep editing.'
         );
-        if (confirmLeave) {
-          // User wants to stay and save
+        if (!confirmLeave) {
+          // User chose to stay and keep editing.
           return;
         }
-        // User chose to leave without saving, proceed with navigation
+        // User confirmed leaving without saving, proceed with navigation.
       }
     }
 
@@ -368,100 +395,110 @@ function AppContent() {
       <main className="flex flex-row flex-1 overflow-x-auto overflow-y-hidden">
         {/* Left Panel - Agent Library with Agents/History tabs (always visible in studio view) */}
         {currentView === 'studio' && (
-          <ModernAgentLibrary
-            onSelectAgent={(agent) => {
-              setSelectedAgent(agent);
-              // Switch to studio tab when selecting an agent
-              handleTabChange('studio');
-            }}
-            onSelectRecipe={(recipe) => {
-              setSelectedRecipe(recipe);
-              // Switch to studio tab when selecting a recipe
-              handleTabChange('studio');
-            }}
-            taskHistory={taskHistory}
-            loadingHistory={loadingHistory}
-            selectedHistoryTask={selectedHistoryTask}
-            onSelectHistoryTask={(task) => {
-              setSelectedHistoryTask(task);
-              // Switch to results tab when selecting a task
-              if (task) {
-                handleTabChange('results');
-              }
-            }}
-            activePanel={sidebarPanel}
-            onPanelChange={handleSidebarPanelChange}
-          />
+          <Suspense fallback={<RouteFallback label="Loading agents" />}>
+            <ModernAgentLibrary
+              onSelectAgent={(agent) => {
+                setSelectedAgent(agent);
+                // Switch to studio tab when selecting an agent
+                handleTabChange('studio');
+              }}
+              onSelectRecipe={(recipe) => {
+                setSelectedRecipe(recipe);
+                // Switch to studio tab when selecting a recipe
+                handleTabChange('studio');
+              }}
+              taskHistory={taskHistory}
+              loadingHistory={loadingHistory}
+              selectedHistoryTask={selectedHistoryTask}
+              onSelectHistoryTask={(task) => {
+                setSelectedHistoryTask(task);
+                // Switch to results tab when selecting a task
+                if (task) {
+                  handleTabChange('results');
+                }
+              }}
+              activePanel={sidebarPanel}
+              onPanelChange={handleSidebarPanelChange}
+            />
+          </Suspense>
         )}
 
         {/* Center Panel - Dynamic Content */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden" style={{ minWidth: '650px' }}>
-          {currentView === 'home' && <HomePage />}
-          {currentView === 'studio' && (
-            <WorkflowCanvas
-              ref={workflowCanvasRef}
-              selectedAgent={selectedAgent}
-              selectedRecipe={selectedRecipe}
-              onWorkflowSelect={setSelectedWorkflowId}
-              onNodeSelect={handleNodeSelect}
-              onNodeDelete={handleNodeDelete}
-              onExecutionStart={handleExecutionStart}
-              onAgentAdded={handleAgentAdded}
-              onRecipeInserted={() => setSelectedRecipe(null)}
-              workflowId={selectedWorkflowId}
-              onTabChange={handleTabChange}
-              initialTab={workflowTab}
-              onTokenCostUpdate={setTokenCostInfo}
-              onTaskHistoryUpdate={setTaskHistory}
-              onSelectedTaskChange={setSelectedHistoryTask}
-              externalSelectedTask={selectedHistoryTask}
-            />
-          )}
-          {currentView === 'library' && (
-            <WorkflowLibraryView
-              onWorkflowSelect={setSelectedWorkflowId}
-              onWorkflowOpen={handleWorkflowOpen}
-            />
-          )}
-          {currentView === 'agents' && <AgentLoadouts />}
-          {currentView === 'skills' && <SkillLibrary />}
-          {currentView === 'knowledge' && <KnowledgeBaseView />}
-          {currentView === 'community' && <CommunityPage />}
-          {currentView === 'settings' && <SettingsView />}
+          <Suspense fallback={<RouteFallback />}>
+            {currentView === 'home' && <HomePage />}
+            {currentView === 'studio' && (
+              <WorkflowCanvas
+                ref={workflowCanvasRef}
+                selectedAgent={selectedAgent}
+                selectedRecipe={selectedRecipe}
+                onWorkflowSelect={setSelectedWorkflowId}
+                onNodeSelect={handleNodeSelect}
+                onNodeDelete={handleNodeDelete}
+                onExecutionStart={handleExecutionStart}
+                onAgentAdded={handleAgentAdded}
+                onRecipeInserted={() => setSelectedRecipe(null)}
+                workflowId={selectedWorkflowId}
+                onTabChange={handleTabChange}
+                initialTab={workflowTab}
+                onTokenCostUpdate={setTokenCostInfo}
+                onTaskHistoryUpdate={setTaskHistory}
+                onSelectedTaskChange={setSelectedHistoryTask}
+                externalSelectedTask={selectedHistoryTask}
+              />
+            )}
+            {currentView === 'library' && (
+              <WorkflowLibraryView
+                onWorkflowSelect={setSelectedWorkflowId}
+                onWorkflowOpen={handleWorkflowOpen}
+              />
+            )}
+            {currentView === 'agents' && <AgentLoadouts />}
+            {currentView === 'skills' && <SkillLibrary />}
+            {currentView === 'knowledge' && <KnowledgeBaseView />}
+            {currentView === 'community' && <CommunityPage />}
+            {currentView === 'settings' && <SettingsView />}
+          </Suspense>
         </div>
 
         {/* Right Panel - Node Config (only in studio view on studio tab with selected node) */}
         {currentView === 'studio' && workflowTab === 'studio' && selectedNodeId && selectedNodeData && (
-          <NodeConfigPanel
-            selectedNode={{
-              id: selectedNodeId,
-              name: selectedNodeData.label || selectedNodeData.name || selectedNodeData.config?.name || selectedNodeId,
-              agentType: selectedNodeData.agentType,
-              model: selectedNodeData.model || selectedNodeData.config?.model,
-              system_prompt: selectedNodeData.system_prompt || selectedNodeData.config?.system_prompt || '',
-              temperature: selectedNodeData.temperature ?? selectedNodeData.config?.temperature ?? 0.7,
-              max_tokens: selectedNodeData.max_tokens || selectedNodeData.config?.max_tokens || 4000,
-              max_retries: selectedNodeData.max_retries || selectedNodeData.config?.max_retries || 3,
-              recursion_limit: selectedNodeData.recursion_limit || selectedNodeData.config?.recursion_limit || 300,
-              tools: selectedNodeData.tools || selectedNodeData.config?.tools || [],
-              native_tools: selectedNodeData.native_tools || selectedNodeData.config?.native_tools || [],
-              custom_tools: selectedNodeData.custom_tools || selectedNodeData.config?.custom_tools || [],
-              middleware: selectedNodeData.middleware || selectedNodeData.config?.middleware || [],
-              condition: selectedNodeData.condition || selectedNodeData.config?.condition,
-              max_iterations: selectedNodeData.max_iterations || selectedNodeData.config?.max_iterations,
-              exit_condition: selectedNodeData.exit_condition || selectedNodeData.config?.exit_condition,
-              // DeepAgent subagents
-              subagents: (selectedNodeData as any).subagents || selectedNodeData.config?.subagents || [],
-              use_deepagents: (selectedNodeData as any).use_deepagents || selectedNodeData.config?.use_deepagents || false
-            }}
-            onClose={() => {
-              setSelectedNodeId(null);
-              setSelectedNodeData(null);
-            }}
-            onSave={handleNodeConfigSave}
-            onDelete={handleNodeDelete}
-            tokenCostInfo={tokenCostInfo || undefined}
-          />
+          <Suspense fallback={<RouteFallback label="Loading node settings" />}>
+            <NodeConfigPanel
+              selectedNode={{
+                id: selectedNodeId,
+                name: selectedNodeData.label || selectedNodeData.name || selectedNodeData.config?.name || selectedNodeId,
+                agentType: selectedNodeData.agentType,
+                model: selectedNodeData.model || selectedNodeData.config?.model,
+                system_prompt: selectedNodeData.system_prompt || selectedNodeData.config?.system_prompt || '',
+                temperature: selectedNodeData.temperature ?? selectedNodeData.config?.temperature ?? 0.7,
+                max_tokens: selectedNodeData.max_tokens || selectedNodeData.config?.max_tokens || 4000,
+                max_retries: selectedNodeData.max_retries || selectedNodeData.config?.max_retries || 3,
+                recursion_limit: selectedNodeData.recursion_limit || selectedNodeData.config?.recursion_limit || 300,
+                tools: selectedNodeData.tools || selectedNodeData.config?.tools || [],
+                native_tools: selectedNodeData.native_tools || selectedNodeData.config?.native_tools || [],
+                custom_tools: selectedNodeData.custom_tools || selectedNodeData.config?.custom_tools || [],
+                middleware: selectedNodeData.middleware || selectedNodeData.config?.middleware || [],
+                condition: selectedNodeData.condition || selectedNodeData.config?.condition,
+                max_iterations: selectedNodeData.max_iterations || selectedNodeData.config?.max_iterations,
+                exit_condition: selectedNodeData.exit_condition || selectedNodeData.config?.exit_condition,
+                // DeepAgent subagents
+                subagents: (selectedNodeData as any).subagents || selectedNodeData.config?.subagents || [],
+                use_deepagents: (selectedNodeData as any).use_deepagents || selectedNodeData.config?.use_deepagents || false,
+                // Tool node configuration
+                tool_type: (selectedNodeData as any).tool_type || (selectedNodeData as any).config?.tool_type,
+                tool_id: (selectedNodeData as any).tool_id || (selectedNodeData as any).config?.tool_id,
+                tool_params: (selectedNodeData as any).tool_params || (selectedNodeData as any).config?.tool_params
+              } as any}
+              onClose={() => {
+                setSelectedNodeId(null);
+                setSelectedNodeData(null);
+              }}
+              onSave={handleNodeConfigSave}
+              onDelete={handleNodeDelete}
+              tokenCostInfo={tokenCostInfo || undefined}
+            />
+          </Suspense>
         )}
       </main>
     </div>
@@ -475,7 +512,7 @@ function App() {
         <ProjectProvider>
           <ChatProvider>
             <AppContent />
-            <GlobalChatModal />
+            <ChatModalHost />
           </ChatProvider>
         </ProjectProvider>
       </HashRouter>

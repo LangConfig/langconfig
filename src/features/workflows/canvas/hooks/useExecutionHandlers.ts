@@ -26,6 +26,9 @@ interface ExecutionConfig {
   max_retries: number;
   max_events?: number;
   timeout_seconds?: number;
+  audio_file_path?: string;
+  audio_file_name?: string;
+  continue_from_task_id?: number;
 }
 
 interface UseExecutionHandlersOptions {
@@ -64,7 +67,7 @@ interface UseExecutionHandlersOptions {
 interface UseExecutionHandlersReturn {
   handleRun: () => Promise<void>;
   handleStop: () => Promise<void>;
-  executeWorkflow: () => Promise<void>;
+  executeWorkflow: (configOverride?: Partial<ExecutionConfig>) => Promise<void>;
 }
 
 /**
@@ -166,7 +169,12 @@ export function useExecutionHandlers({
     setShowExecutionDialog(true);
   }, [nodes.length, executionStatus.state, handleStop, showWarning, setShowExecutionDialog]);
 
-  const executeWorkflow = useCallback(async () => {
+  const executeWorkflow = useCallback(async (configOverride?: Partial<ExecutionConfig>) => {
+    const effectiveConfig = {
+      ...executionConfig,
+      ...configOverride,
+    };
+
     setShowExecutionDialog(false);
 
     // Find the START node or the first node with no incoming edges
@@ -197,7 +205,7 @@ export function useExecutionHandlers({
           data: n.data, // Preserve data for restoration
           config: {
             ...n.data.config, // Preserve ALL config fields (important for CONDITIONAL_NODE, etc.)
-            model: n.data.config?.model || n.data.model || 'gpt-4o-mini',
+            model: n.data.config?.model || n.data.model || 'gpt-5.4-mini',
             temperature: n.data.config?.temperature ?? n.data.temperature ?? 0.7,
             system_prompt: n.data.config?.system_prompt || n.data.system_prompt || '',
             // Ensure tool fields are explicitly set for backend factory
@@ -240,14 +248,16 @@ export function useExecutionHandlers({
         workflow_id: workflowIdToExecute as number,
         project_id: activeProjectId || 0, // Use active project if available, 0 for standalone
         input_data: {
-          query: executionConfig.directive,
-          task: executionConfig.task || executionConfig.directive,
+          query: effectiveConfig.directive,
+          task: effectiveConfig.task || effectiveConfig.directive,
           additional_context: additionalContext || '',
           checkpointer_enabled: checkpointerEnabled,
           recursion_limit: globalRecursionLimit,
           // Configurable execution limits (use defaults if not set, backend enforces bounds)
-          max_events: executionConfig.max_events || 100000,  // Default: 100k events
-          timeout_seconds: executionConfig.timeout_seconds || 600  // Default: 10 minutes
+          max_events: effectiveConfig.max_events || 100000,  // Default: 100k events
+          timeout_seconds: effectiveConfig.timeout_seconds || 600,  // Default: 10 minutes
+          audio_file_path: effectiveConfig.audio_file_path,
+          audio_file_name: effectiveConfig.audio_file_name
         },
         context_documents: contextDocuments,
         // Include file attachments (images, documents) for agent context
@@ -258,6 +268,7 @@ export function useExecutionHandlers({
           data: att.data,  // base64 encoded
           size: att.size,
         })),
+        continue_from_task_id: effectiveConfig.continue_from_task_id,
       });
 
       // Save task ID for monitoring and persist to localStorage

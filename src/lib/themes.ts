@@ -30,20 +30,20 @@ export interface Theme {
 export const themes: Record<ThemeName, Theme> = {
   langconfig: {
     name: 'langconfig',
-    displayName: 'LangConfig (Signature)',
+    displayName: 'LangConfig Peony',
     colors: {
-      primary: '#2E5C8A',
-      backgroundLight: '#F5F9FC',
-      backgroundDark: '#D8EDF5',
-      panelDark: '#E3F0F5',
-      borderDark: '#2E5C8A',
-      textMuted: '#4A6B8A',
-      textPrimary: '#1a2332',
-      inputBackground: '#FFFFFF',
-      logoBackground: '#FFFFFF',
-      nodeBackground: '#6B9E7E',
-      nodeBackgroundLight: '#8AB5A0',
-      categoryBackground: '#C5E0E5',
+      primary: '#D98984',
+      backgroundLight: '#FFF8ED',
+      backgroundDark: '#F8E7DC',
+      panelDark: '#F6D4CF',
+      borderDark: '#102D43',
+      textMuted: '#7B6870',
+      textPrimary: '#12283B',
+      inputBackground: '#FFFCF6',
+      logoBackground: '#FFF8ED',
+      nodeBackground: '#E8B2AD',
+      nodeBackgroundLight: '#F5D5D0',
+      categoryBackground: '#F0C5BE',
     },
     textured: true,
   },
@@ -230,6 +230,14 @@ export function applyTheme(theme: Theme) {
 
   // Set data-theme attribute for CSS targeting
   root.setAttribute('data-theme', theme.name);
+
+  // Toggle Tailwind dark variants so dark: utilities match the active theme.
+  const isDarkTheme = theme.name === 'dark' || theme.name === 'midnight' || theme.name === 'ocean' || theme.name === 'forest';
+  if (isDarkTheme) {
+    root.classList.add('dark');
+  } else {
+    root.classList.remove('dark');
+  }
 
   // Add/remove textured class
   if (theme.textured) {

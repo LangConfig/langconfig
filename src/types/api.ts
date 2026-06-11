@@ -27,6 +27,11 @@ export interface WorkflowProfile {
   output_schema?: string;
   blueprint?: any;
   lock_version: number;  // Optimistic locking
+  custom_output_path?: string;
+  is_template?: boolean;
+  template_category?: string | null;
+  template_icon?: string | null;
+  template_tags?: string[] | null;
   created_at: string;
   updated_at: string;
   usage_count: number;
@@ -43,6 +48,11 @@ export interface WorkflowProfileUpdate {
   output_schema?: string;
   blueprint?: any;
   lock_version: number;  // Required for updates
+  custom_output_path?: string;
+  is_template?: boolean;
+  template_category?: string | null;
+  template_icon?: string | null;
+  template_tags?: string[] | null;
 }
 
 export interface DeepAgent {
@@ -218,6 +228,8 @@ export interface LocalModel {
   usage_count: number;
   last_used_at?: string;
   tags: string[];
+  server_id?: string | null;
+  auto_discovered?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -253,6 +265,47 @@ export interface ValidationResult {
     [key: string]: any;
   };
   error_details?: string;
+}
+
+export interface ModelServer {
+  id: string;
+  name: string;
+  base_url: string;
+  provider: string;
+  is_active: boolean;
+  auto_sync: boolean;
+  sync_interval_seconds: number;
+  model_count: number;
+  last_sync_error?: string | null;
+}
+
+export interface ModelServerCreate {
+  name: string;
+  base_url: string;
+  provider: string;
+  api_key?: string;
+  auto_sync?: boolean;
+  sync_interval_seconds?: number;
+}
+
+export interface DiscoveredModelPreview {
+  id: string;
+  name: string;
+  size?: number | null;
+}
+
+export interface DiscoverPreviewResponse {
+  success: boolean;
+  message: string;
+  models: DiscoveredModelPreview[];
+}
+
+export interface ModelServerSyncResult {
+  success: boolean;
+  added: number;
+  updated: number;
+  removed: number;
+  errors: string[];
 }
 
 // ============================================================================

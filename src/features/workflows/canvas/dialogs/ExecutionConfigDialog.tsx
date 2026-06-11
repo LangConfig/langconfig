@@ -8,6 +8,7 @@
 import { memo, useState } from 'react';
 import { X, Play, Image, FileText, Clock, Database, ChevronDown, Upload, Plus, Trash2, Settings } from 'lucide-react';
 import { Attachment } from '@/components/common/AttachmentUploader';
+import apiClient from '@/lib/api-client';
 
 interface WorkflowExecutionContext {
   directive: string;
@@ -18,6 +19,8 @@ interface WorkflowExecutionContext {
   max_retries: number;
   max_events?: number;
   timeout_seconds?: number;
+  audio_file_path?: string;
+  audio_file_name?: string;
 }
 
 interface Document {
@@ -68,6 +71,7 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
   const currentAttachments = onAttachmentsChange ? attachments : localAttachments;
   const setAttachments = onAttachmentsChange || setLocalAttachments;
   const [showSettings, setShowSettings] = useState(false);
+  const [audioUploading, setAudioUploading] = useState(false);
 
   if (!isOpen) return null;
 
@@ -145,6 +149,81 @@ const ExecutionConfigDialog = memo(function ExecutionConfigDialog({
               })}
               autoFocus
             />
+          </div>
+
+          {/* Local Audio Upload */}
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <FileText size={16} className="text-gray-500" />
+                Audio for Transcription
+              </label>
+              <span className="text-xs text-gray-400">Local temp file</span>
+            </div>
+            <div className="border rounded-lg p-3" style={{ borderColor: '#e5e7eb' }}>
+              {executionConfig.audio_file_path ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-700 truncate">
+                      {executionConfig.audio_file_name || 'Uploaded audio'}
+                    </div>
+                    <div className="text-xs text-gray-400 truncate">
+                      Use <code>{'{{state.audio_file_path}}'}</code> as the audio_transcribe file_path.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExecutionConfig({
+                      ...executionConfig,
+                      audio_file_path: undefined,
+                      audio_file_name: undefined,
+                    })}
+                    className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex items-center justify-center gap-2 py-4 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors">
+                  <Upload size={18} className="text-gray-400" />
+                  <span className="text-sm text-gray-500">
+                    {audioUploading ? 'Uploading audio...' : 'Upload audio for audio_transcribe'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="audio/*,video/mp4,video/webm"
+                    className="hidden"
+                    disabled={audioUploading}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setAudioUploading(true);
+                      try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        const res = await fetch(`${apiClient.baseURL}/api/audio/upload`, {
+                          method: 'POST',
+                          body: formData,
+                        });
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        setExecutionConfig({
+                          ...executionConfig,
+                          audio_file_path: data.file_path,
+                          audio_file_name: data.file_name,
+                        });
+                      } catch (error) {
+                        console.error('Audio upload failed:', error);
+                        alert(`Audio upload failed: ${error}`);
+                      } finally {
+                        setAudioUploading(false);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
           {/* Attachments Section */}

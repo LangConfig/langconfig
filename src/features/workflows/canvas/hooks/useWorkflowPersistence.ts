@@ -152,7 +152,7 @@ export function useWorkflowPersistence({
 
         const nodeConfig = {
           ...n.data.config, // Preserve all existing config fields (important for CONDITIONAL_NODE, etc.)
-          model: n.data.config?.model || 'gpt-4o-mini',
+          model: n.data.config?.model || 'gpt-5.4-mini',
           temperature: n.data.config?.temperature ?? 0.7,
           system_prompt: n.data.config?.system_prompt || '',
           // Deprecated fields kept for backward compatibility
@@ -273,7 +273,7 @@ export function useWorkflowPersistence({
               data: n.data || {
                 label: n.type,
                 agentType: n.type,
-                model: n.config?.model || 'gpt-4o-mini',
+                model: n.config?.model || 'gpt-5.4-mini',
                 config: n.config || {}
               }
             }));

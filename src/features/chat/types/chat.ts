@@ -11,6 +11,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  banked?: boolean;
   /** Structured content blocks from tool results (multimodal support) */
   content_blocks?: ContentBlock[];
   /** Artifacts for UI display only (not sent to LLM) */
@@ -22,6 +23,7 @@ export interface ChatMessage {
 export interface ChatSession {
   session_id: string;
   agent_id: number;
+  project_id?: number | null;
   agent_name: string;
   is_active: boolean;
   message_count: number;
@@ -125,13 +127,26 @@ export interface ChatContextState {
   hitlEnabled: boolean;
 }
 
+export interface CompletedExecutionSnapshot {
+  events: any[];
+  prompt: string | null;
+  metrics: any;
+  completedAt: string;
+  taskId?: number | null;
+}
+
 export interface ChatContextValue extends ChatContextState {
   openChat: (agentId?: number) => void;
   closeChat: () => void;
   startSession: (agentId: number) => Promise<string>;
   switchSession: (sessionId: string) => void;
+  clearCurrentSession: () => void;
   endSession: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
   setSelectedAgent: (agentId: number | null) => void;
   toggleHitl: () => void;
   refreshSessions: () => Promise<void>;
+  getCompletedExecutions: (key: string) => CompletedExecutionSnapshot[];
+  appendCompletedExecution: (key: string, snapshot: CompletedExecutionSnapshot) => void;
+  clearCompletedExecutions: (key: string) => void;
 }

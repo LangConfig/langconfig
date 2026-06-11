@@ -45,10 +45,10 @@ export default function ChatHeader({
 
   return (
     <div
-      className="flex items-center justify-between px-6 py-3 border-b"
+      className="flex items-center justify-between border-b-2 px-6 py-3"
       style={{
         borderColor: 'var(--color-border-dark)',
-        backgroundColor: 'white',
+        backgroundColor: 'var(--color-panel-dark)',
       }}
     >
       <div className="flex items-center gap-3">
@@ -101,7 +101,7 @@ export default function ChatHeader({
         {/* Close Button */}
         <button
           onClick={closeChat}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="border border-transparent p-2 transition-colors hover:border-border-dark hover:bg-background-light"
           style={{ color: 'var(--color-text-muted)' }}
           title="Close (ESC)"
         >

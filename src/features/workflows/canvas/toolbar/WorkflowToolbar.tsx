@@ -5,8 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { memo } from 'react';
-import { Save, History as HistoryIcon, Settings, FolderOpen, Image, Camera } from 'lucide-react';
+import { memo, useState } from 'react';
+import { Save, History as HistoryIcon, Settings, FolderOpen, Image, Camera, MessageSquare } from 'lucide-react';
 
 interface WorkflowVersion {
   id: number;
@@ -22,7 +22,13 @@ interface AvailableWorkflow {
   name: string;
 }
 
-type Tab = 'studio' | 'results' | 'files' | 'artifacts' | 'settings';
+interface ChatAgentOption {
+  nodeId: string;
+  label: string;
+  hasLinkedAgent: boolean;
+}
+
+type Tab = 'studio' | 'chat' | 'results' | 'files' | 'artifacts' | 'settings';
 
 interface WorkflowToolbarProps {
   // Workflow name editing
@@ -48,6 +54,8 @@ interface WorkflowToolbarProps {
   // Save/Version actions
   handleSave: (silent?: boolean) => void;
   handleSaveVersion: () => void;
+  chatAgentOptions: ChatAgentOption[];
+  onChatWithAgent: (nodeId: string) => void;
 
   // Version dropdown
   showVersionDropdown: boolean;
@@ -88,6 +96,8 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
   onShowCreateWorkflowModal,
   handleSave,
   handleSaveVersion,
+  chatAgentOptions,
+  onChatWithAgent,
   showVersionDropdown,
   setShowVersionDropdown,
   currentVersion,
@@ -101,6 +111,8 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
   artifactsCount,
   hasUnsavedChanges,
 }: WorkflowToolbarProps) {
+  const [showChatDropdown, setShowChatDropdown] = useState(false);
+
   const tabClass = (tab: Tab) =>
     `px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
       activeTab === tab
@@ -229,6 +241,62 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
             <span>Save</span>
           </button>
 
+          <div className="relative">
+            <button
+              onClick={() => {
+                if (chatAgentOptions.length === 1) {
+                  onChatWithAgent(chatAgentOptions[0].nodeId);
+                  return;
+                }
+                setShowChatDropdown((show) => !show);
+              }}
+              disabled={chatAgentOptions.length === 0}
+              className="px-3 py-1.5 rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 bg-white dark:bg-background-dark border border-gray-300 dark:border-border-dark flex items-center gap-1.5 text-sm font-medium"
+              style={{ color: 'var(--color-text-primary)' }}
+              title={chatAgentOptions.length === 0 ? 'Add an agent node to chat' : 'Chat with an agent on this canvas'}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Agent Chat</span>
+              {chatAgentOptions.length > 1 && <span className="text-xs opacity-60">▼</span>}
+            </button>
+
+            {showChatDropdown && chatAgentOptions.length > 1 && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowChatDropdown(false)} />
+                <div
+                  className="absolute top-full left-0 mt-1 w-72 rounded-lg shadow-xl z-50 max-h-80 overflow-hidden border"
+                  style={{ backgroundColor: 'var(--color-panel-dark)', borderColor: 'var(--color-border-dark)' }}
+                >
+                  <div className="px-3 py-2 border-b text-xs font-semibold uppercase tracking-[0.12em]" style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-muted)' }}>
+                    Canvas Agents
+                  </div>
+                  <div className="overflow-y-auto">
+                    {chatAgentOptions.map((agent) => (
+                      <button
+                        key={agent.nodeId}
+                        onClick={() => {
+                          onChatWithAgent(agent.nodeId);
+                          setShowChatDropdown(false);
+                        }}
+                        className="w-full px-3 py-2.5 text-left transition-colors border-b last:border-0 hover:bg-background-light"
+                        style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-primary)' }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold truncate">{agent.label}</span>
+                          {!agent.hasLinkedAgent && (
+                            <span className="text-[10px] font-mono uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-muted)' }}>
+                              Save first
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Versions Dropdown - Compact with integrated snapshot */}
           {currentWorkflowId && (
             <div className="relative">
@@ -304,6 +372,10 @@ const WorkflowToolbar = memo(function WorkflowToolbar({
           <div className="flex items-center">
             <button onClick={() => onTabChange('studio')} className={tabClass('studio')}>
               Studio
+            </button>
+            <button onClick={() => onTabChange('chat')} className={`${tabClass('chat')} flex items-center gap-1.5`}>
+              <MessageSquare className="w-4 h-4" />
+              Chat
             </button>
             <button onClick={() => onTabChange('results')} className={tabClass('results')}>
               Results {taskHistoryCount > 0 && <span className="ml-1 text-xs opacity-70">({taskHistoryCount})</span>}

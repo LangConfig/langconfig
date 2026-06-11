@@ -22,6 +22,7 @@ const menuSections: MenuSection[] = [
   { id: 'general', label: 'General', icon: 'tune' },
   { id: 'api-keys', label: 'API Keys & Providers', icon: 'key' },
   { id: 'model-defaults', label: 'Model Defaults', icon: 'psychology' },
+  { id: 'pii-profiles', label: 'PII Profiles', icon: 'shield_lock' },
   { id: 'local-models', label: 'Local Models', icon: 'computer' },
   { id: 'local-workspace', label: 'Local Workspace', icon: 'folder_open' },
   { id: 'appearance', label: 'Appearance', icon: 'palette' },

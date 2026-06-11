@@ -28,7 +28,7 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 1425,
     strictPort: true,
     allowedHosts: [process.env.VITE_ALLOWED_HOSTS || "localhost"],
     host: host || false,
@@ -46,9 +46,23 @@ export default defineConfig(async () => ({
     // Proxy API requests to backend server
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8765',
+        target: 'http://127.0.0.1:8780',
         changeOrigin: true,
         secure: false,
+      },
+    },
+  },
+  build: {
+    chunkSizeWarningLimit: 2500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom", "@tanstack/react-query"],
+          "vendor-flow": ["reactflow"],
+          "vendor-icons": ["lucide-react"],
+          "vendor-export": ["jspdf", "html2canvas", "html2canvas-oklch", "jszip"],
+          "vendor-math": ["katex"],
+        },
       },
     },
   },

@@ -251,7 +251,7 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
       type: 'dictionary',  // Default to dictionary-based
       system_prompt: '',
       tools: [],
-      model: config.model || 'claude-sonnet-4-5-20250929',
+      model: config.model || 'claude-sonnet-4-6',
       middleware: [],
       workflow_id: null,
       workflow_config: null
@@ -337,7 +337,7 @@ from langgraph.prebuilt import create_react_agent
 
 # Initialize LLM
 llm = ChatOpenAI(
-    model="${config.model || 'gpt-4o'}",
+    model="${config.model || 'gpt-5.4'}",
     temperature=${config.temperature ?? 0.7},
     max_tokens=${config.max_tokens || 4000}
 )
@@ -565,7 +565,7 @@ print(result)
                       Model
                     </label>
                     <select
-                      value={config.model || 'gpt-4o'}
+                      value={config.model || 'gpt-5.4'}
                       onChange={(e) => setConfig({ ...config, model: e.target.value })}
                       className="px-3 py-2 border border-gray-200 dark:border-border-dark bg-white dark:bg-panel-dark rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
                       disabled={isModelsLoading}
@@ -597,11 +597,12 @@ print(result)
                         </>
                       ) : (
                         <>
-                          <option value="gpt-5.2">GPT-5.2</option>
-                          <option value="gpt-5.1">GPT-5.1</option>
-                          <option value="gpt-4o">GPT-4o</option>
-                          <option value="gpt-4o-mini">GPT-4o Mini</option>
-                          <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                          <option value="gpt-5.5">GPT-5.5</option>
+                          <option value="gpt-5.4">GPT-5.4</option>
+                          <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                          <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
+                          <option value="claude-opus-4-8">Claude Opus 4.8</option>
+                          <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
                           <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
                         </>
                       )}
@@ -705,97 +706,106 @@ print(result)
                     )}
                   </label>
                 ))}
+              </div>
 
-                {/* Custom Tools */}
+              {/* Custom Tools - separate section below built-in tools */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg mb-2 mt-4" style={{ backgroundColor: 'var(--color-primary)' }}>
+                <h3 className="text-sm font-semibold" style={{ color: 'white' }}>
+                  Custom Tools
+                </h3>
                 {availableCustomTools.length > 0 && (
-                  <>
-                    <div className="px-3 py-1.5 rounded-lg mb-2 mt-4" style={{ backgroundColor: 'var(--color-primary)' }}>
-                      <h3 className="text-sm font-semibold" style={{ color: 'white' }}>
-                        Custom Tools
-                      </h3>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {availableCustomTools.map(tool => {
-                        const isExpanded = expandedTools.has(tool.tool_id);
-                        return (
-                          <div key={tool.tool_id} className="flex flex-col">
-                            <label
-                              className="group relative flex items-start gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-primary/50 hover:shadow-md"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={(config.custom_tools || []).includes(tool.tool_id)}
-                                onChange={() => toggleCustomTool(tool.tool_id)}
-                                className="w-3.5 h-3.5 text-primary rounded focus:ring-1 focus:ring-primary cursor-pointer flex-shrink-0 mt-0.5"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2 mb-1">
-                                  <div className="text-xs font-semibold truncate flex-1" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
-                                    {tool.name || tool.tool_id}
-                                  </div>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      setExpandedTools(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(tool.tool_id)) {
-                                          next.delete(tool.tool_id);
-                                        } else {
-                                          next.add(tool.tool_id);
-                                        }
-                                        return next;
-                                      });
-                                    }}
-                                    className="text-xs px-2 py-0.5 rounded hover:bg-primary/10 flex-shrink-0"
-                                    style={{ color: 'var(--color-primary)' }}
-                                  >
-                                    {isExpanded ? 'Hide' : 'Details'}
-                                  </button>
-                                </div>
-                                {tool.category && (
-                                  <div className="text-xs mb-1 truncate" style={{ color: 'var(--color-text-secondary, #6b7280)' }}>
-                                    {tool.category}
-                                  </div>
-                                )}
-                                <div className="text-xs leading-snug line-clamp-2" style={{ color: 'var(--color-text-secondary, #6b7280)' }}>
-                                  {tool.description || 'No description available'}
-                                </div>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                    {(config.custom_tools || []).length}/{availableCustomTools.length}
+                  </span>
+                )}
+              </div>
+              {availableCustomTools.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {availableCustomTools.map(tool => {
+                    const isExpanded = expandedTools.has(tool.tool_id);
+                    return (
+                      <div key={tool.tool_id} className="flex flex-col">
+                        <label
+                          className="group relative flex items-start gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-primary/50 hover:shadow-md"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(config.custom_tools || []).includes(tool.tool_id)}
+                            onChange={() => toggleCustomTool(tool.tool_id)}
+                            className="w-3.5 h-3.5 text-primary rounded focus:ring-1 focus:ring-primary cursor-pointer flex-shrink-0 mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="text-xs font-semibold truncate flex-1" style={{ color: 'var(--color-text-primary, #1a1a1a)' }}>
+                                {tool.name || tool.tool_id}
                               </div>
-                            </label>
-
-                            {isExpanded && tool.implementation_config && (
-                              <div className="mt-1 px-3 py-2.5 border border-gray-200 dark:border-gray-800 rounded-xl bg-gray-50/50 dark:bg-gray-800/50">
-                                <div className="text-xs space-y-1">
-                                  <div className="font-semibold mb-1.5" style={{ color: 'var(--color-text-primary)' }}>Configuration:</div>
-                                  {tool.implementation_config.provider && (
-                                    <div><strong>Provider:</strong> {tool.implementation_config.provider}</div>
-                                  )}
-                                  {tool.implementation_config.model && (
-                                    <div><strong>Model:</strong> {tool.implementation_config.model}</div>
-                                  )}
-                                  {tool.implementation_config.url && (
-                                    <div><strong>URL:</strong> {tool.implementation_config.url}</div>
-                                  )}
-                                  {tool.implementation_config.webhook_url && (
-                                    <div><strong>Webhook:</strong> {tool.implementation_config.webhook_url}</div>
-                                  )}
-                                  {tool.template_type && (
-                                    <div><strong>Template:</strong> {tool.template_type}</div>
-                                  )}
-                                  <div className="mt-1.5 pt-1.5 border-t border-gray-200 dark:border-gray-700" style={{ color: 'var(--color-text-muted)' }}>
-                                    <strong>Tool ID:</strong> {tool.tool_id}
-                                  </div>
-                                </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setExpandedTools(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(tool.tool_id)) {
+                                      next.delete(tool.tool_id);
+                                    } else {
+                                      next.add(tool.tool_id);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                className="text-xs px-2 py-0.5 rounded hover:bg-primary/10 flex-shrink-0"
+                                style={{ color: 'var(--color-primary)' }}
+                              >
+                                {isExpanded ? 'Hide' : 'Details'}
+                              </button>
+                            </div>
+                            {tool.category && (
+                              <div className="text-xs mb-1 truncate" style={{ color: 'var(--color-text-secondary, #6b7280)' }}>
+                                {tool.category}
                               </div>
                             )}
+                            <div className="text-xs leading-snug line-clamp-2" style={{ color: 'var(--color-text-secondary, #6b7280)' }}>
+                              {tool.description || 'No description available'}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
+                        </label>
 
-              </div>
+                        {isExpanded && tool.implementation_config && (
+                          <div className="mt-1 px-3 py-2.5 border border-gray-200 dark:border-gray-800 rounded-xl bg-gray-50/50 dark:bg-gray-800/50">
+                            <div className="text-xs space-y-1">
+                              <div className="font-semibold mb-1.5" style={{ color: 'var(--color-text-primary)' }}>Configuration:</div>
+                              {tool.implementation_config.provider && (
+                                <div><strong>Provider:</strong> {tool.implementation_config.provider}</div>
+                              )}
+                              {tool.implementation_config.model && (
+                                <div><strong>Model:</strong> {tool.implementation_config.model}</div>
+                              )}
+                              {tool.implementation_config.url && (
+                                <div><strong>URL:</strong> {tool.implementation_config.url}</div>
+                              )}
+                              {tool.implementation_config.webhook_url && (
+                                <div><strong>Webhook:</strong> {tool.implementation_config.webhook_url}</div>
+                              )}
+                              {tool.template_type && (
+                                <div><strong>Template:</strong> {tool.template_type}</div>
+                              )}
+                              <div className="mt-1.5 pt-1.5 border-t border-gray-200 dark:border-gray-700" style={{ color: 'var(--color-text-muted)' }}>
+                                <strong>Tool ID:</strong> {tool.tool_id}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-4 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-center">
+                  <div className="text-xs" style={{ color: 'var(--color-text-secondary, #6b7280)' }}>
+                    No custom tools yet. Create one in the Custom Tool Builder to assign it here.
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Right Column - System Prompt */}
@@ -1104,15 +1114,16 @@ print(result)
                                     }}
                                   >
                                     <option value="">Use parent agent model</option>
-                                    <option value="openai:gpt-5.2">GPT-5.2</option>
-                                    <option value="openai:gpt-4o">GPT-4o</option>
-                                    <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
-                                    <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
-                                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                                    <option value="anthropic:claude-opus-4-20250514">Claude Opus 4</option>
+                                    <option value="openai:gpt-5.5">GPT-5.5</option>
+                                    <option value="openai:gpt-5.4">GPT-5.4</option>
+                                    <option value="openai:gpt-5.4-mini">GPT-5.4 Mini</option>
+                                    <option value="openai:gpt-5.4-nano">GPT-5.4 Nano</option>
+                                    <option value="anthropic:claude-opus-4-8">Claude Opus 4.8</option>
+                                    <option value="anthropic:claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                    <option value="anthropic:claude-haiku-4-5">Claude Haiku 4.5</option>
                                   </select>
                                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                                    Different models excel at different tasks (e.g., use GPT-4o for numerical analysis)
+                                    Different models excel at different tasks (e.g., use GPT-5.4 Mini for faster analysis)
                                   </p>
                                 </div>
                               </>
@@ -1776,7 +1787,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                           value={implementationConfig.provider || 'google'}
                           onChange={(e) => {
                             const newProvider = e.target.value;
-                            const defaultModel = newProvider === 'google' ? 'gemini-3-pro-image-preview' : 'dall-e-3';
+                            const defaultModel = newProvider === 'google' ? 'gemini-3-pro-image-preview' : 'gpt-image-2';
                             setImplementationConfig({
                               ...implementationConfig,
                               provider: newProvider,
@@ -1790,8 +1801,8 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                             color: 'var(--color-text-primary)'
                           }}
                         >
-                          <option value="google">Google (Nano Banana, Imagen 3, Veo 3)</option>
-                          <option value="openai">OpenAI (GPT-Image-1.5, DALL-E 3, Sora)</option>
+                          <option value="google">Google (Nano Banana Pro/2, Imagen 3, Veo 3)</option>
+                          <option value="openai">OpenAI (GPT Image 2, GPT-Image-1.5, DALL-E 3, Sora)</option>
                         </select>
                       </div>
 
@@ -1800,7 +1811,7 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                           Model
                         </label>
                         <select
-                          value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-3-pro-image-preview' : 'dall-e-3')}
+                          value={implementationConfig.model || (implementationConfig.provider === 'google' ? 'gemini-3-pro-image-preview' : 'gpt-image-2')}
                           onChange={(e) => setImplementationConfig({ ...implementationConfig, model: e.target.value })}
                           className="w-full px-4 py-2 rounded-lg border text-sm"
                           style={{
@@ -1811,17 +1822,18 @@ const ToolConfigView = ({ tool, onSave, onDelete, onClose }: ToolConfigViewProps
                         >
                           {implementationConfig.provider === 'openai' ? (
                             <>
+                              <option value="gpt-image-2">GPT Image 2 (Image)</option>
                               <option value="gpt-image-1.5">GPT-Image-1.5 (Image)</option>
                               <option value="dall-e-3">DALL-E 3 (Image)</option>
                               <option value="sora">Sora (Video)</option>
                             </>
                           ) : (
                             <>
-                              <option value="gemini-3-pro-image-preview">🍌 Nano Banana Pro (Gemini 3 Pro) - RECOMMENDED</option>
-                              <option value="gemini-2.5-flash-image">🍌 Nano Banana (Gemini 2.5 Flash)</option>
+                              <option value="gemini-3.1-flash-image-preview">🍌 Nano Banana 2 (3.1 Flash) - RECOMMENDED</option>
+                              <option value="gemini-3-pro-image-preview">🍌 Nano Banana Pro (3 Pro Image)</option>
                               <option value="imagen-3">Imagen 3 (Image)</option>
+                              <option value="veo-3.1-fast-generate-preview">Veo 3.1 Fast (Video)</option>
                               <option value="veo-3">Veo 3 (Video)</option>
-                              <option value="veo-3.1">Veo 3.1 (Video)</option>
                             </>
                           )}
                         </select>
@@ -3168,7 +3180,7 @@ const AgentLoadouts = () => {
                             config: {
                               name: 'Code Generator',
                               description: 'Generate, refactor, and document code with filesystem tools and GitHub integration',
-                              model: 'claude-3-5-sonnet-20241022',
+                              model: 'claude-sonnet-4-6',
                               temperature: 0.3,
                               system_prompt: `You are an expert software engineer and code generator. Your role is to:
 
@@ -3225,7 +3237,7 @@ Always explain your code changes and provide context for your decisions.`,
                             config: {
                               name: 'Research Assistant',
                               description: 'Gather information from the web, synthesize findings, and generate comprehensive reports',
-                              model: 'claude-3-5-sonnet-20241022',
+                              model: 'claude-sonnet-4-6',
                               temperature: 0.7,
                               system_prompt: `You are an expert research assistant specializing in information gathering and synthesis. Your role is to:
 
@@ -3282,7 +3294,7 @@ Always provide balanced perspectives and acknowledge uncertainties when appropri
                             config: {
                               name: 'Testing Agent',
                               description: 'Write and execute tests, analyze coverage, and identify edge cases',
-                              model: 'claude-3-5-sonnet-20241022',
+                              model: 'claude-sonnet-4-6',
                               temperature: 0.4,
                               system_prompt: `You are an expert QA engineer and testing specialist. Your role is to:
 
@@ -3627,7 +3639,7 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
               >
-                Claude Skills
+                Skills
               </button>
             </div>
 
@@ -3752,7 +3764,7 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                      Claude Skills
+                      Skills
                     </h3>
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{
                       backgroundColor: 'var(--color-background-dark)',
@@ -3760,16 +3772,6 @@ Focus on writing maintainable, reliable tests that catch real issues.`,
                     }}>
                       {filteredSkills.length}
                     </span>
-                    <a
-                      href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs hover:underline"
-                      style={{ color: 'var(--color-primary)' }}
-                      title="Learn about Claude Skills"
-                    >
-                      Docs ↗
-                    </a>
                   </div>
                   <button
                     onClick={() => setShowSkillBuilder(true)}

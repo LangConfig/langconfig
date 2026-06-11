@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE = 'http://localhost:8765';
+const API_BASE = '';
 
 /**
  * Presentation job status values
@@ -173,6 +173,12 @@ export function usePresentationJob({
   const pollAttemptsRef = useRef(0);
   const pollStartTimeRef = useRef<number>(0);
 
+  // Store callbacks in refs to avoid useEffect re-fires on every render
+  const onCompleteRef = useRef(onComplete);
+  const onErrorRef = useRef(onError);
+  onCompleteRef.current = onComplete;
+  onErrorRef.current = onError;
+
   // Polling safety limits
   const MAX_POLL_ATTEMPTS = 100;
   const MAX_POLL_DURATION_MS = 300_000; // 5 minutes
@@ -216,7 +222,7 @@ export function usePresentationJob({
         setError(timeoutMsg);
         setIsLoading(false);
         hasCompletedRef.current = true;
-        onError?.(timeoutMsg);
+        onErrorRef.current?.(timeoutMsg);
         return true; // Stop polling
       }
 
@@ -245,7 +251,7 @@ export function usePresentationJob({
 
           if (!hasCompletedRef.current) {
             hasCompletedRef.current = true;
-            onComplete?.(jobData);
+            onCompleteRef.current?.(jobData);
           }
 
           return true; // Stop polling
@@ -256,7 +262,7 @@ export function usePresentationJob({
 
           if (!hasCompletedRef.current) {
             hasCompletedRef.current = true;
-            onError?.(errorMsg);
+            onErrorRef.current?.(errorMsg);
           }
 
           return true; // Stop polling
@@ -275,7 +281,7 @@ export function usePresentationJob({
           setError(errorMsg);
           setIsLoading(false);
           hasCompletedRef.current = true;
-          onError?.(errorMsg);
+          onErrorRef.current?.(errorMsg);
           return true; // Stop polling
         }
 
@@ -302,7 +308,7 @@ export function usePresentationJob({
     return () => {
       clearPolling();
     };
-  }, [enabled, jobId, pollInterval, onComplete, onError, clearPolling]);
+  }, [enabled, jobId, pollInterval, clearPolling]);
 
   // Generate a new presentation
   const generate = useCallback(async (request: GeneratePresentationRequest): Promise<PresentationJob | null> => {
@@ -340,10 +346,10 @@ export function usePresentationJob({
       const errorMsg = err instanceof Error ? err.message : 'Failed to generate presentation';
       setError(errorMsg);
       setIsLoading(false);
-      onError?.(errorMsg);
+      onErrorRef.current?.(errorMsg);
       return null;
     }
-  }, [onError, clearPolling]);
+  }, [clearPolling]);
 
   // Download the result file
   const download = useCallback(async () => {
@@ -385,9 +391,9 @@ export function usePresentationJob({
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Download failed';
       setError(errorMsg);
-      onError?.(errorMsg);
+      onErrorRef.current?.(errorMsg);
     }
-  }, [job, onError]);
+  }, [job]);
 
   // Open the result (URL for Google Slides, download for others)
   const openResult = useCallback(() => {

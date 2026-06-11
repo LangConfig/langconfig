@@ -16,7 +16,8 @@ interface UseChatSessionResult {
   error: string | null;
   loadHistory: (sessionId: string) => Promise<void>;
   addMessage: (message: ChatMessage) => void;
-  updateLastMessage: (content: string) => void;
+  updateLastMessage: (content: string, patch?: Partial<ChatMessage>) => void;
+  deleteMessage: (messageIndex: number) => Promise<void>;
   clearHistory: () => void;
   setError: (error: string | null) => void;
 }
@@ -67,17 +68,34 @@ export function useChatSession(currentSessionId: string | null): UseChatSessionR
     setMessages(prev => [...prev, message]);
   }, []);
 
-  const updateLastMessage = useCallback((content: string) => {
+  const updateLastMessage = useCallback((content: string, patch: Partial<ChatMessage> = {}) => {
     setMessages(prev => {
       if (prev.length === 0) return prev;
 
       const newMessages = [...prev];
       const lastMessage = newMessages[newMessages.length - 1];
-      lastMessage.content = content;
+      newMessages[newMessages.length - 1] = {
+        ...lastMessage,
+        ...patch,
+        content,
+      };
 
       return newMessages;
     });
   }, []);
+
+  const deleteMessage = useCallback(async (messageIndex: number) => {
+    if (!sessionId) return;
+
+    try {
+      await apiClient.deleteChatMessage(sessionId, messageIndex);
+      setMessages(prev => prev.filter((_, index) => index !== messageIndex));
+    } catch (err: any) {
+      console.error('Failed to delete chat message:', err);
+      setError(err?.response?.data?.detail || 'Failed to delete message');
+      throw err;
+    }
+  }, [sessionId]);
 
   const clearHistory = useCallback(() => {
     setMessages([]);
@@ -92,6 +110,7 @@ export function useChatSession(currentSessionId: string | null): UseChatSessionR
     loadHistory,
     addMessage,
     updateLastMessage,
+    deleteMessage,
     clearHistory,
     setError,
   };

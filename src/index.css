@@ -5,13 +5,13 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #2E5C8A;
-  --color-background-light: #F5F9FC;
-  --color-background-dark: #D8EDF5;
-  --color-panel-dark: #E3F0F5;
-  --color-border-dark: #2E5C8A;
-  --color-text-muted: #4A6B8A;
-  --color-text-primary: #1a2332;
+  --color-primary: #D98984;
+  --color-background-light: #FFF8ED;
+  --color-background-dark: #F8E7DC;
+  --color-panel-dark: #F6D4CF;
+  --color-border-dark: #102D43;
+  --color-text-muted: #7B6870;
+  --color-text-primary: #12283B;
 
   --font-family-display: Inter, sans-serif;
   --font-family-sans: Manrope, system-ui, -apple-system, sans-serif;
@@ -277,23 +277,23 @@ select {
 
 /* Textured Theme Styles - Light Pastel Mode */
 .textured-theme .frosted-glass {
-  background: linear-gradient(135deg, rgba(235, 244, 248, 0.95) 0%, rgba(227, 240, 245, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(255, 248, 237, 0.95) 0%, rgba(246, 212, 207, 0.9) 100%);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid rgba(46, 92, 138, 0.4);
+  border: 1px solid rgba(16, 45, 67, 0.4);
   box-shadow:
-    0 8px 32px 0 rgba(91, 155, 213, 0.1),
+    4px 4px 0 rgba(16, 45, 67, 0.2),
     inset 1px 1px 0px rgba(255, 255, 255, 0.8),
-    inset -1px -1px 0px rgba(46, 92, 138, 0.15);
+    inset -1px -1px 0px rgba(217, 137, 132, 0.15);
 }
 
 .textured-theme.dark .frosted-glass {
-  background: linear-gradient(135deg, rgba(227, 240, 245, 0.9) 0%, rgba(235, 244, 248, 0.85) 100%);
-  border: 1px solid rgba(46, 92, 138, 0.35);
+  background: linear-gradient(135deg, rgba(246, 212, 207, 0.9) 0%, rgba(255, 248, 237, 0.85) 100%);
+  border: 1px solid rgba(16, 45, 67, 0.35);
   box-shadow:
-    0 8px 32px 0 rgba(91, 155, 213, 0.12),
+    4px 4px 0 rgba(16, 45, 67, 0.2),
     inset 1px 1px 0px rgba(255, 255, 255, 0.9),
-    inset -1px -1px 0px rgba(46, 92, 138, 0.2);
+    inset -1px -1px 0px rgba(217, 137, 132, 0.2);
 }
 
 /* Textured panels with subtle patterns - Light Pastel */
@@ -302,7 +302,7 @@ select {
 .textured-theme .bg-panel-dark,
 .textured-theme .bg-background-dark {
   position: relative;
-  background: linear-gradient(180deg, rgba(245, 249, 252, 1) 0%, rgba(235, 244, 248, 1) 100%);
+  background: linear-gradient(180deg, rgba(255, 248, 237, 1) 0%, rgba(248, 231, 220, 1) 100%);
 }
 
 .textured-theme aside::before,
@@ -316,8 +316,8 @@ select {
   right: 0;
   bottom: 0;
   background-image:
-    radial-gradient(circle at 20% 50%, rgba(91, 155, 213, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(46, 92, 138, 0.08) 0%, transparent 50%);
+    radial-gradient(circle at 20% 50%, rgba(246, 212, 207, 0.18) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(217, 137, 132, 0.08) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -327,18 +327,18 @@ select {
 .textured-theme.dark .bg-panel-dark::before,
 .textured-theme.dark .bg-background-dark::before {
   background-image:
-    radial-gradient(circle at 20% 50%, rgba(91, 155, 213, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(46, 92, 138, 0.1) 0%, transparent 50%);
+    radial-gradient(circle at 20% 50%, rgba(246, 212, 207, 0.18) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(217, 137, 132, 0.08) 0%, transparent 50%);
 }
 
 /* Textured borders with gradient - Light Pastel */
 .textured-theme .border-gray-200,
 .textured-theme .border-border-dark {
-  border-color: rgba(46, 92, 138, 0.4);
+  border-color: rgba(16, 45, 67, 0.4);
   border-image: linear-gradient(90deg,
-      rgba(46, 92, 138, 0.25) 0%,
-      rgba(46, 92, 138, 0.35) 50%,
-      rgba(46, 92, 138, 0.25) 100%) 1;
+      rgba(16, 45, 67, 0.25) 0%,
+      rgba(217, 137, 132, 0.3) 50%,
+      rgba(16, 45, 67, 0.25) 100%) 1;
 }
 
 /* Enhanced buttons for textured theme - Light Pastel */
@@ -347,87 +347,84 @@ select {
 /* Pastel background for main containers */
 .textured-theme header {
   backdrop-filter: blur(10px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 3px 0 rgba(16, 45, 67, 0.36);
 }
 
 .textured-theme main {
-  background: linear-gradient(135deg, rgba(245, 249, 252, 1) 0%, rgba(240, 247, 250, 1) 100%) !important;
+  background: linear-gradient(135deg, rgba(255, 248, 237, 1) 0%, rgba(248, 231, 220, 1) 100%) !important;
 }
 
 /* Override dark mode styles for textured theme */
 .textured-theme .bg-gray-50,
 .textured-theme .dark\:bg-background-dark,
 .textured-theme .dark\:bg-panel-dark {
-  background: linear-gradient(180deg, rgba(245, 249, 252, 1) 0%, rgba(235, 244, 248, 1) 100%) !important;
+  background: linear-gradient(180deg, rgba(255, 248, 237, 1) 0%, rgba(248, 231, 220, 1) 100%) !important;
 }
 
 .textured-theme .bg-white,
 .textured-theme .dark\:bg-gray-800,
 .textured-theme .dark\:bg-gray-900 {
-  background: rgba(255, 255, 255, 0.8) !important;
+  background: rgba(255, 252, 246, 0.82) !important;
 }
 
 .textured-theme .dark\:bg-gray-700 {
-  background: rgba(240, 245, 250, 0.9) !important;
+  background: rgba(246, 212, 207, 0.82) !important;
 }
 
 .textured-theme .text-gray-900,
 .textured-theme .dark\:text-white {
-  color: #2c3e50 !important;
+  color: #12283b !important;
 }
 
 .textured-theme .text-gray-600,
 .textured-theme .dark\:text-gray-400 {
-  color: #5a6c7d !important;
+  color: #7b6870 !important;
 }
 
 .textured-theme .border-gray-200,
 .textured-theme .dark\:border-border-dark {
-  border-color: rgba(46, 92, 138, 0.3) !important;
+  border-color: rgba(16, 45, 67, 0.32) !important;
 }
 
 /* Search input in textured theme */
 .textured-theme input[type="text"],
 .textured-theme input[type="search"] {
-  background: rgba(255, 255, 255, 0.7) !important;
-  border-color: rgba(46, 92, 138, 0.4) !important;
-  color: #2c3e50 !important;
+  background: rgba(255, 252, 246, 0.78) !important;
+  border-color: rgba(16, 45, 67, 0.4) !important;
+  color: #12283b !important;
 }
 
 .textured-theme input::placeholder {
-  color: rgba(46, 92, 138, 0.5) !important;
+  color: rgba(123, 104, 112, 0.74) !important;
 }
 
 /* Agent cards with better borders */
 .textured-theme .divide-y>* {
-  border-color: rgba(46, 92, 138, 0.25) !important;
+  border-color: rgba(16, 45, 67, 0.25) !important;
 }
 
 .textured-theme button[style*="border-left"] {
-  border-left-color: rgba(46, 92, 138, 0.7) !important;
-  transition: all 0.2s ease;
+  border-left-color: rgba(217, 137, 132, 0.78) !important;
+  transition: all 0.15s ease;
 }
 
 .textured-theme button[style*="border-left"]:hover {
-  background: linear-gradient(90deg, rgba(46, 92, 138, 0.12) 0%, rgba(46, 92, 138, 0.06) 100%) !important;
-  border-left-color: rgba(46, 92, 138, 0.9) !important;
+  background: linear-gradient(90deg, rgba(217, 137, 132, 0.14) 0%, rgba(246, 212, 207, 0.22) 100%) !important;
+  border-left-color: rgba(217, 137, 132, 0.95) !important;
 }
 
-/* Enhanced logo with depth and glow */
-.textured-theme header img[alt="LangConfig Logo"] {
-  filter: drop-shadow(0 2px 4px rgba(46, 92, 138, 0.3)) drop-shadow(0 4px 8px rgba(46, 92, 138, 0.2)) brightness(1.05) contrast(1.1);
-  transition: all 0.3s ease;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(46, 92, 138, 0.1) 100%);
-  padding: 8px 16px;
-  border-radius: 12px;
-  box-shadow:
-    0 2px 8px rgba(46, 92, 138, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+/* Header wordmark treatment for the peony palette */
+.textured-theme header img[alt="LangConfig"] {
+  filter: brightness(0) saturate(100%) invert(15%) sepia(47%) saturate(923%) hue-rotate(166deg) brightness(90%) contrast(94%);
+  transition: transform 0.15s ease;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.textured-theme header img[alt="LangConfig Logo"]:hover {
-  filter: drop-shadow(0 3px 6px rgba(46, 92, 138, 0.4)) drop-shadow(0 6px 12px rgba(46, 92, 138, 0.3)) brightness(1.08) contrast(1.15);
-  transform: translateY(-1px);
+.textured-theme header img[alt="LangConfig"]:hover {
+  transform: translate(2px, 2px);
 }
 
 /* Slide-in animation for sidebars/panels */

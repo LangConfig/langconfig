@@ -7,7 +7,15 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import type { LocalModel, LocalModelCreate, LocalModelUpdate, ValidationResult } from '@/types/api';
+import type {
+  DiscoverPreviewResponse,
+  LocalModel,
+  LocalModelCreate,
+  LocalModelUpdate,
+  ModelServer,
+  ModelServerSyncResult,
+  ValidationResult,
+} from '@/types/api';
 import SettingsSection, { SettingsInput, SettingsSelect } from './SettingsSection';
 
 const providerPresets = {
@@ -58,6 +66,9 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<LocalModel | null>(null);
   const [validatingModelId, setValidatingModelId] = useState<number | null>(null);
+  const [servers, setServers] = useState<ModelServer[]>([]);
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [syncingServerId, setSyncingServerId] = useState<string | null>(null);
 
   // Fetch local models on mount
   useEffect(() => {
@@ -67,8 +78,12 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
   const fetchModels = async () => {
     try {
       setIsLoading(true);
-      const response = await apiClient.listLocalModels({ only_active: true });
-      setModels(response.data || []);
+      const [modelsResponse, serversResponse] = await Promise.all([
+        apiClient.listLocalModels({ only_active: true }),
+        apiClient.listModelServers(),
+      ]);
+      setModels(modelsResponse.data || []);
+      setServers(serversResponse.data || []);
     } catch (error) {
       console.error('Failed to fetch local models:', error);
     } finally {
@@ -79,6 +94,39 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
   const handleAddModel = () => {
     setEditingModel(null);
     setIsModalOpen(true);
+  };
+
+  const handleSyncServer = async (server: ModelServer) => {
+    setSyncingServerId(server.id);
+    try {
+      const response = await apiClient.syncModelServer(server.id);
+      const result: ModelServerSyncResult = response.data;
+      if (result.success) {
+        alert(`Synced ${server.name}: ${result.added} added, ${result.updated} updated, ${result.removed} removed.`);
+      } else {
+        alert(`Sync finished with errors: ${result.errors.join('; ')}`);
+      }
+      await fetchModels();
+    } catch (error: any) {
+      console.error('Failed to sync model server:', error);
+      alert(error.response?.data?.detail || error.message || 'Failed to sync model server.');
+    } finally {
+      setSyncingServerId(null);
+    }
+  };
+
+  const handleDeleteServer = async (server: ModelServer) => {
+    if (!confirm(`Remove "${server.name}" and deactivate its auto-discovered models?`)) {
+      return;
+    }
+
+    try {
+      await apiClient.deleteModelServer(server.id, false);
+      await fetchModels();
+    } catch (error: any) {
+      console.error('Failed to delete model server:', error);
+      alert(error.response?.data?.detail || error.message || 'Failed to delete model server.');
+    }
   };
 
   const handleEditModel = (model: LocalModel) => {
@@ -165,8 +213,84 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
         description="Connect to local LLM providers like Ollama, LM Studio, or vLLM. Configure multiple models and use them in your workflows."
         icon="computer"
       >
+        {/* Model Server Discovery */}
+        <div className="mb-5 border-2 p-4 shadow-[4px_4px_0_var(--color-border-dark)]" style={{
+          borderColor: 'var(--color-border-dark)',
+          backgroundColor: 'var(--color-surface)'
+        }}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-mono text-sm font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--color-text-primary)' }}>
+                Model Servers
+              </h3>
+              <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Discover and sync models from Ollama, LM Studio, vLLM, LiteLLM, or any OpenAI-compatible local server.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsServerModalOpen(true)}
+              className="inline-flex items-center gap-2 border-2 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-[transform,box-shadow] hover:translate-x-0.5 hover:translate-y-0.5"
+              style={{
+                borderColor: 'var(--color-border-dark)',
+                backgroundColor: 'var(--color-primary)',
+                color: 'white',
+                boxShadow: '3px 3px 0 var(--color-border-dark)'
+              }}
+            >
+              <span className="material-symbols-outlined text-base">travel_explore</span>
+              Discover Server
+            </button>
+          </div>
+
+          {servers.length > 0 && (
+            <div className="mt-4 grid gap-3">
+              {servers.map(server => (
+                <div
+                  key={server.id}
+                  className="flex flex-wrap items-center justify-between gap-3 border p-3"
+                  style={{
+                    borderColor: 'var(--color-border-dark)',
+                    backgroundColor: 'white'
+                  }}
+                >
+                  <div>
+                    <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      {server.name}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {server.provider} • {server.base_url} • {server.model_count} model{server.model_count === 1 ? '' : 's'}
+                    </div>
+                    {server.last_sync_error && (
+                      <div className="mt-1 text-xs text-red-600">
+                        {server.last_sync_error}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSyncServer(server)}
+                      disabled={syncingServerId === server.id}
+                      className="border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                      style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-primary)' }}
+                    >
+                      {syncingServerId === server.id ? 'Syncing...' : 'Sync'}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteServer(server)}
+                      className="border px-3 py-1.5 text-xs font-medium text-red-600"
+                      style={{ borderColor: 'var(--color-border-dark)' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Add New Model Button */}
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <button
             onClick={handleAddModel}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:opacity-90 transition-opacity"
@@ -207,6 +331,11 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
                       <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                         {model.provider.charAt(0).toUpperCase() + model.provider.slice(1)}
                       </span>
+                      {model.auto_discovered && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+                          Auto-discovered
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
                       {model.model_name} • {model.base_url.replace('/v1', '')}
@@ -337,6 +466,16 @@ export default function LocalModelsSettings(props: LocalModelsSettingsProps) {
           onSave={async () => {
             await fetchModels();
             setIsModalOpen(false);
+          }}
+        />
+      )}
+
+      {isServerModalOpen && (
+        <ModelServerModal
+          onClose={() => setIsServerModalOpen(false)}
+          onSave={async () => {
+            await fetchModels();
+            setIsServerModalOpen(false);
           }}
         />
       )}
@@ -587,6 +726,209 @@ function LocalModelModal({ model, onClose, onSave }: LocalModelModalProps) {
           <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
             After saving, click "Test Connection" to validate the model before using it in workflows.
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ModelServerModalProps {
+  onClose: () => void;
+  onSave: () => void;
+}
+
+function ModelServerModal({ onClose, onSave }: ModelServerModalProps) {
+  const [formData, setFormData] = useState({
+    name: 'Ollama',
+    provider: 'ollama',
+    base_url: 'http://localhost:11434',
+    api_key: '',
+  });
+  const [preview, setPreview] = useState<DiscoverPreviewResponse | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleProviderChange = (provider: string) => {
+    const preset = providerPresets[provider as keyof typeof providerPresets];
+    setFormData({
+      ...formData,
+      provider,
+      name: preset?.name || formData.name,
+      base_url: (preset?.baseUrl || formData.base_url).replace(/\/v1$/, ''),
+    });
+    setPreview(null);
+  };
+
+  const handlePreview = async () => {
+    if (!formData.base_url.trim()) {
+      setError('Base URL is required');
+      return;
+    }
+
+    setIsPreviewing(true);
+    setError(null);
+    try {
+      const response = await apiClient.discoverModelsPreview(
+        formData.base_url,
+        formData.provider,
+        formData.api_key || undefined
+      );
+      setPreview(response.data);
+      if (!response.data?.success) {
+        setError(response.data?.message || 'Discovery failed');
+      }
+    } catch (error: any) {
+      console.error('Discovery preview failed:', error);
+      setError(error.response?.data?.detail || error.message || 'Discovery failed');
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      setError('Server name is required');
+      return;
+    }
+    if (!formData.base_url.trim()) {
+      setError('Base URL is required');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    try {
+      await apiClient.createModelServer({
+        name: formData.name.trim(),
+        provider: formData.provider,
+        base_url: formData.base_url.trim(),
+        api_key: formData.api_key || undefined,
+        auto_sync: false,
+      });
+      onSave();
+    } catch (error: any) {
+      console.error('Failed to save model server:', error);
+      setError(error.response?.data?.detail || error.message || 'Failed to save model server');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden border-2 bg-white shadow-[6px_6px_0_var(--color-border-dark)]"
+        style={{ borderColor: 'var(--color-border-dark)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex items-center justify-between border-b-2 px-6 py-4"
+          style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-secondary)' }}
+        >
+          <h2 className="font-mono text-lg font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--color-text-primary)' }}>
+            Discover Model Server
+          </h2>
+          <button onClick={onClose} className="transition-colors" style={{ color: 'var(--color-text-primary)' }}>
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="space-y-4">
+            <SettingsInput
+              label="Server Name"
+              value={formData.name}
+              onChange={(value) => setFormData({ ...formData, name: value })}
+              placeholder="Ollama"
+              required
+            />
+            <SettingsSelect
+              label="Provider"
+              value={formData.provider}
+              onChange={handleProviderChange}
+              options={Object.entries(providerPresets).map(([key, preset]) => ({
+                value: key,
+                label: preset.name
+              }))}
+            />
+            <SettingsInput
+              label="Base URL"
+              type="url"
+              value={formData.base_url}
+              onChange={(value) => {
+                setFormData({ ...formData, base_url: value });
+                setPreview(null);
+              }}
+              placeholder="http://localhost:11434"
+              description="Use the server root. /v1 is optional."
+              required
+            />
+            {providerPresets[formData.provider as keyof typeof providerPresets]?.requiresApiKey !== false && (
+              <SettingsInput
+                label="API Key (Optional)"
+                type="password"
+                value={formData.api_key}
+                onChange={(value) => setFormData({ ...formData, api_key: value })}
+                description="Only needed if your server requires authentication."
+              />
+            )}
+
+            <button
+              onClick={handlePreview}
+              disabled={isPreviewing}
+              className="border-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-[transform,box-shadow] hover:translate-x-0.5 hover:translate-y-0.5 disabled:opacity-50"
+              style={{
+                borderColor: 'var(--color-border-dark)',
+                backgroundColor: 'white',
+                color: 'var(--color-text-primary)',
+                boxShadow: '3px 3px 0 var(--color-border-dark)'
+              }}
+            >
+              {isPreviewing ? 'Discovering...' : 'Preview Models'}
+            </button>
+
+            {preview?.success && (
+              <div className="border-2 p-3" style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-surface)' }}>
+                <div className="mb-2 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                  {preview.message}
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {preview.models.map(model => (
+                    <div key={model.id} className="flex justify-between gap-3 border px-2 py-1 text-xs" style={{ borderColor: 'var(--color-border-dark)' }}>
+                      <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{model.name}</span>
+                      <span style={{ color: 'var(--color-text-muted)' }}>{model.id}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="border-2 border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 border-t-2 bg-white px-6 py-4" style={{ borderColor: 'var(--color-border-dark)' }}>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex-1 border-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-white transition-opacity disabled:opacity-50"
+            style={{ borderColor: 'var(--color-border-dark)', backgroundColor: 'var(--color-primary)' }}
+          >
+            {isSaving ? 'Saving...' : 'Save & Sync'}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="border-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em]"
+            style={{ borderColor: 'var(--color-border-dark)', color: 'var(--color-text-primary)' }}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

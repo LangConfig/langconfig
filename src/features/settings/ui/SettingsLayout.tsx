@@ -13,6 +13,7 @@ export type SettingsCategory =
   | 'local-models'
   | 'local-workspace'
   | 'model-defaults'
+  | 'pii-profiles'
   | 'backend'
   | 'workflow'
   | 'general'

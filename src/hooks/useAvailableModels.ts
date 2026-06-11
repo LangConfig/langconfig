@@ -80,17 +80,17 @@ export function useAvailableModels(
       const localModelsList = settingsResponse.data.local_models || [];
 
       // Model display name mapping (public-facing names)
-      // Updated December 16, 2025
+      // Updated June 5, 2026
       const modelDisplayNames: Record<string, { name: string; provider: string }> = {
-        // OpenAI - GPT-5 Series (Current)
-        'gpt-5.2': { name: 'GPT-5.2', provider: 'OpenAI' },
-        'gpt-5.1': { name: 'GPT-5.1', provider: 'OpenAI' },
-        'gpt-4o': { name: 'GPT-4o', provider: 'OpenAI' },
-        'gpt-4o-mini': { name: 'GPT-4o Mini', provider: 'OpenAI' },
+        // OpenAI - GPT-5 frontier series
+        'gpt-5.5': { name: 'GPT-5.5', provider: 'OpenAI' },
+        'gpt-5.4': { name: 'GPT-5.4', provider: 'OpenAI' },
+        'gpt-5.4-mini': { name: 'GPT-5.4 Mini', provider: 'OpenAI' },
+        'gpt-5.4-nano': { name: 'GPT-5.4 Nano', provider: 'OpenAI' },
 
-        // Anthropic - Claude 4.5 (Current)
-        'claude-opus-4-5': { name: 'Claude Opus 4.5', provider: 'Anthropic' },
-        'claude-sonnet-4-5': { name: 'Claude Sonnet 4.5', provider: 'Anthropic' },
+        // Anthropic - Claude current generation
+        'claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'Anthropic' },
+        'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', provider: 'Anthropic' },
         'claude-haiku-4-5': { name: 'Claude Haiku 4.5', provider: 'Anthropic' },
 
         // Google - Gemini 3 (Current)

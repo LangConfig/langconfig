@@ -169,7 +169,7 @@ const FILESYSTEM_TOOLS = ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 
 const DEFAULT_AGENT_TOOLS = [...FILESYSTEM_TOOLS, 'web_search'];
 
 const DEFAULT_CONFIG: DeepAgentConfig = {
-  model: 'claude-sonnet-4-5-20250929',
+  model: 'claude-sonnet-4-6',
   temperature: 0.7,
   system_prompt: 'You are a helpful AI assistant with planning, research, and task delegation capabilities. When facing complex multi-step tasks, use the `task` tool to delegate specialized work to subagents.',
   tools: [],
@@ -1199,7 +1199,7 @@ export default function DeepAgentBuilder({
                       </div>
                     </button>
                     <button
-                      onClick={() => addRegularAgentMiddleware('summarization', { model: 'gpt-4o-mini', max_tokens_before_summary: 1000, keep_last_n_messages: 5 })}
+                      onClick={() => addRegularAgentMiddleware('summarization', { model: 'gpt-5.4-mini', max_tokens_before_summary: 1000, keep_last_n_messages: 5 })}
                       className="flex items-start gap-3 p-3 text-left bg-gray-50 dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                     >
                       <Plus className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500" />
@@ -1400,7 +1400,7 @@ export default function DeepAgentBuilder({
                                   </label>
                                   <input
                                     type="text"
-                                    value={mw.config.model ?? 'gpt-4o-mini'}
+                                    value={mw.config.model ?? 'gpt-5.4-mini'}
                                     onChange={(e) => {
                                       const middleware = [...config.middleware];
                                       middleware[index].config.model = e.target.value;

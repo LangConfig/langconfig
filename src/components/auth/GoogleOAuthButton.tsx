@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE = 'http://localhost:8765';
+const API_BASE = '';
 
 interface GoogleOAuthStatus {
   connected: boolean;

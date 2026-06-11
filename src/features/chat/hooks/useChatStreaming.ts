@@ -7,13 +7,15 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { ChatMessage, ChatStreamEvent } from '../types/chat';
+import type { ContentBlock } from '@/types/content-blocks';
 import apiClient from '../../../lib/api-client';
+import { normalizeChatStreamEvent } from '../stream/chatStreamAdapter';
 
 interface UseChatStreamingResult {
   sendMessage: (
     message: string,
     onMessageAdd: (message: ChatMessage) => void,
-    onMessageUpdate: (content: string) => void,
+    onMessageUpdate: (content: string, patch?: Partial<ChatMessage>) => void,
     onComplete: () => void,
     onToolEvent?: (event: ChatStreamEvent) => void,
     onCustomEvent?: (event: ChatStreamEvent) => void
@@ -39,7 +41,7 @@ export function useChatStreaming(
     async (
       message: string,
       onMessageAdd: (message: ChatMessage) => void,
-      onMessageUpdate: (content: string) => void,
+      onMessageUpdate: (content: string, patch?: Partial<ChatMessage>) => void,
       onComplete: () => void,
       onToolEvent?: (event: ChatStreamEvent) => void,
       onCustomEvent?: (event: ChatStreamEvent) => void
@@ -87,6 +89,32 @@ export function useChatStreaming(
 
         let accumulatedContent = '';
         let assistantMessageAdded = false;
+        let streamedArtifacts: ContentBlock[] = [];
+        let streamedContentBlocks: ContentBlock[] = [];
+
+        const ensureAssistantMessage = () => {
+          if (assistantMessageAdded) return;
+
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: accumulatedContent,
+            timestamp: new Date().toISOString(),
+            artifacts: streamedArtifacts,
+            content_blocks: streamedContentBlocks,
+            has_multimodal: streamedContentBlocks.length > 0,
+          };
+          onMessageAdd(assistantMessage);
+          assistantMessageAdded = true;
+        };
+
+        const patchAssistantMessage = () => {
+          ensureAssistantMessage();
+          onMessageUpdate(accumulatedContent, {
+            artifacts: streamedArtifacts,
+            content_blocks: streamedContentBlocks,
+            has_multimodal: streamedContentBlocks.length > 0,
+          });
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -100,38 +128,44 @@ export function useChatStreaming(
             if (line.startsWith('data: ')) {
               try {
                 const data: ChatStreamEvent = JSON.parse(line.substring(6));
+                const part = normalizeChatStreamEvent(data);
 
-                if (data.type === 'chunk') {
+                if (!part) continue;
+
+                if (part.type === 'text_delta') {
                   // Stream individual tokens as they arrive
-                  accumulatedContent += data.content;
+                  accumulatedContent += part.text;
 
                   // Add assistant message on first chunk
-                  if (!assistantMessageAdded) {
-                    const assistantMessage: ChatMessage = {
-                      role: 'assistant',
-                      content: accumulatedContent,
-                      timestamp: new Date().toISOString(),
-                    };
-                    onMessageAdd(assistantMessage);
-                    assistantMessageAdded = true;
-                  } else {
-                    onMessageUpdate(accumulatedContent);
-                  }
-                } else if (data.type === 'complete') {
+                  ensureAssistantMessage();
+                  onMessageUpdate(accumulatedContent, {
+                    artifacts: streamedArtifacts,
+                    content_blocks: streamedContentBlocks,
+                    has_multimodal: streamedContentBlocks.length > 0,
+                  });
+                } else if (part.type === 'complete') {
                   // Final content - use accumulated or provided
-                  const finalContent = data.content || accumulatedContent;
+                  const finalContent = part.text || accumulatedContent;
+                  streamedArtifacts = part.artifacts.length > 0 ? part.artifacts : streamedArtifacts;
+                  streamedContentBlocks = part.contentBlocks.length > 0 ? part.contentBlocks : streamedContentBlocks;
                   if (finalContent !== accumulatedContent) {
                     accumulatedContent = finalContent;
-                    onMessageUpdate(finalContent);
                   }
-                } else if (data.type === 'error') {
-                  setError(data.message || 'An error occurred during streaming');
-                } else if (data.type === 'tool_start' || data.type === 'tool_end') {
+                  patchAssistantMessage();
+                } else if (part.type === 'error') {
+                  setError(part.message);
+                } else if (part.type === 'tool_started' || part.type === 'tool_completed') {
                   // Pass tool events to callback
                   if (onToolEvent) {
                     onToolEvent(data);
                   }
-                } else if (data.type === 'custom_event') {
+                } else if (part.type === 'artifact') {
+                  streamedArtifacts = [...streamedArtifacts, part.artifact];
+                  if (part.artifact.type === 'image' || part.artifact.type === 'audio' || part.artifact.type === 'file' || part.artifact.type === 'resource') {
+                    streamedContentBlocks = [...streamedContentBlocks, part.artifact];
+                  }
+                  patchAssistantMessage();
+                } else if (part.type === 'custom') {
                   // Pass custom events to callback (LangGraph-style progress, status, etc.)
                   if (onCustomEvent) {
                     onCustomEvent(data);

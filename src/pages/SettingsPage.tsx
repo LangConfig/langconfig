@@ -12,6 +12,7 @@ import SettingsLayout, { SettingsCategory } from "../features/settings/ui/Settin
 import LocalModelsSettings from "../features/settings/ui/LocalModelsSettings";
 import LocalWorkspaceSettings from "../features/settings/ui/LocalWorkspaceSettings";
 import ModelDefaultsSettings from '../features/settings/ui/ModelDefaultsSettings';
+import PIIProfilesSettings from '../features/settings/ui/PIIProfilesSettings';
 import SettingsSection, { SettingsInput } from '../features/settings/ui/SettingsSection';
 
 export default function SettingsView() {
@@ -188,8 +189,8 @@ export default function SettingsView() {
         const modelDefaultsResponse = await apiClient.getModelDefaults();
         const modelDefaultsData = modelDefaultsResponse.data;
         setModelDefaultsSettings({
-          primaryModel: modelDefaultsData.primary_model || 'gpt-4o',
-          fallbackModels: modelDefaultsData.fallback_models || ['claude-sonnet-4-5'],
+          primaryModel: modelDefaultsData.primary_model || 'gpt-5.4',
+          fallbackModels: modelDefaultsData.fallback_models || ['claude-sonnet-4-6'],
           temperature: modelDefaultsData.temperature ?? 0.7,
           maxTokens: modelDefaultsData.max_tokens || 4096,
           topP: modelDefaultsData.top_p ?? 1.0,
@@ -646,7 +647,7 @@ export default function SettingsView() {
                     }}
                   />
                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Required for Claude models (claude-sonnet-4-5, claude-haiku-4-5, etc.)
+                    Required for Claude models (claude-sonnet-4-6, claude-opus-4-8, etc.)
                   </p>
                 </div>
 
@@ -679,7 +680,7 @@ export default function SettingsView() {
                     }}
                   />
                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Required for GPT models (gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.)
+                    Required for GPT models (gpt-5.5, gpt-5.4, gpt-5.4-mini, etc.)
                   </p>
                 </div>
 
@@ -854,6 +855,9 @@ export default function SettingsView() {
             </SettingsSection>
           </div>
         );
+
+      case 'pii-profiles':
+        return <PIIProfilesSettings />;
 
       case 'appearance':
         return (

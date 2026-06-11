@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { memo, useState, useRef, useEffect, useMemo } from 'react';
+import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { MessageSquare } from 'lucide-react';
 import { useAvailableModels } from '@/hooks/useAvailableModels';
@@ -22,6 +22,7 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
   const modelName = data.config?.model || data.model;
   const agentType = data.agentType || 'default';
   const executionStatus = data.executionStatus as NodeExecutionStatus | undefined;
+  const isControlNode = ['START_NODE', 'END_NODE', 'CHECKPOINT_NODE', 'OUTPUT_NODE', 'CONDITIONAL_NODE', 'APPROVAL_NODE', 'TOOL_NODE'].includes(agentType);
 
   // Refs
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -39,6 +40,31 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
     onlyValidated: true
   });
 
+  const modelLabel = useMemo(() => {
+    const localMatch = localModels.find((model) => model.id === modelName);
+    if (localMatch) {
+      return localMatch.name.replace(/\s*\([^)]*-\s*Local\)$/i, '');
+    }
+    const cloudMatch = cloudModels.find((model) => model.id === modelName);
+    return cloudMatch?.name || getModelDisplayName(modelName);
+  }, [cloudModels, localModels, modelName]);
+
+  const cycleModel = useCallback((direction: 1 | -1) => {
+    if (isControlNode) return;
+    const options = cloudModels.length > 0 ? cloudModels : localModels;
+    if (options.length === 0) return;
+
+    const currentIndex = options.findIndex((model) => model.id === modelName);
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (baseIndex + direction + options.length) % options.length;
+    const nextModel = options[nextIndex];
+
+    updateNodeConfig(id, {
+      ...data.config,
+      model: nextModel.id
+    });
+  }, [cloudModels, data.config, id, isControlNode, localModels, modelName, updateNodeConfig]);
+
   // State for expandable panel
   const [isPanelExpanded, setIsPanelExpanded] = useState(false);
 
@@ -54,9 +80,6 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
 
   // Token cost info (from execution status or config)
   const tokenCost = data.tokenCost || executionStatus?.tokenCost;
-
-  // Detect if this is a control node
-  const isControlNode = ['START_NODE', 'END_NODE', 'CHECKPOINT_NODE', 'OUTPUT_NODE', 'CONDITIONAL_NODE', 'APPROVAL_NODE', 'TOOL_NODE'].includes(agentType);
 
   // Control node styling configuration - using theme colors
   const controlNodeStyles: Record<string, { icon: string; opacity: number }> = {
@@ -271,7 +294,13 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
                 e.stopPropagation();
                 setShowModelDropdown(!showModelDropdown);
               }}
+              onWheel={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                cycleModel(e.deltaY > 0 ? 1 : -1);
+              }}
               className="text-xs font-medium px-3 py-1 rounded-full nodrag"
+              title="Click to choose a model. Scroll to cycle models."
               style={{
                 color: isDarkTheme ? 'var(--color-text-muted)' : 'var(--color-background-light)',
                 backgroundColor: isDarkTheme
@@ -279,13 +308,13 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
                   : 'rgba(255, 255, 255, 0.25)',
               }}
             >
-              {getModelDisplayName(modelName)}
+              {modelLabel}
             </button>
 
             {/* Model Dropdown */}
             {showModelDropdown && (
               <div
-                className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 rounded-lg shadow-xl nodrag nopan"
+                className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 rounded-lg shadow-xl nodrag nopan nowheel"
                 style={{
                   backgroundColor: 'var(--color-background-dark)',
                   border: '2px solid var(--color-border-dark)',
@@ -685,7 +714,7 @@ const CustomNode = memo(function CustomNode({ id, data, selected }: NodeProps) {
                 </div>
                 {tokenCost && tokenCost.totalTokens > 0 && (
                   <div className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Priced for {getModelDisplayName(modelName)}
+                    Priced for {modelLabel}
                   </div>
                 )}
               </div>

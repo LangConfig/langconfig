@@ -51,7 +51,7 @@ export default function MessageInput({
   };
 
   return (
-    <div className="flex gap-2 items-center">
+    <div className="flex items-center gap-2">
       <FileUploadButton
         sessionId={sessionId}
         onFileUploaded={onFileUploaded}
@@ -66,7 +66,7 @@ export default function MessageInput({
         onKeyPress={handleKeyPress}
         placeholder={placeholder}
         disabled={disabled || isStreaming}
-        className="flex-1 px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex-1 border-2 px-4 py-3 transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
         style={{
           backgroundColor: 'var(--color-input-background)',
           borderColor: 'var(--color-border-dark)',
@@ -78,10 +78,12 @@ export default function MessageInput({
       <button
         onClick={handleSend}
         disabled={!inputValue.trim() || disabled || isStreaming}
-        className="px-6 py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 flex items-center justify-center"
+        className="flex items-center justify-center border-2 px-5 py-3 transition-all hover:translate-x-0.5 hover:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
         style={{
           backgroundColor: 'var(--color-primary)',
+          borderColor: 'var(--color-border-dark)',
           color: 'white',
+          boxShadow: '3px 3px 0 var(--color-border-dark)',
         }}
         title="Send message (Enter)"
       >

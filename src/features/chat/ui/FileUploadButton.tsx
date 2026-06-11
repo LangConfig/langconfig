@@ -61,9 +61,10 @@ export default function FileUploadButton({ sessionId, onFileUploaded, disabled }
       <button
         onClick={() => fileInputRef.current?.click()}
         disabled={disabled || uploading || !sessionId}
-        className="p-2 rounded-lg transition-colors disabled:opacity-50"
+        className="border-2 p-2 transition-colors disabled:opacity-50"
         style={{
           backgroundColor: 'transparent',
+          borderColor: 'var(--color-border-dark)',
           color: 'var(--color-text-muted)'
         }}
         onMouseEnter={(e) => {

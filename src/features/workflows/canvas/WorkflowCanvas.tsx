@@ -29,7 +29,6 @@ import { useWorkflowStream } from '@/hooks/useWorkflowStream';
 import { useNodeExecutionStatus, NodeExecutionStatus } from '@/hooks/useNodeExecutionStatus';
 import { useProject } from '@/contexts/ProjectContext';
 import { useNotification } from '@/hooks/useNotification';
-import { useChat } from '@/features/chat/state/ChatContext';
 import CustomNode from './nodes/CustomNode';
 import { WorkflowCanvasContext } from './context';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -41,7 +40,7 @@ import SaveVersionDialog from './dialogs/SaveVersionDialog';
 import DebugWorkflowDialog from './dialogs/DebugWorkflowDialog';
 import CreateWorkflowDialog from './dialogs/CreateWorkflowDialog';
 import WorkflowSettingsTab from './settings/WorkflowSettingsTab';
-import ChatWarningModal from './dialogs/ChatWarningModal';
+import WorkflowChatTab from './chat/WorkflowChatTab';
 import PresentationDialog from './dialogs/PresentationDialog';
 import WorkflowResults from './results/WorkflowResults';
 import ArtifactsTab from './results/ArtifactsTab';
@@ -69,7 +68,7 @@ import { useResultsState } from './hooks/useResultsState';
 import { useNodeManagement } from './hooks/useNodeManagement';
 import { useWorkflowEventProcessing } from './hooks/useWorkflowEventProcessing';
 import { useTaskManagement } from './hooks/useTaskManagement';
-import { TaskHistoryEntry } from './types';
+import { TaskHistoryEntry, WorkflowCanvasTab } from './types';
 
 interface Agent {
   id: string;
@@ -173,8 +172,8 @@ interface WorkflowCanvasProps {
   onAgentAdded?: () => void;
   onRecipeInserted?: () => void;
   workflowId?: number | null;
-  onTabChange?: (tab: 'studio' | 'results') => void;
-  initialTab?: 'studio' | 'results';
+  onTabChange?: (tab: 'studio' | 'chat' | 'results') => void;
+  initialTab?: 'studio' | 'chat' | 'results';
   onTokenCostUpdate?: (tokenInfo: { totalTokens: number; promptTokens: number; completionTokens: number; costString: string; }) => void;
   // Task history callbacks for left sidebar
   onTaskHistoryUpdate?: (tasks: TaskHistoryEntry[]) => void;
@@ -184,6 +183,26 @@ interface WorkflowCanvasProps {
 
 const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
+const NON_CHAT_AGENT_TYPES = new Set([
+  'START_NODE',
+  'END_NODE',
+  'CHECKPOINT_NODE',
+  'OUTPUT_NODE',
+  'CONDITIONAL_NODE',
+  'APPROVAL_NODE',
+  'TOOL_NODE',
+  'LOOP_NODE',
+]);
+
+function getLinkedDeepAgentId(nodeData: any): number | null {
+  const raw =
+    nodeData?.deepAgentId ||
+    nodeData?.deep_agent_template_id ||
+    nodeData?.config?.deepAgentId ||
+    nodeData?.config?.deep_agent_template_id;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 // Custom Node Component is imported from ./nodes/CustomNode.tsx
 // WorkflowCanvasContext is imported from ./context.ts
@@ -208,7 +227,6 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   externalSelectedTask,
 }, ref) => {
   const { showSuccess, logError, showWarning, NotificationModal } = useNotification();
-  const { openChat } = useChat();
   const [nodes, setNodes, onNodesChangeBase] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
@@ -239,9 +257,10 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
 
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [currentZoom, setCurrentZoom] = useState(1); // Track zoom level for toasts
-  const [activeTab, setActiveTab] = useState<'studio' | 'results' | 'files' | 'artifacts' | 'settings'>(() => {
+  const [activeTab, setActiveTab] = useState<WorkflowCanvasTab>(() => {
     // Initialize from URL hash if present
     const hash = window.location.hash.replace('#', '');
+    if (hash === 'chat') return 'chat';
     if (hash === 'results') return 'results';
     if (hash === 'files') return 'files';
     if (hash === 'artifacts') return 'artifacts';
@@ -450,8 +469,7 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
     workflowId: currentWorkflowId,
   });
 
-  // Chat with unsaved agent warning modal
-  const [showChatWarningModal, setShowChatWarningModal] = useState(false);
+  const [preferredChatAgentId, setPreferredChatAgentId] = useState<number | null>(null);
 
   // Project context
   const { activeProjectId } = useProject();
@@ -645,9 +663,9 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   }, [nodeExecutionStatuses, nodeTokenCosts, nodeWarnings, setNodes]);
 
   // Update URL when tab changes - delegate to parent component
-  const handleTabChange = useCallback((newTab: 'studio' | 'results' | 'files' | 'artifacts' | 'settings') => {
+  const handleTabChange = useCallback((newTab: WorkflowCanvasTab) => {
     setActiveTab(newTab);
-    if (newTab === 'studio' || newTab === 'results') {
+    if (newTab === 'studio' || newTab === 'chat' || newTab === 'results') {
       onTabChange?.(newTab);
     }
   }, [onTabChange]);
@@ -696,6 +714,12 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    if (executionStatus.state === 'running' && activeTab === 'studio') {
+      handleTabChange('chat');
+    }
+  }, [activeTab, executionStatus.state, handleTabChange]);
 
   // Extract user prompt from latest execution
   const userPrompt = useMemo(() => {
@@ -791,21 +815,38 @@ const WorkflowCanvas = forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(({
   };
 
   // Handle opening chat with agent
-  const handleChatWithAgent = (_nodeId: string, nodeData: NodeData) => {
+  const handleChatWithAgent = useCallback((_nodeId: string, nodeData: NodeData) => {
     // Close context menu
     setNodeContextMenu(null);
 
-    // Check if this node has a linked deep agent ID
-    const deepAgentId = (nodeData as any).deepAgentId || (nodeData.config as any)?.deepAgentId;
+    const deepAgentId = getLinkedDeepAgentId(nodeData);
+    setPreferredChatAgentId(deepAgentId);
+    handleTabChange('chat');
+  }, [handleTabChange]);
 
-    if (deepAgentId) {
-      // Open chat with this specific agent
-      openChat(deepAgentId);
-    } else {
-      // Show modal that this node needs to be saved to library first
-      setShowChatWarningModal(true);
+  const chatAgentOptions = useMemo(() => nodes
+    .filter((node) => {
+      const agentType = (node.data as NodeData | undefined)?.agentType || 'default';
+      return !NON_CHAT_AGENT_TYPES.has(agentType);
+    })
+    .map((node) => {
+      const nodeData = node.data as NodeData;
+      const deepAgentId = getLinkedDeepAgentId(nodeData);
+      return {
+        nodeId: node.id,
+        label: nodeData.label || 'Agent',
+        hasLinkedAgent: Boolean(deepAgentId),
+      };
+    }), [nodes]);
+
+  const handleToolbarChatWithAgent = useCallback((nodeId: string) => {
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      showWarning('Agent node not found');
+      return;
     }
-  };
+    handleChatWithAgent(node.id, node.data as NodeData);
+  }, [handleChatWithAgent, nodes, showWarning]);
 
   // Handle deleting a node
   const handleDeleteNode = (nodeId: string) => {
@@ -1577,6 +1618,35 @@ if __name__ == "__main__":
     onNodeSelect,
   });
 
+  const handleChatWorkflowPrompt = useCallback(async (prompt: string, continueFromTaskId?: number) => {
+    if (nodes.length === 0) {
+      showWarning('Please add at least one agent to the workflow before running.');
+      return;
+    }
+
+    if (executionStatus.state === 'running') {
+      showWarning('A workflow is already running.');
+      return;
+    }
+
+    setExecutionConfig(prev => ({
+      ...prev,
+      directive: prompt,
+      query: prompt,
+      task: prompt,
+      continue_from_task_id: continueFromTaskId,
+    }));
+
+    handleTabChange('chat');
+
+    await executeWorkflow({
+      directive: prompt,
+      query: prompt,
+      task: prompt,
+      continue_from_task_id: continueFromTaskId,
+    });
+  }, [executeWorkflow, executionStatus.state, handleTabChange, nodes.length, showWarning]);
+
   // Clear canvas for new workflow
   const clearCanvas = useCallback(() => {
     setNodes([]);
@@ -1722,7 +1792,7 @@ if __name__ == "__main__":
         const nodeData = node.data || {
           label: node.type ? node.type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Node ${node.id}`,
           agentType: restoredAgentType,
-          model: node.config?.model || 'gpt-4o-mini',
+          model: node.config?.model || 'gpt-5.4-mini',
           config: node.config || {}
         };
         
@@ -1905,6 +1975,8 @@ if __name__ == "__main__":
           }}
           handleSave={handleSave}
           handleSaveVersion={handleSaveVersion}
+          chatAgentOptions={chatAgentOptions}
+          onChatWithAgent={handleToolbarChatWithAgent}
           showVersionDropdown={showVersionDropdown}
           setShowVersionDropdown={setShowVersionDropdown}
           currentVersion={currentVersion}
@@ -1927,6 +1999,8 @@ if __name__ == "__main__":
             } else if (tab === 'files') {
               setShowExecutionDialog(false);
               fetchFiles();
+            } else if (tab === 'chat') {
+              setShowExecutionDialog(false);
             }
           }}
           taskHistoryCount={taskHistory.length}
@@ -2059,6 +2133,23 @@ if __name__ == "__main__":
               />
             )}
           </div>
+
+          {activeTab === 'chat' && (
+            <WorkflowChatTab
+              workflowName={workflowName}
+              workflowId={currentWorkflowId}
+              taskHistory={taskHistory}
+              workflowEvents={workflowEvents}
+              workflowMetrics={workflowMetrics}
+              executionStatus={executionStatus}
+              currentTaskId={currentTaskId}
+              nodes={nodes}
+              nodeStatuses={nodeExecutionStatuses}
+              preferredAgentId={preferredChatAgentId}
+              onSendPrompt={handleChatWorkflowPrompt}
+              onStop={handleStop}
+            />
+          )}
 
           {/* Results Tab - Extracted to WorkflowResults component */}
           {activeTab === 'results' && (
@@ -2198,12 +2289,6 @@ if __name__ == "__main__":
             setAgentName={setAgentLibraryName}
             agentDescription={agentLibraryDescription}
             setAgentDescription={setAgentLibraryDescription}
-          />
-
-          {/* Chat with Unsaved Agent Warning Modal */}
-          <ChatWarningModal
-            isOpen={showChatWarningModal}
-            onClose={() => setShowChatWarningModal(false)}
           />
 
           {/* Presentation Dialog */}

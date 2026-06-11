@@ -97,14 +97,15 @@ export default function AgentSelector({
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors hover:bg-gray-50"
+        className="flex items-center gap-2 border-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-[transform,box-shadow,background-color] hover:translate-x-0.5 hover:translate-y-0.5"
         style={{
           borderColor: 'var(--color-border-dark)',
           backgroundColor: 'white',
           color: 'var(--color-text-primary)',
+          boxShadow: '3px 3px 0 var(--color-border-dark)',
         }}
       >
-        <span className="text-sm font-medium">
+        <span>
           {selectedAgent ? selectedAgent.name : 'Select Agent'}
         </span>
         <ChevronDown className="w-4 h-4" />
@@ -117,7 +118,7 @@ export default function AgentSelector({
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="absolute left-0 mt-2 w-96 rounded-lg shadow-lg border z-50 max-h-[32rem] overflow-hidden flex flex-col"
+            className="absolute left-0 z-50 mt-2 flex max-h-[32rem] w-96 flex-col overflow-hidden border-2 shadow-[4px_4px_0_var(--color-border-dark)]"
             style={{
               backgroundColor: 'white',
               borderColor: 'var(--color-border-dark)',
@@ -125,7 +126,7 @@ export default function AgentSelector({
           >
             {/* Search */}
             <div
-              className="p-3 border-b"
+              className="border-b-2 p-3"
               style={{ borderColor: 'var(--color-border-dark)' }}
             >
               <div className="relative">
@@ -138,7 +139,7 @@ export default function AgentSelector({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search agents..."
-                  className="w-full pl-10 pr-3 py-2 rounded border text-sm focus:outline-none focus:ring-2"
+                  className="w-full border-2 py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2"
                   style={{
                     backgroundColor: 'var(--color-input-background)',
                     borderColor: 'var(--color-border-dark)',
@@ -153,11 +154,11 @@ export default function AgentSelector({
                 <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
                   <button
                     onClick={() => setSelectedCategory(null)}
-                    className="px-2 py-1 text-xs rounded transition-colors whitespace-nowrap"
+                    className="whitespace-nowrap border-2 px-2 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
                     style={{
                       backgroundColor: !selectedCategory ? 'var(--color-primary)' : 'transparent',
                       color: !selectedCategory ? 'white' : 'var(--color-text-muted)',
-                      border: `1px solid ${!selectedCategory ? 'var(--color-primary)' : 'var(--color-border-dark)'}`,
+                      borderColor: 'var(--color-border-dark)',
                     }}
                   >
                     All
@@ -166,11 +167,11 @@ export default function AgentSelector({
                     <button
                       key={category}
                       onClick={() => setSelectedCategory(category)}
-                      className="px-2 py-1 text-xs rounded transition-colors whitespace-nowrap"
+                      className="whitespace-nowrap border-2 px-2 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
                       style={{
                         backgroundColor: selectedCategory === category ? 'var(--color-primary)' : 'transparent',
                         color: selectedCategory === category ? 'white' : 'var(--color-text-muted)',
-                        border: `1px solid ${selectedCategory === category ? 'var(--color-primary)' : 'var(--color-border-dark)'}`,
+                        borderColor: 'var(--color-border-dark)',
                       }}
                     >
                       {category}
@@ -266,7 +267,7 @@ function AgentItem({ agent, isSelected, onClick }: AgentItemProps) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div
-            className="text-sm font-medium truncate flex items-center gap-2"
+              className="flex items-center gap-2 truncate text-sm font-medium"
             style={{
               color: isHovered ? 'white' : isSelected ? 'var(--color-primary)' : 'var(--color-text-primary)',
             }}
@@ -283,9 +284,10 @@ function AgentItem({ agent, isSelected, onClick }: AgentItemProps) {
           )}
           {agent.category && (
             <div
-              className="text-xs mt-1 px-2 py-0.5 rounded inline-block"
+              className="mt-1 inline-block border px-2 py-0.5 font-mono text-xs uppercase tracking-[0.1em]"
               style={{
                 backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.2)' : 'var(--color-category-background)',
+                borderColor: isHovered ? 'white' : 'var(--color-border-dark)',
                 color: isHovered ? 'white' : 'var(--color-text-muted)',
               }}
             >

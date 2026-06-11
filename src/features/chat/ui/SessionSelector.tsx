@@ -6,7 +6,8 @@
  */
 
 import { useState } from 'react';
-import { ChevronDown, Plus, History } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { ChevronDown, Plus, History, Trash2 } from 'lucide-react';
 import type { ChatSession } from '../types/chat';
 import { useChat } from '../state/ChatContext';
 
@@ -15,9 +16,10 @@ interface SessionSelectorProps {
 }
 
 export default function SessionSelector({ onNewSession }: SessionSelectorProps) {
-  const { sessions, currentSessionId, switchSession } = useChat();
+  const { sessions, currentSessionId, switchSession, deleteSession } = useChat();
   const [isOpen, setIsOpen] = useState(false);
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
+  const [deletingSession, setDeletingSession] = useState<string | null>(null);
 
   const currentSession = sessions.find((s: ChatSession) => s.session_id === currentSessionId);
 
@@ -36,6 +38,19 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
     setIsOpen(false);
   };
 
+  const handleDeleteSession = async (event: MouseEvent, session: ChatSession) => {
+    event.stopPropagation();
+    if (!window.confirm(`Delete the ${session.agent_name} conversation?`)) {
+      return;
+    }
+    setDeletingSession(session.session_id);
+    try {
+      await deleteSession(session.session_id);
+    } finally {
+      setDeletingSession(null);
+    }
+  };
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -51,16 +66,17 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors hover:bg-gray-50"
+        className="flex items-center gap-2 border-2 px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-[transform,box-shadow,background-color] hover:translate-x-0.5 hover:translate-y-0.5"
         style={{
           borderColor: 'var(--color-border-dark)',
           backgroundColor: 'white',
           color: 'var(--color-text-primary)',
+          boxShadow: '3px 3px 0 var(--color-border-dark)',
         }}
         title="View conversation history"
       >
         <History className="w-4 h-4" />
-        <span className="text-sm">Conversations</span>
+        <span>Conversations</span>
         <ChevronDown className="w-4 h-4" />
       </button>
 
@@ -71,7 +87,7 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="absolute right-0 mt-2 w-80 rounded-lg shadow-lg border z-50 max-h-96 overflow-hidden flex flex-col"
+            className="absolute right-0 z-50 mt-2 flex max-h-96 w-80 flex-col overflow-hidden border-2 shadow-[4px_4px_0_var(--color-border-dark)]"
             style={{
               backgroundColor: 'white',
               borderColor: 'var(--color-border-dark)',
@@ -82,7 +98,7 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
               onClick={handleNewSession}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary)'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              className="flex items-center gap-2 px-4 py-3 border-b transition-colors"
+              className="flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
               style={{ borderColor: 'var(--color-border-dark)' }}
             >
               <Plus
@@ -92,7 +108,7 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
                 style={{ color: 'var(--color-primary)' }}
               />
               <span
-                className="text-sm font-medium transition-colors"
+                className="transition-colors"
                 onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
                 onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
                 style={{ color: 'var(--color-primary)' }}
@@ -112,12 +128,12 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
                 </div>
               ) : (
                 conversationsWithMessages.map((session: ChatSession) => (
-                  <button
+                  <div
                     key={session.session_id}
                     onClick={() => handleSelectSession(session.session_id)}
                     onMouseEnter={() => setHoveredSession(session.session_id)}
                     onMouseLeave={() => setHoveredSession(null)}
-                    className="w-full px-4 py-3 text-left transition-colors border-b"
+                    className="w-full cursor-pointer border-b px-4 py-3 text-left transition-colors"
                     style={{
                       borderColor: 'var(--color-border-dark)',
                       backgroundColor: hoveredSession === session.session_id ? 'var(--color-primary)' : 'transparent',
@@ -162,8 +178,23 @@ export default function SessionSelector({ onNewSession }: SessionSelectorProps) 
                           check
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={(event) => handleDeleteSession(event, session)}
+                        disabled={deletingSession === session.session_id}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center border transition-[transform,box-shadow,opacity] hover:translate-x-0.5 hover:translate-y-0.5 disabled:cursor-wait disabled:opacity-50"
+                        style={{
+                          borderColor: hoveredSession === session.session_id ? 'white' : 'var(--color-border-dark)',
+                          color: hoveredSession === session.session_id ? 'white' : 'var(--color-text-muted)',
+                          boxShadow: hoveredSession === session.session_id ? '2px 2px 0 white' : '2px 2px 0 var(--color-border-dark)',
+                          backgroundColor: 'transparent',
+                        }}
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))
               )}
             </div>

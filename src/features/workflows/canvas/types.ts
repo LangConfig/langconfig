@@ -103,7 +103,12 @@ export interface WorkflowExecutionContext {
   max_retries: number;
   max_events?: number;
   timeout_seconds?: number;
+  audio_file_path?: string;
+  audio_file_name?: string;
+  continue_from_task_id?: number;
 }
+
+export type WorkflowCanvasTab = 'studio' | 'chat' | 'results' | 'files' | 'artifacts' | 'settings';
 
 /**
  * Ref interface for exposing methods to parent components
@@ -145,8 +150,8 @@ export interface WorkflowCanvasProps {
   onAgentAdded?: () => void;
   onRecipeInserted?: () => void;
   workflowId?: number | null;
-  onTabChange?: (tab: 'studio' | 'results') => void;
-  initialTab?: 'studio' | 'results';
+  onTabChange?: (tab: 'studio' | 'chat' | 'results') => void;
+  initialTab?: 'studio' | 'chat' | 'results';
   onTokenCostUpdate?: (tokenInfo: TokenCostInfo) => void;
 }
 
@@ -203,6 +208,7 @@ export interface TaskHistoryEntry {
   formatted_input?: string;
   result?: any;
   error?: string;
+  continue_from_task_id?: number;
 }
 
 /**

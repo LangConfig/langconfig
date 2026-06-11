@@ -12,8 +12,8 @@
  * Prevents hardcoded URLs and enables different environments (dev, staging, prod).
  */
 
-// Get API base URL from environment variable, fallback to localhost for development
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8765';
+// Get API base URL from environment variable, fallback to empty string so Vite proxy handles routing
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 /**
  * API Endpoints

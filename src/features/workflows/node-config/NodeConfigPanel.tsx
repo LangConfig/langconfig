@@ -12,6 +12,7 @@ import { ModelSelectorInline } from '@/components/common/ModelSelector';
 import AttachmentUploader, { Attachment } from '@/components/common/AttachmentUploader';
 import apiClient from '@/lib/api-client';
 import ContextPreviewModal from '@/components/workflows/ContextPreviewModal';
+import PIIProfileSelector from './PIIProfileSelector';
 
 interface NodeConfig {
   id: string;
@@ -339,6 +340,44 @@ const NodeConfigPanel = ({
             file_pattern: { type: 'string', description: 'Glob pattern to filter files' }
           },
           required: ['pattern']
+        },
+        audio_transcribe: {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string', description: 'Path returned by /api/audio/upload' },
+            model_size: { type: 'string', description: 'Whisper model size: tiny, base, small, medium, or large-v3', default: 'base' },
+            language: { type: 'string', description: 'Language code, or empty for auto-detect', default: 'en' }
+          },
+          required: ['file_path']
+        },
+        pii_redact: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'Text to redact. Use {{previous_output}} to redact the previous tool output.' },
+            strategy: { type: 'string', description: 'Redaction strategy: redact, mask, or hash', default: 'redact' },
+            pii_types: { type: 'string', description: 'Comma-separated built-in PII types. Leave empty for all enabled types.', default: '' },
+            profile_id: { type: 'number', description: 'Optional PII profile ID' }
+          },
+          required: ['text']
+        },
+        pii_detect: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'Text to inspect for PII.' },
+            pii_types: { type: 'string', description: 'Comma-separated PII types. Leave empty for all types.', default: '' }
+          },
+          required: ['text']
+        },
+        generate_image: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Detailed image generation prompt.' },
+            size: { type: 'string', description: 'auto, 1024x1024, 1536x1024, or 1024x1536', default: 'auto' },
+            quality: { type: 'string', description: 'auto, low, medium, or high', default: 'auto' },
+            background: { type: 'string', description: 'auto, transparent, or opaque', default: 'auto' },
+            output_format: { type: 'string', description: 'png, jpeg, or webp', default: 'png' }
+          },
+          required: ['prompt']
         }
       };
       setToolInputSchema(mcpSchemas[toolId] || null);
@@ -431,7 +470,11 @@ const NodeConfigPanel = ({
           { tool_id: 'ls', name: 'List Directory', description: 'List directory contents with metadata' },
           { tool_id: 'edit_file', name: 'Edit File', description: 'Exact string replacements in files' },
           { tool_id: 'glob', name: 'Glob', description: 'Find files matching patterns' },
-          { tool_id: 'grep', name: 'Grep', description: 'Search file contents with regex' }
+          { tool_id: 'grep', name: 'Grep', description: 'Search file contents with regex' },
+          { tool_id: 'audio_transcribe', name: 'Audio Transcribe', description: 'Transcribe a local uploaded audio file with faster-whisper' },
+          { tool_id: 'pii_redact', name: 'PII Redact', description: 'Redact sensitive text using built-in detectors and optional PII profiles' },
+          { tool_id: 'pii_detect', name: 'PII Detect', description: 'Detect sensitive text without redacting it' },
+          { tool_id: 'generate_image', name: 'GPT Image 2', description: 'Generate an OpenAI GPT Image 2 artifact' }
         ];
 
         setToolNodeAvailableTools({ custom: customTools, mcp: mcpTools, cli: [] });
@@ -763,7 +806,7 @@ const NodeConfigPanel = ({
       type: 'dictionary',  // Default to dictionary-based
       system_prompt: '',
       tools: [],
-      model: config?.model || 'claude-sonnet-4-5-20250929',
+      model: config?.model || 'claude-sonnet-4-6',
       middleware: [],
       workflow_id: null,
       workflow_config: null
@@ -1133,29 +1176,38 @@ const NodeConfigPanel = ({
                   </div>
                 </div>
 
-                {/* Custom Tools Section */}
+                {/* Tool Selection */}
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
-                    Select Custom Tool
+                    Select Tool
                   </label>
                   <select
-                    value={selectedToolId || ''}
+                    value={selectedToolId ? `${selectedToolType || 'custom'}:${selectedToolId}` : ''}
                     onChange={(e) => {
-                      const toolId = e.target.value;
-                      setSelectedToolId(toolId);
-                      setSelectedToolType('custom');
-
-                      // Find the tool and load its schema
-                      const tool = availableCustomTools.find(t => t.tool_id === toolId);
-                      if (tool) {
-                        loadToolSchema('custom', toolId);
+                      const rawValue = e.target.value;
+                      if (!rawValue) {
+                        setSelectedToolId(null);
+                        setSelectedToolType(null);
+                        setToolInputSchema(null);
+                        setConfig({ ...config, tool_type: undefined, tool_id: undefined, tool_params: {} });
+                        return;
                       }
+
+                      const [toolType, toolId] = rawValue.split(':');
+                      const defaultParams =
+                        toolId === 'pii_redact'
+                          ? { text: '{{previous_output}}', strategy: 'redact' }
+                          : {};
+                      setSelectedToolId(toolId);
+                      setSelectedToolType(toolType);
+
+                      loadToolSchema(toolType, toolId);
 
                       setConfig({
                         ...config,
-                        tool_type: 'custom',
+                        tool_type: toolType,
                         tool_id: toolId,
-                        tool_params: {}
+                        tool_params: defaultParams
                       });
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -1167,22 +1219,110 @@ const NodeConfigPanel = ({
                       color: 'var(--color-text-primary)'
                     }}
                   >
-                    <option value="">Select a custom tool...</option>
+                    <option value="">Select a tool...</option>
+                    <optgroup label="Native tools">
+                      {toolNodeAvailableTools.mcp.map((tool: any) => (
+                        <option key={tool.tool_id} value={`mcp:${tool.tool_id}`}>
+                          {tool.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Custom tools">
                     {availableCustomTools.map((tool: any) => (
-                      <option key={tool.tool_id} value={tool.tool_id}>
+                      <option key={tool.tool_id} value={`custom:${tool.tool_id}`}>
                         {tool.name}
                       </option>
                     ))}
+                    </optgroup>
                   </select>
                   {selectedToolId && (
                     <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                      {availableCustomTools.find(t => t.tool_id === selectedToolId)?.description}
+                      {selectedToolType === 'custom'
+                        ? availableCustomTools.find(t => t.tool_id === selectedToolId)?.description
+                        : toolNodeAvailableTools.mcp.find((t: any) => t.tool_id === selectedToolId)?.description}
                     </p>
                   )}
                 </div>
 
+                {selectedToolId === 'pii_redact' && (
+                  <PIIProfileSelector
+                    currentValue={typeof config.tool_params?.profile_id === 'number' ? config.tool_params.profile_id : null}
+                    onChange={(profileId) => {
+                      const tool_params = { ...(config.tool_params || {}) };
+                      if (profileId == null) {
+                        delete tool_params.profile_id;
+                      } else {
+                        tool_params.profile_id = profileId;
+                      }
+                      setConfig({ ...config, tool_params });
+                    }}
+                  />
+                )}
+
+                {toolInputSchema?.properties && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                      Tool Parameters
+                    </label>
+                    <div className="space-y-3">
+                      {Object.entries(toolInputSchema.properties)
+                        .filter(([key]) => !(selectedToolId === 'pii_redact' && key === 'profile_id'))
+                        .map(([key, schema]: [string, any]) => {
+                          const value = config.tool_params?.[key] ?? schema.default ?? '';
+                          const updateValue = (nextValue: any) => {
+                            setConfig({
+                              ...config,
+                              tool_params: {
+                                ...(config.tool_params || {}),
+                                [key]: schema.type === 'number' ? Number(nextValue) : nextValue,
+                              },
+                            });
+                          };
+                          return (
+                            <div key={key}>
+                              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                                {key}
+                                {toolInputSchema.required?.includes(key) && <span className="text-red-500 ml-1">*</span>}
+                              </label>
+                              {key === 'text' || key === 'prompt' || key === 'content' ? (
+                                <textarea
+                                  rows={3}
+                                  value={value}
+                                  onChange={(e) => updateValue(e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+                                  style={{
+                                    backgroundColor: 'var(--color-input-background)',
+                                    borderColor: 'var(--color-border-dark)',
+                                    color: 'var(--color-text-primary)',
+                                  }}
+                                />
+                              ) : (
+                                <input
+                                  type={schema.type === 'number' ? 'number' : 'text'}
+                                  value={value}
+                                  onChange={(e) => updateValue(e.target.value)}
+                                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                                  style={{
+                                    backgroundColor: 'var(--color-input-background)',
+                                    borderColor: 'var(--color-border-dark)',
+                                    color: 'var(--color-text-primary)',
+                                  }}
+                                />
+                              )}
+                              {schema.description && (
+                                <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                  {schema.description}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Open Tool Configuration Button */}
-                {selectedToolId && (
+                {selectedToolId && selectedToolType === 'custom' && (
                   <div>
                     <button
                       onClick={() => setShowToolConfigModal(true)}
@@ -1905,7 +2045,7 @@ const NodeConfigPanel = ({
             </div>
           )}
 
-          {/* Claude Skills - Collapsible, collapsed by default */}
+          {/* Skills - Collapsible, collapsed by default */}
           {config.agentType !== 'CONDITIONAL_NODE' && config.agentType !== 'LOOP_NODE' && config.agentType !== 'TOOL_NODE' && (
             <div className="border-t border-gray-200 dark:border-border-dark pt-4">
               <button
@@ -1914,7 +2054,7 @@ const NodeConfigPanel = ({
                 style={{ backgroundColor: 'var(--color-primary)' }}
               >
                 <h3 className="text-base font-semibold" style={{ color: 'white' }}>
-                  Claude Skills
+                  Skills
                 </h3>
                 <div className="flex items-center gap-2">
                   {selectedSkills.length > 0 && (

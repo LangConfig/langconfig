@@ -160,6 +160,10 @@ export interface Workflow {
   project_id?: number;
   status?: string;
   strategy_type?: string; // For predefined strategy workflows
+  is_template?: boolean;
+  template_category?: string | null;
+  template_icon?: string | null;
+  template_tags?: string[] | null;
 }
 
 /**

@@ -276,6 +276,19 @@ export function useNodeExecutionStatus(
           }
           break;
 
+        case 'node_started':
+          updatedStatus = {
+            ...updatedStatus,
+            state: 'running',
+            thinking: '',
+            thinkingPreview: '',
+            startTime: currentStatus.startTime || event.timestamp,
+            latestEvent: event,
+            progress: 10,
+            activeTool: event.data?.agent_label?.includes('Tool') ? `${event.data.agent_label}...` : updatedStatus.activeTool,
+          };
+          break;
+
         case 'on_tool_start':
         case 'tool_start':  // Support both event types
           // Tool execution starting
@@ -504,6 +517,39 @@ export function useNodeExecutionStatus(
           }
           break;
 
+        case 'node_completed':
+          if (event.data?.status === 'error') {
+            updatedStatus = {
+              ...updatedStatus,
+              state: 'error',
+              error: event.data?.error || 'Node failed',
+              thinking: '',
+              thinkingPreview: '',
+              endTime: event.timestamp,
+              latestEvent: event,
+              activeTool: undefined,
+              progress: 0,
+            };
+          } else {
+            updatedStatus = {
+              ...updatedStatus,
+              state: 'completed',
+              thinking: '',
+              thinkingPreview: '',
+              endTime: event.timestamp,
+              latestEvent: event,
+              activeTool: undefined,
+              progress: 100,
+              tokenCost: event.data?.tokenCost
+                ? {
+                    ...event.data.tokenCost,
+                    costString: event.data.tokenCost.costString || updatedStatus.tokenCost?.costString || '$0.00',
+                  }
+                : updatedStatus.tokenCost,
+            };
+          }
+          break;
+
         case 'error':
           // Node encountered an error
           const errorMsg = event.data?.error || event.data?.message || 'Unknown error';
@@ -545,7 +591,7 @@ export function useNodeExecutionStatus(
             const totalTokens = tokenUsage.total_tokens || (promptTokens + completionTokens);
 
             // Get model name from event data or use default
-            const modelName = event.data?.model || event.data?.model_name || 'gpt-4o';
+            const modelName = event.data?.model || event.data?.model_name || 'gpt-5.4';
 
             // ACCUMULATE token costs instead of replacing them
             const existingCost = updatedStatus.tokenCost || { promptTokens: 0, completionTokens: 0, totalTokens: 0, costString: '$0.00' };

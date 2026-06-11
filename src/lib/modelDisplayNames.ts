@@ -6,18 +6,27 @@
  */
 
 // Maps internal model IDs to user-friendly display names
-// Updated December 16, 2025
+// Updated June 5, 2026
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  // OpenAI - GPT-5 Series (Current)
+  // OpenAI - selectable current models
+  'gpt-5.5': 'GPT-5.5',
+  'gpt-5.4': 'GPT-5.4',
+  'gpt-5.4-mini': 'GPT-5.4 Mini',
+  'gpt-5.4-nano': 'GPT-5.4 Nano',
+
+  // Anthropic - selectable current models
+  'claude-opus-4-8': 'Claude Opus 4.8',
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+  'claude-haiku-4-5': 'Claude Haiku 4.5',
+
+  // Legacy display only. These should not be returned by the selectable model API.
   'gpt-5.2': 'GPT-5.2',
   'gpt-5.1': 'GPT-5.1',
   'gpt-4o': 'GPT-4o',
   'gpt-4o-mini': 'GPT-4o Mini',
-
-  // Anthropic - Claude 4.5 (Current)
   'claude-opus-4-5': 'Claude Opus 4.5',
   'claude-sonnet-4-5': 'Claude Sonnet 4.5',
-  'claude-haiku-4-5': 'Claude Haiku 4.5',
+  'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
 
   // Google - Gemini 3 (Current)
   'gemini-3-pro-preview': 'Gemini 3 Pro',

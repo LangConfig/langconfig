@@ -10,16 +10,23 @@
 export type ToolType = 'api' | 'notification' | 'image_video' | 'database' | 'data_transform';
 
 export type ToolTemplateType =
-  | 'slack_notification'
-  | 'discord_notification'
-  | 'email_notification'
-  | 'dalle3_image'
-  | 'gpt_image_1_5'
-  | 'video_generator'
-  | 'sql_query'
-  | 'rest_api'
-  | 'json_transformer'
-  | 'csv_parser';
+  | 'notification_slack'
+  | 'notification_discord'
+  | 'api_webhook'
+  | 'image_openai_dalle3'
+  | 'image_openai_sora'
+  | 'image_openai_gpt_image_1_5'
+  | 'image_openai_gpt_image_2'
+  | 'image_gemini_imagen3'
+  | 'image_gemini_nano_banana'
+  | 'image_gemini_nano_banana_2'
+  | 'video_gemini_veo3'
+  | 'video_gemini_veo31'
+  | 'database_postgres'
+  | 'database_mysql'
+  | 'database_mongodb'
+  | 'data_transform_json'
+  | 'custom';
 
 export interface CustomTool {
   id: number;

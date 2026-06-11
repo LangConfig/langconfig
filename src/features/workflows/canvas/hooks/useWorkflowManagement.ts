@@ -173,7 +173,7 @@ export function useWorkflowManagement({
             data: n.data,
             position: n.position,
             config: {
-              model: n.data.config?.model || 'gpt-4o-mini',
+              model: n.data.config?.model || 'gpt-5.4-mini',
               temperature: n.data.config?.temperature ?? 0.7,
               system_prompt: n.data.config?.system_prompt || '',
               tools: n.data.config?.tools || [],

@@ -82,7 +82,7 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
 
   return (
     <div
-      className="border-t p-4"
+      className="border-t-2 p-4"
       style={{ borderColor: 'var(--color-border-dark)' }}
     >
       <h3
@@ -101,7 +101,7 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
           {documents.map(doc => (
             <div
               key={doc.id}
-              className="flex items-center justify-between p-3 rounded-lg border"
+              className="flex items-center justify-between border-2 p-3"
               style={{
                 backgroundColor: 'white',
                 borderColor: 'var(--color-border-dark)'
@@ -150,9 +150,9 @@ export default function SessionDocumentsPanel({ sessionId }: SessionDocumentsPan
               </div>
               <button
                 onClick={() => handleDelete(doc.id)}
-                className="p-2 rounded-lg transition-colors hover:bg-red-50 flex-shrink-0"
+                className="flex-shrink-0 border-2 p-2 transition-colors hover:bg-red-50"
                 title="Delete document"
-                style={{ color: '#ef4444' }}
+                style={{ borderColor: 'var(--color-border-dark)', color: '#ef4444' }}
               >
                 <Trash2 className="w-4 h-4" />
               </button>

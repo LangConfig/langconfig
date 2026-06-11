@@ -31,6 +31,7 @@ export type WorkflowEventType =
   | 'hitl_approved'
   | 'hitl_rejected'
   | 'recursion_limit_hit'
+  | 'node_started'
   | 'node_completed'
   | 'subagent_start'
   | 'subagent_end'
@@ -117,6 +118,16 @@ export interface ErrorEvent extends BaseEvent {
 }
 
 // Node completion event with token usage and tool metrics
+export interface NodeStartedEvent extends BaseEvent {
+  type: 'node_started';
+  data: {
+    node_id: string;
+    agent_label: string;
+    agent_type?: string;
+    timestamp?: string;
+  };
+}
+
 export interface NodeCompletedEvent extends BaseEvent {
   type: 'node_completed';
   data: {
@@ -133,6 +144,10 @@ export interface NodeCompletedEvent extends BaseEvent {
     toolCalls?: Array<{ name: string; id: string }>;
     toolCallCount?: number;
     toolResultCount?: number;
+    status?: 'success' | 'error';
+    error?: string;
+    duration_ms?: number;
+    output_preview?: string;
   };
 }
 // Subagent start event for nested execution visualization
@@ -320,6 +335,7 @@ export interface GenericEvent extends BaseEvent {
     | 'on_tool_start'
     | 'on_tool_end'
     | 'error'
+    | 'node_started'
     | 'node_completed'
     | 'subagent_start'
     | 'subagent_end'
@@ -339,6 +355,7 @@ export type WorkflowEvent =
   | ToolStartEvent
   | ToolEndEvent
   | ErrorEvent
+  | NodeStartedEvent
   | NodeCompletedEvent
   | SubagentStartEvent
   | SubagentEndEvent

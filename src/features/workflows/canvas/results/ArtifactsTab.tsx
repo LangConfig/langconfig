@@ -17,7 +17,6 @@ import { Image, FileText, Music, File, Download, Maximize2, X, Calendar, Bot, Ch
 import { ContentBlockRenderer } from '@/components/common/ContentBlockRenderer';
 import type { ContentBlock, ImageContentBlock } from '@/types/content-blocks';
 import { isImageBlock } from '@/types/content-blocks';
-import JSZip from 'jszip';
 import { useSelectionOptional, createArtifactSelectionItem } from '../context/SelectionContext';
 
 export interface ArtifactEntry {
@@ -216,6 +215,7 @@ export default function ArtifactsTab({ artifacts, loading, onCreatePresentation 
 
     if (selected.length === 0) return;
 
+    const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
 
     selected.forEach(({ artifact, block, index }) => {

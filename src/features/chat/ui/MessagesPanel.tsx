@@ -6,7 +6,7 @@
  */
 
 import { useRef, useEffect, useState } from 'react';
-import { Activity, Copy, CheckCircle, AlertCircle, X, User } from 'lucide-react';
+import { Activity, Copy, CheckCircle, AlertCircle, X, User, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -24,6 +24,7 @@ interface MessagesPanelProps {
   error: string | null;
   onSendMessage: (message: string) => void;
   onClearError: () => void;
+  onDeleteMessage?: (messageIndex: number) => Promise<void>;
   disabled?: boolean;
   sessionId?: string | null;
   activeToolCalls?: string[];
@@ -36,6 +37,7 @@ export default function MessagesPanel({
   error,
   onSendMessage,
   onClearError,
+  onDeleteMessage,
   disabled = false,
   sessionId = null,
   activeToolCalls = [],
@@ -56,7 +58,7 @@ export default function MessagesPanel({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: '#f9fafb' }}>
+    <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--color-background-light)' }}>
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 && !disabled ? (
@@ -66,54 +68,15 @@ export default function MessagesPanel({
           >
             <div className="text-center max-w-2xl px-6">
               <img
-                src="/GhostPeony.png"
+                src="/peony.png"
                 alt="Agent"
-                className="w-24 h-24 mx-auto mb-6 opacity-20"
+                className="w-20 h-20 mx-auto mb-6 opacity-25"
                 style={{ filter: 'grayscale(100%)' }}
               />
-              <p className="text-xl font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>
+              <p className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
                 Start a conversation
               </p>
-              <p className="text-sm mb-6">
-                Test your agent in real-time with streaming responses. This interface provides:
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                <div className="p-3 rounded-lg" style={{ backgroundColor: 'white', border: '1px solid var(--color-border-dark)' }}>
-                  <div className="font-medium text-sm mb-1" style={{ color: 'var(--color-primary)' }}>
-                    Live Tool Execution
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Watch your agent use tools in real-time with live indicators
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg" style={{ backgroundColor: 'white', border: '1px solid var(--color-border-dark)' }}>
-                  <div className="font-medium text-sm mb-1" style={{ color: 'var(--color-primary)' }}>
-                    Context Management
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Upload documents for RAG retrieval and test context handling
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg" style={{ backgroundColor: 'white', border: '1px solid var(--color-border-dark)' }}>
-                  <div className="font-medium text-sm mb-1" style={{ color: 'var(--color-primary)' }}>
-                    Session Persistence
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Conversations persist across page reloads for continued testing
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg" style={{ backgroundColor: 'white', border: '1px solid var(--color-border-dark)' }}>
-                  <div className="font-medium text-sm mb-1" style={{ color: 'var(--color-primary)' }}>
-                    Token Tracking
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Monitor costs, RAG context usage, and tool calls in real-time
-                  </div>
-                </div>
-              </div>
-              <p className="text-xs mt-6" style={{ color: 'var(--color-text-muted)' }}>
-                Perfect for validating agent behavior before deploying to workflows
-              </p>
+              <div className="mx-auto h-1 w-24 border border-border-dark bg-panel-dark" />
             </div>
           </div>
         ) : (
@@ -129,15 +92,15 @@ export default function MessagesPanel({
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden"
                   style={{
-                    backgroundColor: message.role === 'user' ? 'var(--color-primary)' : '#e5e7eb',
-                    color: message.role === 'user' ? 'white' : '#6b7280'
+                    backgroundColor: message.role === 'user' ? 'var(--color-primary)' : 'var(--color-panel-dark)',
+                    color: message.role === 'user' ? 'white' : 'var(--color-text-muted)'
                   }}
                 >
                   {message.role === 'user' ? (
                     <User className="w-5 h-5" />
                   ) : (
                     <img
-                      src="/GhostPeony.png"
+                      src="/peony.png"
                       alt="Agent"
                       className="w-6 h-6"
                       style={{ filter: 'grayscale(100%) brightness(0.7)' }}
@@ -151,10 +114,11 @@ export default function MessagesPanel({
                 <div className={`${message.role === 'system' ? 'text-center w-full' : 'max-w-3xl'}`}>
                   {message.role === 'system' ? (
                     <div
-                      className="text-sm px-4 py-2 rounded-lg inline-block"
+                      className="inline-block border-2 px-4 py-2 font-mono text-xs uppercase tracking-[0.12em]"
                       style={{
                         color: 'var(--color-text-muted)',
-                        backgroundColor: '#e5e7eb',
+                        backgroundColor: 'var(--color-panel-dark)',
+                        borderColor: 'var(--color-border-dark)',
                       }}
                     >
                       {message.content}
@@ -163,13 +127,12 @@ export default function MessagesPanel({
                     <>
                       {/* Message Bubble */}
                       <div
-                        className={`rounded-2xl px-5 py-3 ${
-                          message.role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm'
-                        }`}
+                        className="border-2 px-5 py-3"
                         style={{
                           backgroundColor: message.role === 'user' ? 'var(--color-primary)' : 'white',
                           color: message.role === 'user' ? 'white' : 'var(--color-text-primary)',
-                          boxShadow: message.role === 'assistant' ? '0 1px 2px rgba(0, 0, 0, 0.05)' : 'none',
+                          borderColor: 'var(--color-border-dark)',
+                          boxShadow: message.role === 'assistant' ? '4px 4px 0 var(--color-panel-dark)' : 'none',
                         }}
                       >
                         <div
@@ -202,9 +165,10 @@ export default function MessagesPanel({
                                   </div>
                                 ) : (
                                   <code
-                                    className={`${className} px-1.5 py-0.5 rounded text-sm`}
+                                    className={`${className} border px-1.5 py-0.5 text-sm`}
                                     style={{
                                       backgroundColor: message.role === 'user' ? 'rgba(255,255,255,0.2)' : '#f3f4f6',
+                                      borderColor: message.role === 'user' ? 'rgba(255,255,255,0.45)' : 'var(--color-border-dark)',
                                       color: message.role === 'user' ? 'white' : '#1f2937',
                                       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                                     }}
@@ -329,7 +293,7 @@ export default function MessagesPanel({
                         {message.role === 'assistant' && (
                           <button
                             onClick={() => copyToClipboard(message.content, index)}
-                            className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+                            className="border border-transparent p-1.5 transition-colors hover:border-border-dark hover:bg-panel-dark"
                             title="Copy message"
                             style={{ color: 'var(--color-text-muted)' }}
                           >
@@ -338,6 +302,23 @@ export default function MessagesPanel({
                             ) : (
                               <Copy className="w-3.5 h-3.5" />
                             )}
+                          </button>
+                        )}
+
+                        {message.role === 'user' && onDeleteMessage && !isStreaming && (
+                          <button
+                            onClick={async () => {
+                              const confirmed = window.confirm(
+                                'Delete this user message? The live chat runtime will reset so the agent does not keep stale memory.'
+                              );
+                              if (!confirmed) return;
+                              await onDeleteMessage(index);
+                            }}
+                            className="border border-transparent p-1.5 transition-colors hover:border-border-dark hover:bg-panel-dark"
+                            title="Delete user message"
+                            style={{ color: 'var(--color-text-muted)' }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -356,7 +337,7 @@ export default function MessagesPanel({
                 style={{ backgroundColor: '#e5e7eb', color: '#6b7280' }}
               >
                 <img
-                  src="/GhostPeony.png"
+                  src="/peony.png"
                   alt="Agent"
                   className="w-6 h-6"
                   style={{ filter: 'grayscale(100%) brightness(0.7)' }}
@@ -364,10 +345,11 @@ export default function MessagesPanel({
               </div>
               <div className="flex-1">
                 <div
-                  className="rounded-2xl rounded-tl-sm px-5 py-3 inline-block"
+                  className="inline-block border-2 px-5 py-3"
                   style={{
                     backgroundColor: 'white',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                    borderColor: 'var(--color-border-dark)',
+                    boxShadow: '4px 4px 0 var(--color-panel-dark)',
                   }}
                 >
                   <div className="flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>
@@ -390,11 +372,11 @@ export default function MessagesPanel({
               </div>
               <div className="flex-1">
                 <div
-                  className="rounded-2xl rounded-tl-sm px-5 py-3 inline-block"
+                  className="inline-block border-2 px-5 py-3"
                   style={{
                     backgroundColor: 'white',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                    borderLeft: '3px solid var(--color-primary)'
+                    borderColor: 'var(--color-border-dark)',
+                    boxShadow: '4px 4px 0 var(--color-panel-dark)',
                   }}
                 >
                   <div style={{ color: 'var(--color-text-primary)' }}>
@@ -403,9 +385,10 @@ export default function MessagesPanel({
                       {activeToolCalls.map((tool, idx) => (
                         <span
                           key={idx}
-                          className="text-xs px-2 py-1 rounded"
+                          className="border px-2 py-1 font-mono text-xs uppercase tracking-[0.1em]"
                           style={{
                             backgroundColor: 'var(--color-primary)',
+                            borderColor: 'var(--color-border-dark)',
                             color: 'white'
                           }}
                         >
@@ -430,11 +413,11 @@ export default function MessagesPanel({
               </div>
               <div className="flex-1">
                 <div
-                  className="rounded-2xl rounded-tl-sm px-5 py-3 space-y-2"
+                  className="space-y-2 border-2 px-5 py-3"
                   style={{
                     backgroundColor: 'white',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                    borderLeft: '3px solid var(--color-primary)'
+                    borderColor: 'var(--color-border-dark)',
+                    boxShadow: '4px 4px 0 var(--color-panel-dark)',
                   }}
                 >
                   {Array.from(customEvents.values()).map((event, idx) => {
@@ -495,9 +478,10 @@ export default function MessagesPanel({
                     return (
                       <div
                         key={eventId}
-                        className="text-xs px-2 py-1 rounded"
+                        className="border px-2 py-1 font-mono text-xs uppercase tracking-[0.1em]"
                         style={{
                           backgroundColor: 'var(--color-background-dark)',
+                          borderColor: 'var(--color-border-dark)',
                           color: 'var(--color-text-primary)'
                         }}
                       >
@@ -517,7 +501,7 @@ export default function MessagesPanel({
 
       {/* Error Display */}
       {error && (
-        <div className="mx-4 mb-2 p-3 rounded-lg flex items-center gap-2 border">
+        <div className="mx-4 mb-2 flex items-center gap-2 border-2 p-3 shadow-[3px_3px_0_rgba(239,68,68,0.35)]">
           <div
             style={{
               backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -543,7 +527,7 @@ export default function MessagesPanel({
 
       {/* Input Area */}
       <div
-        className="p-4 border-t"
+        className="border-t-2 p-4"
         style={{ borderColor: 'var(--color-border-dark)' }}
       >
         <MessageInput

@@ -31,7 +31,7 @@ export default function MetricsPanel({
 
   return (
     <div
-      className="w-80 border-l overflow-y-auto"
+      className="w-80 overflow-y-auto border-l-2"
       style={{
         borderColor: 'var(--color-border-dark)',
         backgroundColor: 'var(--color-background-light)',
@@ -40,7 +40,7 @@ export default function MetricsPanel({
       {/* Current Agent */}
       {sessionId && agentName && (
         <div
-          className="p-6 border-b"
+          className="border-b-2 p-6"
           style={{ borderColor: 'var(--color-border-dark)' }}
         >
           <div
@@ -54,12 +54,6 @@ export default function MetricsPanel({
             style={{ color: 'var(--color-text-primary)', lineHeight: '1.4' }}
           >
             {agentName}
-          </div>
-          <div
-            className="text-sm mt-3 leading-relaxed"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            Test and converse with your agent in real-time with streaming responses and session persistence.
           </div>
         </div>
       )}
@@ -135,12 +129,12 @@ export default function MetricsPanel({
       {/* Tool Calls */}
       {toolCalls.length > 0 && (
         <div
-          className="border-t"
+          className="border-t-2"
           style={{ borderColor: 'var(--color-border-dark)' }}
         >
           <button
             onClick={() => setToolCallsExpanded(!toolCallsExpanded)}
-            className="w-full p-3 flex items-center justify-between hover:bg-white/50 transition-colors"
+            className="flex w-full items-center justify-between p-3 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white"
           >
             <div className="flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
@@ -163,7 +157,7 @@ export default function MetricsPanel({
               {toolCalls.slice(-10).reverse().map((call, index) => (
                 <div
                   key={index}
-                  className="p-2 rounded border"
+                  className="border-2 p-2 shadow-[3px_3px_0_var(--color-panel-dark)]"
                   style={{
                     backgroundColor: 'white',
                     borderColor: 'var(--color-border-dark)',
@@ -191,12 +185,12 @@ export default function MetricsPanel({
       {/* Subagent Activity */}
       {subagentActivity.length > 0 && (
         <div
-          className="border-t"
+          className="border-t-2"
           style={{ borderColor: 'var(--color-border-dark)' }}
         >
           <button
             onClick={() => setSubagentsExpanded(!subagentsExpanded)}
-            className="w-full p-3 flex items-center justify-between hover:bg-white/50 transition-colors"
+            className="flex w-full items-center justify-between p-3 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white"
           >
             <div className="flex items-center gap-2">
               <Users className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
@@ -219,7 +213,7 @@ export default function MetricsPanel({
               {subagentActivity.slice(-10).reverse().map((activity, index) => (
                 <div
                   key={index}
-                  className="p-2 rounded border"
+                  className="border-2 p-2 shadow-[3px_3px_0_var(--color-panel-dark)]"
                   style={{
                     backgroundColor: 'white',
                     borderColor: 'var(--color-border-dark)',
@@ -263,7 +257,7 @@ interface MetricCardProps {
 function MetricCard({ icon, label, value, warning = false }: MetricCardProps) {
   return (
     <div
-      className="p-3 rounded-lg border"
+      className="border-2 p-3 shadow-[3px_3px_0_var(--color-panel-dark)]"
       style={{
         backgroundColor: warning ? 'rgba(245, 158, 11, 0.05)' : 'white',
         borderColor: warning ? 'rgba(245, 158, 11, 0.3)' : 'var(--color-border-dark)',

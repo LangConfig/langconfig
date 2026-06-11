@@ -6,8 +6,9 @@
  */
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import type { ChatContextValue, ChatSession } from '../types/chat';
+import type { ChatContextValue, ChatSession, CompletedExecutionSnapshot } from '../types/chat';
 import apiClient from '../../../lib/api-client';
+import { useProject } from '../../../contexts/ProjectContext';
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
@@ -16,6 +17,7 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
+  const { activeProjectId } = useProject();
   const [isOpen, setIsOpen] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
     const stored = sessionStorage.getItem('chat_currentSessionId');
@@ -30,6 +32,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const stored = sessionStorage.getItem('chat_hitlEnabled');
     return stored === 'true';
   });
+  const [completedExecutions, setCompletedExecutions] = useState<Record<string, CompletedExecutionSnapshot[]>>(() => {
+    try {
+      const stored = sessionStorage.getItem('chat_completedExecutions');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('chat_completedExecutions', JSON.stringify(completedExecutions));
+    } catch {
+      // Ignore session storage quota or serialization failures.
+    }
+  }, [completedExecutions]);
 
   // Persist currentSessionId to sessionStorage
   useEffect(() => {
@@ -69,7 +87,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const response = await apiClient.getChatSessions();
+      const response = await apiClient.getChatSessions({ project_id: activeProjectId });
       console.log('[ChatContext] Fetched sessions:', response.data);
       const fetchedSessions = response.data || [];
       setSessions(fetchedSessions);
@@ -81,13 +99,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (persistedSession) {
           setSelectedAgentId(persistedSession.agent_id);
           console.log('[ChatContext] Restored session:', persistedSession.session_id, 'agent:', persistedSession.agent_name);
+        } else if (currentSessionId === persistedSessionId) {
+          setCurrentSessionId(null);
         }
       }
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
       setSessions([]);
     }
-  }, []);
+  }, [activeProjectId, currentSessionId]);
 
   // Fetch all sessions on mount
   useEffect(() => {
@@ -110,7 +130,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const startSession = useCallback(async (agentId: number): Promise<string> => {
     try {
-      const response = await apiClient.startChatSession(agentId);
+      const response = await apiClient.startChatSession(agentId, activeProjectId);
       const sessionId = response.data.session_id;
 
       // Refresh sessions list to include new session
@@ -124,10 +144,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       console.error('Failed to start session:', error);
       throw error;
     }
-  }, [refreshSessions]);
+  }, [activeProjectId, refreshSessions]);
 
   const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
+  }, []);
+
+  const clearCurrentSession = useCallback(() => {
+    setCurrentSessionId(null);
   }, []);
 
   const endSession = useCallback(async (sessionId: string) => {
@@ -147,8 +171,49 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [currentSessionId]);
 
+  const deleteSession = useCallback(async (sessionId: string) => {
+    try {
+      await apiClient.deleteChatSession(sessionId);
+      setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      throw error;
+    }
+  }, [currentSessionId]);
+
   const toggleHitl = useCallback(() => {
     setHitlEnabled(prev => !prev);
+  }, []);
+
+  const getCompletedExecutions = useCallback(
+    (key: string) => completedExecutions[key] || [],
+    [completedExecutions]
+  );
+
+  const appendCompletedExecution = useCallback((key: string, snapshot: CompletedExecutionSnapshot) => {
+    setCompletedExecutions(prev => {
+      const existing = prev[key] || [];
+      if (snapshot.taskId && existing.some(item => item.taskId === snapshot.taskId)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [key]: [...existing, snapshot].slice(-20),
+      };
+    });
+  }, []);
+
+  const clearCompletedExecutions = useCallback((key: string) => {
+    setCompletedExecutions(prev => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }, []);
 
   const value: ChatContextValue = {
@@ -161,10 +226,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     closeChat,
     startSession,
     switchSession,
+    clearCurrentSession,
     endSession,
+    deleteSession,
     setSelectedAgent: setSelectedAgentId,
     toggleHitl,
     refreshSessions,
+    getCompletedExecutions,
+    appendCompletedExecution,
+    clearCompletedExecutions,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
