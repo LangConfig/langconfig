@@ -13,6 +13,11 @@
  * the reused NodeConfigPanel. Owns the keyboard shortcuts (Esc cancels
  * interactions, Delete removes the selection) and surfaces store notices /
  * save conflicts as toasts.
+ *
+ * Stage 3 (execution): mounts useSpatialExecution — the SINGLE
+ * useWorkflowStream connection for the view (never useNodeExecutionStatus,
+ * which would open a second EventSource) — plus the run dialog, ExecutionHUD
+ * and ReplayTimeline overlays. Node deletion is blocked while a run is live.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -22,11 +27,16 @@ import { useToast } from '@/hooks/useToast';
 import type { Workflow, WorkflowNode } from '@/types/workflow';
 import SpatialCanvas from './SpatialCanvas';
 import WorkflowPicker from './hud/WorkflowPicker';
+import ExecutionHUD from './hud/ExecutionHUD';
+import ReplayTimeline from './hud/ReplayTimeline';
+import RunDialog from './hud/RunDialog';
 import NodePalette from './builder/NodePalette';
 import SpatialToolbar from './builder/SpatialToolbar';
 import SpatialNodeConfig from './builder/SpatialNodeConfig';
 import { useSpatialWorkflowStore, getLastSpatialWorkflowId } from './state/workflowStore';
 import { useSceneStore } from './state/sceneStore';
+import { useExecutionStore } from './state/executionStore';
+import { useSpatialExecution } from './state/useSpatialExecution';
 import { to2DPosition } from './lib/layout3d';
 
 /** Counter seed for the 2D canvas, derived the same way it derives it. */
@@ -56,6 +66,12 @@ export default function SpatialWorkflowView() {
   const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
   const notice = useSceneStore((s) => s.notice);
   const noticeSeq = useSceneStore((s) => s.noticeSeq);
+
+  // THE single SSE connection for the 3D view (see useSpatialExecution).
+  const { run, stop } = useSpatialExecution(workflowId);
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [replayOpen, setReplayOpen] = useState(false);
+  const workflowName = useSpatialWorkflowStore((s) => s.workflowName);
 
   // Fetch the workflow list once; auto-load the remembered (or first)
   // workflow if nothing is loaded yet. The store is global, so revisiting
@@ -111,6 +127,11 @@ export default function SpatialWorkflowView() {
         const sel = scene.selection;
         if (!sel) return;
         e.preventDefault();
+        // Deleting mid-run desyncs the live visualization from the graph.
+        if (useExecutionStore.getState().taskId != null) {
+          scene.setNotice('Stop the run before deleting nodes');
+          return;
+        }
         const wf = useSpatialWorkflowStore.getState();
         if (sel.kind === 'node') wf.removeNode(sel.id);
         else wf.removeEdge(sel.id);
@@ -204,8 +225,38 @@ export default function SpatialWorkflowView() {
       {workflowId != null && !loading && !error && (
         <>
           <NodePalette />
-          <SpatialToolbar onOpenIn2D={() => void handleOpenIn2D()} />
+          <SpatialToolbar
+            onOpenIn2D={() => void handleOpenIn2D()}
+            onRun={() => setRunDialogOpen(true)}
+            onStop={() => {
+              void stop().catch((err) => {
+                console.error('Failed to cancel the run:', err);
+                showToast('Failed to cancel the run', 'error');
+              });
+            }}
+            onToggleReplay={() => {
+              setReplayOpen((open) => {
+                if (open) useExecutionStore.getState().exitReplay();
+                return !open;
+              });
+            }}
+            replayOpen={replayOpen}
+          />
           <SpatialNodeConfig />
+          <ExecutionHUD />
+          {replayOpen && (
+            <ReplayTimeline workflowId={workflowId} onClose={() => setReplayOpen(false)} />
+          )}
+          {runDialogOpen && (
+            <RunDialog
+              workflowName={workflowName}
+              onClose={() => setRunDialogOpen(false)}
+              onRun={async (goal) => {
+                setReplayOpen(false);
+                await run(goal);
+              }}
+            />
+          )}
         </>
       )}
 

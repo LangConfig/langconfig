@@ -11,14 +11,17 @@
  * Subscribes to the spatial workflow store (zustand is framework-global, so
  * no context bridging is needed across the Canvas boundary) and to the
  * theme palette. Stage 2 adds the builder layers: ground raycast target,
- * placement ghost, and the connect rubber band. Stage 4 adds pulses and
- * the subagent swarm.
+ * placement ghost, and the connect rubber band. Stage 3 adds the execution
+ * layers: edge pulses and the subagent swarm (both instanced, both fed
+ * transiently from executionStore inside useFrame).
  */
 
 import Environment3D from './Environment3D';
 import CameraRig from './CameraRig';
 import NodeMesh from './NodeMesh';
 import EdgeCurve from './EdgeCurve';
+import EdgePulses from './EdgePulses';
+import SubagentSwarm from './SubagentSwarm';
 import GroundPlane from './GroundPlane';
 import GhostNode from './GhostNode';
 import GhostEdge from './GhostEdge';
@@ -53,6 +56,10 @@ export default function SceneRoot() {
 
       <GhostNode palette={palette} />
       <GhostEdge palette={palette} />
+
+      {/* Execution visualization layers */}
+      <EdgePulses palette={palette} />
+      <SubagentSwarm palette={palette} />
 
       {palette.isDark && <PostFX />}
     </>

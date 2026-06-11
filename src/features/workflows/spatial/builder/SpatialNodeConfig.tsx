@@ -24,6 +24,7 @@ import { lazy, Suspense, useMemo } from 'react';
 import type { WorkflowNode } from '@/types/workflow';
 import { useSceneStore } from '../state/sceneStore';
 import { useSpatialWorkflowStore } from '../state/workflowStore';
+import { useExecutionStore } from '../state/executionStore';
 
 const NodeConfigPanel = lazy(
   () => import('@/features/workflows/node-config/NodeConfigPanel')
@@ -107,6 +108,11 @@ export default function SpatialNodeConfig() {
           onClose={clearSelection}
           onSave={(id: string, fullConfig: any) => updateNodeConfig(id, fullConfig)}
           onDelete={(id: string) => {
+            // Deleting mid-run desyncs the live visualization from the graph.
+            if (useExecutionStore.getState().taskId != null) {
+              useSceneStore.getState().setNotice('Stop the run before deleting nodes');
+              return;
+            }
             removeNode(id);
             clearSelection();
           }}

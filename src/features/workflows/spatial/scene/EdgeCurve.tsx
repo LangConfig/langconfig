@@ -26,6 +26,18 @@ import { useSceneStore } from '../state/sceneStore';
 /** Edge anchor height on the column (roughly mid-tier). */
 const ANCHOR_Y = 0.8;
 
+/**
+ * The shared edge arc: quadratic bezier lifted at the midpoint. EdgePulses
+ * animates along the exact same curve, so keep all tuning here.
+ */
+export function buildEdgeArc(from: Vec3, to: Vec3): THREE.QuadraticBezierCurve3 {
+  const a = new THREE.Vector3(from[0], from[1] + ANCHOR_Y, from[2]);
+  const b = new THREE.Vector3(to[0], to[1] + ANCHOR_Y, to[2]);
+  const mid = a.clone().lerp(b, 0.5);
+  mid.y += Math.max(1.2, a.distanceTo(b) * 0.18);
+  return new THREE.QuadraticBezierCurve3(a, mid, b);
+}
+
 export default function EdgeCurve({
   edge,
   from,
@@ -44,12 +56,7 @@ export default function EdgeCurve({
   const radius = selected ? 0.11 : 0.07;
 
   const { tube, pickTube, tip, tipQuaternion } = useMemo(() => {
-    const a = new THREE.Vector3(from[0], from[1] + ANCHOR_Y, from[2]);
-    const b = new THREE.Vector3(to[0], to[1] + ANCHOR_Y, to[2]);
-    const mid = a.clone().lerp(b, 0.5);
-    mid.y += Math.max(1.2, a.distanceTo(b) * 0.18);
-
-    const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+    const curve = buildEdgeArc(from, to);
     const tube = new THREE.TubeGeometry(curve, 24, radius, 6, false);
     // Fat invisible tube so the thin edge is easy to click.
     const pickTube = new THREE.TubeGeometry(curve, 16, 0.4, 6, false);

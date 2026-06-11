@@ -18,18 +18,35 @@
  * - click port  -> start connecting (rubber band handled by GhostEdge)
  * - drag body   -> plane-constrained move (Shift = elevation) via useNodeDrag
  * - selected    -> primary slab + boosted glow (DOM config panel opens)
+ *
+ * Stage 3 (execution viz): materials react to the node's execution status
+ * (executionStore.statuses, keyed by this node's LABEL):
+ * - running:   primary emissive pulse + slow column bob
+ * - thinking:  faster emissive shimmer
+ * - completed: success flash that decays to a settled glow
+ * - error:     error-tone strobe
+ * All per-frame motion is done in useFrame against material refs (no React
+ * state). A floating DOM chip above the column shows activeTool /
+ * thinkingPreview (store-coalesced to <=10Hz) and is distance-culled.
  */
 
 import * as THREE from 'three';
-import { useEffect, useMemo } from 'react';
-import type { ThreeEvent } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import type { WorkflowNode } from '@/types/workflow';
 import type { NodeKind, Vec3 } from '../types';
 import type { ThemePalette } from '../lib/themePalette';
 import { useSceneStore } from '../state/sceneStore';
 import { useSpatialWorkflowStore } from '../state/workflowStore';
+import { useExecutionStore } from '../state/executionStore';
 import { useNodeDrag } from '../builder/useNodeDrag';
 import NodeLabel from './NodeLabel';
+
+/** Beyond this camera distance the floating exec chip unmounts. */
+const CHIP_CULL_DISTANCE = 55;
+
+const BLACK = new THREE.Color('#000000');
 
 interface TierSpec {
   size: [number, number, number];
@@ -115,12 +132,15 @@ function Tier({
   centerY,
   palette,
   highlight,
+  matRef,
 }: {
   spec: TierSpec;
   centerY: number;
   palette: ThemePalette;
   /** 0 = none, 1 = hovered, 2 = selected. */
   highlight: number;
+  /** Exposes the standard material for the exec-state animation loop. */
+  matRef?: (mat: THREE.MeshStandardMaterial | null) => void;
 }) {
   const [w, h, d] = spec.size;
   const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)), [w, h, d]);
@@ -137,6 +157,7 @@ function Tier({
       <mesh castShadow receiveShadow>
         <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial
+          ref={matRef}
           color={spec.color}
           flatShading
           roughness={0.85}
@@ -164,6 +185,7 @@ export default function NodeMesh({
   const kind = nodeKind(node);
   const tiers = useMemo(() => tiersFor(kind, palette), [kind, palette]);
   const drag = useNodeDrag(node.id);
+  const label = nodeLabelText(node);
 
   const selected = useSceneStore(
     (s) => s.selection?.kind === 'node' && s.selection.id === node.id
@@ -171,6 +193,12 @@ export default function NodeMesh({
   const hovered = useSceneStore((s) => s.hoveredNodeId === node.id);
   const mode = useSceneStore((s) => s.mode);
   const isConnectSource = useSceneStore((s) => s.connectSourceId === node.id);
+
+  // Execution status (keyed by LABEL — eventMapping fold semantics). The
+  // selected object identity only changes when this node's status changes
+  // (<=10Hz for thinking text), so re-renders stay cheap.
+  const execStatus = useExecutionStore((s) => s.statuses[label]);
+  const execState = execStatus?.state ?? 'idle';
 
   // Stack tiers from the ground up; remember footprint + height for ports.
   let acc = 0;
@@ -187,6 +215,96 @@ export default function NodeMesh({
   const highlight = selected ? 2 : hovered ? 1 : 0;
   const showPort =
     (hovered || selected || isConnectSource) && mode !== 'placing';
+
+  // ---- Execution-state animation (per-frame, refs only) --------------------
+  const matsRef = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
+  const bobRef = useRef<THREE.Group>(null);
+  const restoredRef = useRef(true);
+  const chipCheckRef = useRef(0);
+  const chipNearRef = useRef(true);
+  const [chipNear, setChipNear] = useState(true);
+
+  // Baseline emissive values (what React would render with no execution) so
+  // the animation loop can restore them exactly when the node returns idle.
+  const baseRef = useRef<{ color: THREE.Color; intensity: number }[]>([]);
+  baseRef.current = placed.map(({ spec }) => ({
+    color: palette.isDark || highlight > 0 ? spec.color : BLACK,
+    intensity:
+      (palette.isDark ? spec.glow : 0) +
+      (highlight === 2 ? 0.45 : highlight === 1 ? 0.18 : 0),
+  }));
+
+  useFrame((state) => {
+    // Chip distance culling, checked at ~2.5Hz (no per-frame React state).
+    const t = state.clock.elapsedTime;
+    if (t - chipCheckRef.current > 0.4) {
+      chipCheckRef.current = t;
+      const dx = state.camera.position.x - position[0];
+      const dy = state.camera.position.y - position[1];
+      const dz = state.camera.position.z - position[2];
+      const near = dx * dx + dy * dy + dz * dz < CHIP_CULL_DISTANCE * CHIP_CULL_DISTANCE;
+      if (near !== chipNearRef.current) {
+        chipNearRef.current = near;
+        setChipNear(near);
+      }
+    }
+
+    const status = useExecutionStore.getState().statuses[label];
+    const st = status?.state ?? 'idle';
+    const mats = matsRef.current;
+    const bob = bobRef.current;
+
+    if (st === 'idle') {
+      if (!restoredRef.current) {
+        const base = baseRef.current;
+        for (let i = 0; i < mats.length; i++) {
+          const mat = mats[i];
+          if (mat && base[i]) {
+            mat.emissive.copy(base[i].color);
+            mat.emissiveIntensity = base[i].intensity;
+          }
+        }
+        if (bob) bob.position.y = 0;
+        restoredRef.current = true;
+      }
+      return;
+    }
+    restoredRef.current = false;
+
+    let target: THREE.Color = palette.primary;
+    let intensity = 0;
+    let bobY = 0;
+    if (st === 'running') {
+      // Accent emissive pulse + slow column bob.
+      intensity = 0.55 + 0.3 * Math.sin(t * 2.6);
+      bobY = 0.12 * Math.sin(t * 2.2);
+    } else if (st === 'thinking') {
+      // Faster shimmer while tokens stream.
+      intensity = 0.55 + 0.3 * Math.sin(t * 8.5);
+      bobY = 0.07 * Math.sin(t * 4.2);
+    } else if (st === 'completed') {
+      // Success flash that decays into a settled glow.
+      const since = Date.now() - (status?.stateChangedAt ?? 0);
+      target = palette.success;
+      intensity = 0.3 + Math.max(0, 1 - since / 1400) * 1.1;
+    } else if (st === 'error') {
+      target = palette.error;
+      intensity = 0.45 + 0.45 * Math.abs(Math.sin(t * 6));
+    }
+
+    for (const mat of mats) {
+      if (!mat) continue;
+      mat.emissive.lerp(target, 0.18);
+      mat.emissiveIntensity = THREE.MathUtils.lerp(mat.emissiveIntensity, intensity, 0.25);
+    }
+    if (bob) bob.position.y = THREE.MathUtils.lerp(bob.position.y, bobY, 0.18);
+  });
+
+  const chipText =
+    execStatus && (execState === 'running' || execState === 'thinking')
+      ? (execStatus.activeTool || execStatus.thinkingPreview || '').slice(0, 40)
+      : '';
+  const showChip = chipText.length > 0 && chipNear;
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     if (drag.consumeClickSuppression()) {
@@ -250,6 +368,7 @@ export default function NodeMesh({
       )}
 
       <group
+        ref={bobRef}
         onClick={handleClick}
         onPointerDown={drag.onPointerDown}
         onPointerMove={drag.onPointerMove}
@@ -264,9 +383,50 @@ export default function NodeMesh({
         }}
       >
         {placed.map(({ spec, centerY }, i) => (
-          <Tier key={i} spec={spec} centerY={centerY} palette={palette} highlight={highlight} />
+          <Tier
+            key={i}
+            spec={spec}
+            centerY={centerY}
+            palette={palette}
+            highlight={highlight}
+            matRef={(mat) => {
+              matsRef.current[i] = mat;
+            }}
+          />
         ))}
       </group>
+
+      {/* Floating exec chip: active tool / thinking preview (<=10Hz). */}
+      {showChip && (
+        <Html
+          position={[0, totalHeight + 2.4, 0]}
+          center
+          distanceFactor={28}
+          zIndexRange={[30, 0]}
+          style={{ pointerEvents: 'none', userSelect: 'none' }}
+        >
+          <div
+            style={{
+              background: 'var(--surface-1)',
+              border: 'var(--border-w) solid var(--color-primary)',
+              borderRadius: 'var(--radius-control)',
+              boxShadow: 'var(--shadow-card-sm)',
+              padding: '3px 9px',
+              whiteSpace: 'nowrap',
+              fontFamily: 'var(--font-family-mono, monospace)',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {execStatus?.activeTool ? (
+              <span style={{ color: 'var(--color-primary)' }}>{chipText}</span>
+            ) : (
+              <span style={{ fontStyle: 'italic' }}>{chipText}…</span>
+            )}
+          </div>
+        </Html>
+      )}
 
       {/* Out-port indicator: visible on hover/selection; click starts a connection. */}
       {showPort && (

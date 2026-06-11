@@ -49,7 +49,11 @@ const LINGER_MS = 3200;
 /** Ended subagent orbs are kept this long for the absorb animation. */
 export const SUBAGENT_FADE_MS = 1600;
 
-const MAX_PULSES = 64;
+/** Upper bound on simultaneously live edge pulses (InstancedMesh capacity). */
+export const MAX_PULSES = 64;
+
+/** Upper bound on simultaneously rendered subagent orbs. */
+export const MAX_SUBAGENTS = 32;
 
 export interface EdgePulse {
   id: number;

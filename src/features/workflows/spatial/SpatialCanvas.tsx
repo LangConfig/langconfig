@@ -10,14 +10,16 @@
  * (WebView2 normally supports WebGL2, but context creation can still fail on
  * exotic GPU/driver combos).
  *
- * frameloop="demand" for stage 1: the scene is static, so frames render only
- * on camera input / store changes. Execution viz (stage 4) flips to "always"
- * while running via sceneStore.
+ * frameloop="demand" while idle: the scene is static, so frames render only
+ * on camera input / store changes. While a run is animating (start ->
+ * post-completion linger) or a replay session is open, the loop flips to
+ * "always" so pulses/orbits/shimmers advance every frame.
  */
 
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import SceneRoot from './scene/SceneRoot';
+import { useExecutionStore } from './state/executionStore';
 
 function webglAvailable(): boolean {
   try {
@@ -30,6 +32,7 @@ function webglAvailable(): boolean {
 
 export default function SpatialCanvas() {
   const supported = useMemo(webglAvailable, []);
+  const animating = useExecutionStore((s) => s.animating || s.replay != null);
 
   if (!supported) {
     return (
@@ -52,7 +55,7 @@ export default function SpatialCanvas() {
 
   return (
     <Canvas
-      frameloop="demand"
+      frameloop={animating ? 'always' : 'demand'}
       dpr={[1, 2]}
       shadows="basic"
       camera={{ position: [18, 18, 18], fov: 45 }}

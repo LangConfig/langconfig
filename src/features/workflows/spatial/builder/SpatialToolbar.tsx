@@ -7,13 +7,14 @@
 
 /**
  * SpatialToolbar — bottom-center DOM HUD: interaction mode buttons
- * (select / place / connect), fit-view, open-in-2D, workflow name, and the
- * save-status chip (debounced autosave with lock_version handling lives in
- * workflowStore).
+ * (select / place / connect), Run/Stop, Replay, fit-view, open-in-2D,
+ * workflow name, and the save-status chip (debounced autosave with
+ * lock_version handling lives in workflowStore).
  */
 
 import { useSceneStore } from '../state/sceneStore';
 import { useSpatialWorkflowStore } from '../state/workflowStore';
+import { useExecutionStore } from '../state/executionStore';
 import type { SaveStatus } from '../types';
 
 function saveChip(status: SaveStatus, dirty: boolean): { text: string; color: string } {
@@ -25,7 +26,20 @@ function saveChip(status: SaveStatus, dirty: boolean): { text: string; color: st
   return { text: 'Synced', color: 'var(--color-text-muted)' };
 }
 
-export default function SpatialToolbar({ onOpenIn2D }: { onOpenIn2D: () => void }) {
+export default function SpatialToolbar({
+  onOpenIn2D,
+  onRun,
+  onStop,
+  onToggleReplay,
+  replayOpen,
+}: {
+  onOpenIn2D: () => void;
+  /** Open the goal dialog (the actual POST happens in useSpatialExecution). */
+  onRun: () => void;
+  onStop: () => void;
+  onToggleReplay: () => void;
+  replayOpen: boolean;
+}) {
   const mode = useSceneStore((s) => s.mode);
   const resetInteraction = useSceneStore((s) => s.resetInteraction);
   const startPlacing = useSceneStore((s) => s.startPlacing);
@@ -36,6 +50,10 @@ export default function SpatialToolbar({ onOpenIn2D }: { onOpenIn2D: () => void 
   const workflowId = useSpatialWorkflowStore((s) => s.workflowId);
   const saveStatus = useSpatialWorkflowStore((s) => s.saveStatus);
   const dirty = useSpatialWorkflowStore((s) => s.dirty);
+  const nodeCount = useSpatialWorkflowStore((s) => s.nodes.length);
+
+  const running = useExecutionStore((s) => s.taskId != null);
+  const replaying = useExecutionStore((s) => s.replay != null);
 
   if (workflowId == null) return null;
 
@@ -86,6 +104,56 @@ export default function SpatialToolbar({ onOpenIn2D }: { onOpenIn2D: () => void 
           {modeButton('Place', 'add_box', mode === 'placing', () => startPlacing('agent'), 'Place a node (pick a kind in the palette)')}
           {modeButton('Connect', 'conversion_path', mode === 'connecting', () => startConnecting(null), 'Connect: click a source node, then a target')}
         </div>
+
+        {/* Run / Stop */}
+        {running ? (
+          <button
+            onClick={onStop}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[0.66rem] font-bold uppercase tracking-wider"
+            title="Cancel the current run"
+            style={{
+              background: 'var(--color-error)',
+              color: 'var(--color-on-accent)',
+              border: 'var(--border-w) solid var(--border-strong)',
+              borderRadius: 'var(--radius-control)',
+              boxShadow: 'var(--shadow-card-sm)',
+              fontFamily: 'var(--font-family-mono)',
+            }}
+          >
+            <span className="material-symbols-outlined text-sm">stop</span>
+            Stop
+          </button>
+        ) : (
+          <button
+            onClick={onRun}
+            disabled={nodeCount === 0 || replaying}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[0.66rem] font-bold uppercase tracking-wider transition-opacity disabled:opacity-50"
+            title={replaying ? 'Close the replay first' : 'Run this workflow'}
+            style={{
+              background: 'var(--color-primary)',
+              color: 'var(--color-on-accent)',
+              border: 'var(--border-w) solid var(--border-strong)',
+              borderRadius: 'var(--radius-control)',
+              boxShadow: 'var(--shadow-card-sm)',
+              fontFamily: 'var(--font-family-mono)',
+            }}
+          >
+            <span className="material-symbols-outlined text-sm">play_arrow</span>
+            Run
+          </button>
+        )}
+
+        {/* Replay panel toggle */}
+        <button
+          onClick={onToggleReplay}
+          disabled={running}
+          className="btn-brutal flex items-center gap-1 px-2.5 py-1.5 disabled:opacity-50"
+          title="Replay past executions"
+          style={replayOpen ? { background: 'var(--color-primary)', color: 'var(--color-on-accent)' } : undefined}
+        >
+          <span className="material-symbols-outlined text-sm">history</span>
+          Replay
+        </button>
 
         <button onClick={requestFit} className="btn-brutal flex items-center gap-1 px-2.5 py-1.5" title="Fit view to graph">
           <span className="material-symbols-outlined text-sm">fit_screen</span>

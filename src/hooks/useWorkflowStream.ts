@@ -272,6 +272,14 @@ export function useWorkflowStream(
       'on_agent_finish',
       'on_llm_end',
       'checkpoint',
+      // Node lifecycle + subagent events (backend emits these as named SSE
+      // events; without listeners they were only visible in historical loads)
+      'node_started',
+      'node_completed',
+      'node_status',
+      'subagent_start',
+      'subagent_end',
+      'subagent_error',
       'status',
       'complete',
       'error',

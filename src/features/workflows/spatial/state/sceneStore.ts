@@ -38,6 +38,12 @@ export interface SceneState {
   fitRequestId: number;
   notice: string | null;
   noticeSeq: number;
+  /**
+   * Follow-cam: CameraRig pans smoothly to the currently running node while
+   * true. Any manual orbit/pan/zoom input cancels it (CameraRig listens for
+   * the OrbitControls 'start' event, which only fires on user interaction).
+   */
+  followCam: boolean;
 
   selectNode: (id: string) => void;
   selectEdge: (id: string) => void;
@@ -53,6 +59,7 @@ export interface SceneState {
   setDragging: (dragging: boolean) => void;
   requestFit: () => void;
   setNotice: (message: string) => void;
+  setFollowCam: (follow: boolean) => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
@@ -65,6 +72,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   fitRequestId: 0,
   notice: null,
   noticeSeq: 0,
+  followCam: false,
 
   selectNode: (id) =>
     set({ selection: { kind: 'node', id }, mode: 'idle', placingKind: null, connectSourceId: null }),
@@ -93,4 +101,6 @@ export const useSceneStore = create<SceneState>((set) => ({
   requestFit: () => set((s) => ({ fitRequestId: s.fitRequestId + 1 })),
 
   setNotice: (message) => set((s) => ({ notice: message, noticeSeq: s.noticeSeq + 1 })),
+
+  setFollowCam: (follow) => set({ followCam: follow }),
 }));
