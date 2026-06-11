@@ -200,6 +200,8 @@ class ChatSessionResponse(BaseModel):
     message_count: int
     created_at: str
     updated_at: str
+    # Execution runtime backing this session (langgraph, google_adk, ...)
+    runtime: str = "langgraph"
 
 
 class ChatHistoryResponse(BaseModel):
@@ -256,12 +258,17 @@ async def start_chat_session(
         # Create session ID
         session_id = str(uuid.uuid4())
 
+        # The session is pinned to the agent's runtime at start time so later
+        # template edits don't silently change a live conversation's engine.
+        agent_runtime = getattr(agent, "runtime", None) or "langgraph"
+
         # Create session record
         session = ChatSession(
             session_id=session_id,
             agent_id=agent.id,
             project_id=request.project_id or getattr(agent, "project_id", None),
             user_id=request.user_id,
+            runtime=agent_runtime,
             messages=[],
             metrics={
                 "total_tokens": 0,
@@ -288,7 +295,8 @@ async def start_chat_session(
             is_active=session.is_active,
             message_count=len(session.messages),
             created_at=session.created_at.isoformat(),
-            updated_at=session.updated_at.isoformat()
+            updated_at=session.updated_at.isoformat(),
+            runtime=session.runtime or "langgraph"
         )
 
     except Exception as e:
@@ -968,7 +976,8 @@ async def list_chat_sessions(
             "message_count": len(session.messages),
             "last_message_preview": last_message_preview,
             "created_at": session.created_at.isoformat(),
-            "updated_at": session.updated_at.isoformat()
+            "updated_at": session.updated_at.isoformat(),
+            "runtime": getattr(session, "runtime", None) or "langgraph"
         })
 
     return result

@@ -10,6 +10,13 @@ import { useChat } from '../state/ChatContext';
 import AgentSelector from './AgentSelector';
 import SessionSelector from './SessionSelector';
 import ChatSettingsMenu from './ChatSettingsMenu';
+import Badge from '../../../components/ui/Badge';
+
+/** Human-readable label for a non-default runtime badge. */
+const RUNTIME_LABELS: Record<string, string> = {
+  google_adk: 'Google ADK',
+  anthropic_agents: 'Anthropic Agents',
+};
 
 interface ChatHeaderProps {
   sessionId: string | null;
@@ -36,7 +43,12 @@ export default function ChatHeader({
   onClearHistory,
   onEndSession
 }: ChatHeaderProps) {
-  const { closeChat, selectedAgentId, setSelectedAgent } = useChat();
+  const { closeChat, selectedAgentId, setSelectedAgent, sessions } = useChat();
+
+  // Surface the execution runtime when it isn't the default LangGraph engine.
+  const sessionRuntime = sessionId
+    ? sessions.find((s) => s.session_id === sessionId)?.runtime ?? 'langgraph'
+    : 'langgraph';
 
   const handleSelectAgent = async (agentId: number) => {
     setSelectedAgent(agentId);
@@ -66,6 +78,11 @@ export default function ChatHeader({
                 {agentName}
               </h2>
             </div>
+            {sessionRuntime !== 'langgraph' && (
+              <Badge tone="info" title={`This session runs on the ${sessionRuntime} runtime`}>
+                {RUNTIME_LABELS[sessionRuntime] ?? sessionRuntime}
+              </Badge>
+            )}
             <div className="h-8 w-px" style={{ backgroundColor: 'var(--color-border-dark)' }} />
             <AgentSelector
               selectedAgentId={selectedAgentId}

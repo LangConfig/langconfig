@@ -30,9 +30,16 @@ export default function ChatSettingsMenu({
   onClearHistory,
   onEndSession
 }: ChatSettingsMenuProps) {
-  const { hitlEnabled, toggleHitl } = useChat();
+  const { hitlEnabled, toggleHitl, sessions } = useChat();
   const [isOpen, setIsOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  // HITL (interrupt/resume) is a LangGraph capability; other runtimes
+  // (e.g. Google ADK) don't support it, so the toggle is disabled there.
+  const sessionRuntime = sessionId
+    ? sessions.find((s) => s.session_id === sessionId)?.runtime ?? 'langgraph'
+    : 'langgraph';
+  const hitlSupported = sessionRuntime === 'langgraph';
 
   const downloadHistory = () => {
     const history = JSON.stringify({
@@ -104,9 +111,11 @@ export default function ChatSettingsMenu({
             {/* HITL Toggle */}
             <button
               onClick={handleToggleHitl}
-              onMouseEnter={() => setHoveredItem('hitl')}
+              disabled={!hitlSupported}
+              onMouseEnter={() => hitlSupported && setHoveredItem('hitl')}
               onMouseLeave={() => setHoveredItem(null)}
-              className="flex w-full items-center justify-between border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors"
+              title={hitlSupported ? undefined : `Human-in-the-Loop is not supported by the '${sessionRuntime}' runtime`}
+              className="flex w-full items-center justify-between border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               style={{
                 borderColor: 'var(--color-border-dark)',
                 backgroundColor: hoveredItem === 'hitl' ? 'var(--color-primary)' : 'transparent',
@@ -124,13 +133,15 @@ export default function ChatSettingsMenu({
                 style={{
                   color: hoveredItem === 'hitl'
                     ? 'white'
-                    : hitlEnabled
+                    : hitlEnabled && hitlSupported
                     ? 'var(--color-primary)'
                     : 'var(--color-text-muted)',
                 }}
               >
-                {hitlEnabled && <Check className="w-4 h-4" />}
-                <span className="text-xs">{hitlEnabled ? 'ON' : 'OFF'}</span>
+                {hitlEnabled && hitlSupported && <Check className="w-4 h-4" />}
+                <span className="text-xs">
+                  {hitlSupported ? (hitlEnabled ? 'ON' : 'OFF') : 'N/A'}
+                </span>
               </div>
             </button>
 

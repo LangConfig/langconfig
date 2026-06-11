@@ -45,6 +45,18 @@ def get_runtime(name: str = None) -> AgentRuntime:
             # pulling in the full LangGraph/DeepAgents dependency chain.
             from core.runtimes.langgraph_runtime import LangGraphRuntime
             register_runtime(LangGraphRuntime())
+        elif resolved == "google_adk":
+            # Lazy import so a missing/broken google-adk install never breaks
+            # startup - it only fails when this runtime is actually selected.
+            try:
+                from core.runtimes.adk_runtime import GoogleADKRuntime
+            except ImportError as e:
+                raise ValueError(
+                    "The 'google_adk' runtime requires the 'google-adk' "
+                    "package. Install it with: pip install 'google-adk>=1.22,<2' "
+                    f"(import failed: {e})"
+                ) from e
+            register_runtime(GoogleADKRuntime())
         else:
             raise ValueError(
                 f"Unknown agent runtime '{resolved}'. "

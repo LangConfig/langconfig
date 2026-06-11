@@ -124,6 +124,7 @@ async def create_deepagent(
             description=request.description,
             category=request.category,
             base_template_id=request.base_template_id,
+            runtime=request.config.runtime or "langgraph",
             config=request.config.dict(),
             middleware_config=[m.dict() for m in request.config.middleware],
             subagents_config=[s.dict() for s in request.config.subagents],
@@ -287,6 +288,7 @@ async def update_deepagent(
     if request.description:
         agent.description = request.description
     if request.config:
+        agent.runtime = request.config.runtime or "langgraph"
         agent.config = request.config.dict()
         agent.middleware_config = [m.dict() for m in request.config.middleware]
         agent.subagents_config = [s.dict() for s in request.config.subagents]
@@ -515,6 +517,7 @@ async def import_langconfig(
             name=agent_data["name"],
             description=agent_data.get("description"),
             category=agent_data.get("category", "research"),
+            runtime=config.runtime or "langgraph",
             config=config.dict(),
             middleware_config=[m.dict() for m in config.middleware],
             subagents_config=[s.dict() for s in config.subagents],

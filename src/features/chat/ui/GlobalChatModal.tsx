@@ -46,13 +46,21 @@ export default function GlobalChatModal() {
     setError: setSessionError
   } = useChatSession(currentSessionId);
 
+  // Get current session details
+  const currentSession = sessions.find((s: ChatSession) => s.session_id === currentSessionId);
+  const agentName = currentSession?.agent_name || 'Agent';
+
+  // HITL is a LangGraph capability: never send enable_hitl=true for sessions
+  // backed by other runtimes (e.g. Google ADK).
+  const hitlSupported = (currentSession?.runtime ?? 'langgraph') === 'langgraph';
+
   // Streaming hook
   const {
     sendMessage,
     isStreaming,
     error: streamingError,
     clearError: clearStreamingError
-  } = useChatStreaming(currentSessionId, hitlEnabled);
+  } = useChatStreaming(currentSessionId, hitlEnabled && hitlSupported);
 
   // Metrics hook
   const {
@@ -62,10 +70,6 @@ export default function GlobalChatModal() {
     isLoading: isLoadingMetrics,
     refresh: refreshMetrics
   } = useChatMetrics(currentSessionId);
-
-  // Get current session details
-  const currentSession = sessions.find((s: ChatSession) => s.session_id === currentSessionId);
-  const agentName = currentSession?.agent_name || 'Agent';
 
   // Handle ESC key
   useEffect(() => {

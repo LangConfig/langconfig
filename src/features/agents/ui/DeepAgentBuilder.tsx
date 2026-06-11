@@ -111,6 +111,8 @@ interface DeepAgentConfig {
   name?: string;
   description?: string;
   category?: string;
+  /** Execution runtime: 'langgraph' (default) or 'google_adk' (Gemini only, no HITL) */
+  runtime?: string;
   model: string;
   temperature: number;
   max_tokens?: number;
@@ -177,6 +179,7 @@ const FILESYSTEM_TOOLS = ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 
 const DEFAULT_AGENT_TOOLS = [...FILESYSTEM_TOOLS, 'web_search'];
 
 const DEFAULT_CONFIG: DeepAgentConfig = {
+  runtime: 'langgraph',
   model: 'claude-sonnet-4-6',
   temperature: 0.7,
   system_prompt: 'You are a helpful AI assistant with planning, research, and task delegation capabilities. When facing complex multi-step tasks, use the `task` tool to delegate specialized work to subagents.',
@@ -441,6 +444,20 @@ export default function DeepAgentBuilder({
     value: AgentConfig[K]
   ) => {
     setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Runtime gating: Google ADK only executes Gemini models (and has no HITL).
+  const isGoogleAdkRuntime = (config.runtime || 'langgraph') === 'google_adk';
+
+  const handleRuntimeChange = (runtime: string) => {
+    setConfig(prev => ({
+      ...prev,
+      runtime,
+      // Switching to Google ADK forces a Gemini model.
+      model: runtime === 'google_adk' && !prev.model.startsWith('gemini')
+        ? 'gemini-2.5-flash'
+        : prev.model
+    }));
   };
 
   const toggleMiddleware = (index: number) => {
@@ -813,15 +830,35 @@ export default function DeepAgentBuilder({
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
-                  Model
+                  Runtime
                 </label>
-                <ModelSelectorInline
-                  value={config.model}
-                  onChange={(modelId) => updateConfig('model', modelId)}
-                  includeLocal={true}
-                  onlyValidated={true}
-                />
+                <select
+                  value={config.runtime || 'langgraph'}
+                  onChange={(e) => handleRuntimeChange(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="langgraph">LangGraph (default)</option>
+                  <option value="google_adk">Google ADK</option>
+                </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                Model
+              </label>
+              <ModelSelectorInline
+                value={config.model}
+                onChange={(modelId) => updateConfig('model', modelId)}
+                includeLocal={!isGoogleAdkRuntime}
+                onlyValidated={true}
+                modelFilter={isGoogleAdkRuntime ? (m) => m.id.startsWith('gemini') : undefined}
+              />
+              {isGoogleAdkRuntime && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Google ADK runs on Gemini models only. Human-in-the-Loop is not supported on this runtime.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

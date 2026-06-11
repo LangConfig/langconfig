@@ -32,6 +32,8 @@ export interface ChatSession {
   last_message_preview: string | null;
   created_at: string;
   updated_at: string;
+  /** Execution runtime backing this session ('langgraph' default, 'google_adk', ...) */
+  runtime?: string;
 }
 
 export interface SessionMetrics {

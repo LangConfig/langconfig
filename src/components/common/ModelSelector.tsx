@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from 'react';
-import { useAvailableModels } from '@/hooks/useAvailableModels';
+import { useAvailableModels, type ModelOption } from '@/hooks/useAvailableModels';
 
 /**
  * ModelSelector Component
@@ -41,6 +41,8 @@ export interface ModelSelectorProps {
   showProviderLabels?: boolean;
   autoRefresh?: boolean;  // Auto-refresh model list every 30s
   className?: string;
+  /** Optional predicate to restrict the selectable models (e.g. runtime gating). */
+  modelFilter?: (model: ModelOption) => boolean;
 }
 
 export default function ModelSelector({
@@ -165,12 +167,16 @@ export function ModelSelectorInline({
   includeLocal = true,
   onlyValidated = true,
   disabled = false,
-  className = ''
-}: Pick<ModelSelectorProps, 'value' | 'onChange' | 'includeLocal' | 'onlyValidated' | 'disabled' | 'className'>) {
-  const { models, cloudModels, localModels, isLoading } = useAvailableModels({
+  className = '',
+  modelFilter
+}: Pick<ModelSelectorProps, 'value' | 'onChange' | 'includeLocal' | 'onlyValidated' | 'disabled' | 'className' | 'modelFilter'>) {
+  const { models, cloudModels: allCloudModels, localModels: allLocalModels, isLoading } = useAvailableModels({
     includeLocal,
     onlyValidated
   });
+
+  const cloudModels = modelFilter ? allCloudModels.filter(modelFilter) : allCloudModels;
+  const localModels = modelFilter ? allLocalModels.filter(modelFilter) : allLocalModels;
 
   return (
     <select
