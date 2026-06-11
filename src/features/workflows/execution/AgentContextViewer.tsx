@@ -49,9 +49,27 @@ interface AgentContextViewerProps {
   isExpanded?: boolean;
 }
 
+// Internal tool-handoff messages injected by execute_tool_node (backend/core/workflows/nodes.py).
+// They carry tool output between nodes and should not appear as agent input messages.
+const INTERNAL_HANDOFF_PREFIXES = [
+  'Continue with your task using the output from',
+  '[Output from tool `',
+];
+
+function isInternalHandoffMessage(content: any): boolean {
+  const text =
+    typeof content === 'string'
+      ? content
+      : typeof content === 'object' && typeof content?.preview === 'string'
+        ? content.preview
+        : null;
+  return text !== null && INTERNAL_HANDOFF_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
 export function AgentContextViewer({ context, isExpanded = false }: AgentContextViewerProps) {
   const [expanded, setExpanded] = useState(isExpanded);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const visibleMessages = context.messages.filter((msg) => !isInternalHandoffMessage(msg.content));
 
   const handleCopy = async (text: string, section: string) => {
     try {
@@ -160,13 +178,13 @@ export function AgentContextViewer({ context, isExpanded = false }: AgentContext
           )}
 
           {/* Messages Preview */}
-          {context.messages.length > 0 && (
+          {visibleMessages.length > 0 && (
             <div className="bg-white/50 dark:bg-gray-800/50 rounded p-2">
               <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" /> Input Messages ({context.messages.length})
+                <MessageSquare className="w-3 h-3" /> Input Messages ({visibleMessages.length})
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto">
-                {context.messages.map((msg, i) => (
+                {visibleMessages.map((msg, i) => (
                   <div key={i} className="text-xs bg-gray-50 dark:bg-gray-900/50 px-2 py-1 rounded">
                     <span className="font-medium text-gray-600 dark:text-gray-400">{msg.type}: </span>
                     <span className="text-gray-700 dark:text-gray-300">

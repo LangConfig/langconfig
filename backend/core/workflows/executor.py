@@ -13,6 +13,7 @@ No blueprints, no strategies - just execute the workflow definition stored in th
 import asyncio
 import json
 import logging
+import time
 from typing import Dict, Any, Optional, List, Annotated, TypedDict
 from datetime import datetime, timezone
 import operator
@@ -2475,6 +2476,23 @@ When your work is complete, deliver the final result and END."""
                     return update
                 else:
                     logger.warning(f"[Node: {node_id}] No messages to process")
+                    # Still emit node_completed so the frontend finalizes this node
+                    # (state transitions rely on this event, not on on_chain_end).
+                    try:
+                        from services.event_bus import get_event_bus
+                        event_bus = get_event_bus()
+                        channel = f"workflow:{state.get('workflow_id')}"
+                        await event_bus.publish(channel, {
+                            "type": "node_completed",
+                            "data": {
+                                "node_id": node_id,
+                                "agent_label": display_name,
+                                "model": model,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            },
+                        })
+                    except Exception as event_error:
+                        logger.warning(f"[{display_name}] Failed to emit node_completed event: {event_error}")
                     return {
                         "messages": [],  # Always include messages key for reducer
                         "current_node": node_id,
@@ -2521,7 +2539,52 @@ When your work is complete, deliver the final result and END."""
 
         Control nodes handle workflow coordination, state management, and output formatting.
         """
+        display_label = node_data.get("label") or control_type
+
         async def control_node_executor(state: SimpleWorkflowState) -> Dict[str, Any]:
+            """Execute a control node, emitting node lifecycle events around the body."""
+            start_time = time.perf_counter()
+            try:
+                from services.event_bus import get_event_bus
+                event_bus = get_event_bus()
+                channel = f"workflow:{state.get('workflow_id')}"
+                await event_bus.publish(channel, {
+                    "type": "node_started",
+                    "data": {
+                        "node_id": node_id,
+                        "agent_label": display_label,
+                        "agent_type": control_type,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                })
+            except Exception as event_error:
+                logger.warning(f"[{display_label}] Failed to emit node_started: {event_error}")
+
+            result = await _execute_control_node(state)
+
+            try:
+                from services.event_bus import get_event_bus
+                event_bus = get_event_bus()
+                channel = f"workflow:{state.get('workflow_id')}"
+                completion_data = {
+                    "node_id": node_id,
+                    "agent_label": display_label,
+                    "duration_ms": int((time.perf_counter() - start_time) * 1000),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                if result.get("error_message"):
+                    completion_data["status"] = "error"
+                    completion_data["error"] = str(result["error_message"])[:500]
+                await event_bus.publish(channel, {
+                    "type": "node_completed",
+                    "data": completion_data,
+                })
+            except Exception as event_error:
+                logger.warning(f"[{display_label}] Failed to emit node_completed: {event_error}")
+
+            return result
+
+        async def _execute_control_node(state: SimpleWorkflowState) -> Dict[str, Any]:
             """Execute a control node."""
             logger.info(f"[Control Node: {node_id}] Executing {control_type}")
 

@@ -483,7 +483,10 @@ export function useNodeExecutionStatus(
           break;
 
         case 'on_chain_end':
-          // Node completed successfully - check if this is the final workflow completion
+          // Only the final workflow completion may transition state here. Inner LangGraph
+          // sub-chains fire on_chain_end constantly mid-stream; treating those as node
+          // completion froze timers and stopped the pulse before the node actually finished.
+          // Node-level completion is signaled by the explicit node_completed event below.
           const isWorkflowCompletion = event.data?.name === 'workflow_execution';
 
           if (isWorkflowCompletion) {
@@ -494,26 +497,14 @@ export function useNodeExecutionStatus(
               thinkingPreview: '',
               progress: 0,
             };
+            if (streamingRateRef.current[nodeLabel]) {
+              streamingRateRef.current[nodeLabel].buffer = '';
+            }
           } else {
             updatedStatus = {
               ...updatedStatus,
-              state: 'completed',
-              thinking: '', // Clear thinking on completion
-              thinkingPreview: '',
-              endTime: event.timestamp,
-              durationMs: updatedStatus.startTime
-                ? new Date(event.timestamp!).getTime() - new Date(updatedStatus.startTime).getTime()
-                : undefined,
               latestEvent: event,
-              activeTool: undefined,
-              progress: 100,
-              _streamAccumulator: '', // Clear accumulated stream
             };
-          }
-
-          // Also clear streaming buffer for this node
-          if (streamingRateRef.current[nodeLabel]) {
-            streamingRateRef.current[nodeLabel].buffer = '';
           }
           break;
 
@@ -537,9 +528,15 @@ export function useNodeExecutionStatus(
               thinking: '',
               thinkingPreview: '',
               endTime: event.timestamp,
+              durationMs:
+                event.data?.duration_ms ??
+                (updatedStatus.startTime && event.timestamp
+                  ? new Date(event.timestamp).getTime() - new Date(updatedStatus.startTime).getTime()
+                  : undefined),
               latestEvent: event,
               activeTool: undefined,
               progress: 100,
+              _streamAccumulator: '',
               tokenCost: event.data?.tokenCost
                 ? {
                     ...event.data.tokenCost,
@@ -547,6 +544,9 @@ export function useNodeExecutionStatus(
                   }
                 : updatedStatus.tokenCost,
             };
+          }
+          if (streamingRateRef.current[nodeLabel]) {
+            streamingRateRef.current[nodeLabel].buffer = '';
           }
           break;
 
