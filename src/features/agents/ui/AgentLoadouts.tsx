@@ -11,10 +11,13 @@ import { Search, Plus, Trash2, Edit, Download, Copy, Upload, Sparkles, Code, Dat
 import DeepAgentBuilder from './DeepAgentBuilder';
 import SkillBuilderModal from './SkillBuilderModal';
 import CustomToolBuilder from '../../tools/ui/CustomToolBuilder';
+import ToolsModeView, { type ToolTemplateSummary } from './ToolsModeView';
 import apiClient, { ConflictErrorClass } from '../../../lib/api-client';
 import ConflictDialog from '../../workflows/ui/ConflictDialog';
 import { useNotification } from '../../../hooks/useNotification';
 import { useAvailableModels } from '../../../hooks/useAvailableModels';
+import { AVAILABLE_TOOLS } from '../data/agentTools';
+import type { CustomTool, Skill, SelectedItem as SelectedItemOf } from './agentLoadoutTypes';
 
 interface Agent {
   id: number;
@@ -30,52 +33,9 @@ interface Agent {
   updated_at: string;
 }
 
-interface CustomTool {
-  id?: number;
-  tool_id: string;
-  name: string;
-  description: string;
-  tool_type: string;
-  category?: string;
-  tags: string[];
-  is_template_based?: boolean;
-  usage_count: number;
-  error_count: number;
-  last_used_at?: string;
-  input_schema?: any;
-  implementation_config?: any;
-  output_format?: string;
-  validation_rules?: any;
-  is_advanced_mode?: boolean;
-  template_type?: string;
-}
+type SelectedItem = SelectedItemOf<Agent>;
 
-interface Skill {
-  skill_id: string;
-  name: string;
-  description: string;
-  version: string;
-  source_type: 'builtin' | 'personal' | 'project';
-  tags: string[];
-  triggers: string[];
-  allowed_tools: string[] | null;
-  usage_count: number;
-  last_used_at: string | null;
-  avg_success_rate: number;
-  // Extended detail fields (optional, populated when fetching detail)
-  instructions?: string;
-  examples?: string | null;
-  source_path?: string;
-  author?: string | null;
-  required_context?: string[];
-}
-
-type SelectedItem =
-  | { type: 'agent'; data: Agent }
-  | { type: 'tool'; data: CustomTool }
-  | { type: 'skill'; data: Skill }
-  | { type: 'template'; category: 'agent' | 'tool' }
-  | null;
+type CenterMode = 'agents' | 'tools';
 
 // Agent Configuration View Component
 interface AgentConfigViewProps {
@@ -185,25 +145,7 @@ const AgentConfigView = ({ agent, onSave, onDelete, onClose }: AgentConfigViewPr
     };
   }, []);
 
-  // Complete tool list from backend/tools/native_tools.py with DeepAgents standard naming
-  // See: https://docs.langchain.com/oss/python/deepagents/harness
-  const AVAILABLE_TOOLS = [
-    { id: 'web_search', name: 'Web Search', description: 'Search the web (DuckDuckGo)', category: 'web' },
-    { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch webpage content', category: 'web' },
-    { id: 'browser', name: 'Browser Automation', description: 'Advanced web interaction (Playwright)', category: 'web' },
-    // DeepAgents standard filesystem tools
-    { id: 'read_file', name: 'Read File', description: 'Read file contents with line numbers', category: 'files' },
-    { id: 'write_file', name: 'Write File', description: 'Create new files', category: 'files' },
-    { id: 'ls', name: 'List Directory', description: 'List directory contents with metadata', category: 'files' },
-    { id: 'edit_file', name: 'Edit File', description: 'Exact string replacements in files', category: 'files' },
-    { id: 'glob', name: 'Glob', description: 'Find files matching patterns', category: 'files' },
-    { id: 'grep', name: 'Grep', description: 'Search file contents with regex', category: 'files' },
-    { id: 'enable_memory', name: 'Enable Memory', description: 'Capability flag: enables long‑term memory for this agent (persisted via project/workflow store). Not a tool by itself; pair with Store/Recall Memory.', category: 'memory' },
-    { id: 'memory_store', name: 'Store Memory', description: 'Save information to the agent\'s long‑term memory store', category: 'memory' },
-    { id: 'memory_recall', name: 'Recall Memory', description: 'Retrieve previously stored information from memory', category: 'memory' },
-    { id: 'enable_rag', name: 'Enable RAG', description: 'Capability flag: enables retrieval from the project\'s vector store (documents/KB). Not a tool by itself.', category: 'memory' },
-    { id: 'reasoning_chain', name: 'Reasoning Chain', description: 'Multi-step reasoning', category: 'reasoning' },
-  ];
+  // Native tool list lives in ../data/agentTools (AVAILABLE_TOOLS import)
 
   // Complete middleware list from backend/orchestration/middleware_presets.py
   const MIDDLEWARE_OPTIONS = [
@@ -2500,6 +2442,7 @@ const AgentLoadouts = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
+  const [centerMode, setCenterMode] = useState<CenterMode>('agents');
   const [showAgentBuilder, setShowAgentBuilder] = useState(false);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
@@ -2816,6 +2759,45 @@ const AgentLoadouts = () => {
       console.error('Failed to save tool:', error);
       throw error;
     }
+  };
+
+  // Open the tool builder pre-filled from a backend tool template.
+  // Fetches the full template (config/schema) and maps it to the
+  // CustomToolBuilder `initialTemplate` shape.
+  const handleSelectToolPreset = async (template: ToolTemplateSummary) => {
+    setEditingTool(null);
+    setSelectedItem({ type: 'template', category: 'tool' });
+
+    let initialTemplate = {
+      toolType: template.tool_type,
+      name: template.name,
+      description: template.description,
+      category: template.category,
+      tags: [] as string[],
+      implementationConfig: {} as any,
+      inputSchema: { type: 'object', properties: {} } as any,
+    };
+
+    try {
+      const res = await apiClient.getToolTemplate(template.template_id);
+      const full = res.data;
+      if (full) {
+        initialTemplate = {
+          toolType: full.tool_type || template.tool_type,
+          name: full.name || template.name,
+          description: full.description || template.description,
+          category: full.category || template.category,
+          tags: full.tags || [],
+          implementationConfig: full.config_template || {},
+          inputSchema: full.input_schema_template || { type: 'object', properties: {} },
+        };
+      }
+    } catch (error) {
+      console.error('Failed to load tool template detail; using summary fields:', error);
+    }
+
+    setToolTemplate(initialTemplate);
+    setShowToolBuilder(true);
   };
 
   const handleDuplicateTool = async (toolId: string) => {
@@ -3145,10 +3127,61 @@ const AgentLoadouts = () => {
           </div>
         </div>
 
-        {/* Center Panel - Preview (60%) */}
         {/* Center Panel - Preview (75%) */}
         <div className="w-[75%] flex flex-col overflow-hidden bg-white dark:bg-panel-dark">
-          {selectedItem === null || selectedItem.type === 'template' ? (
+          {/* Mode Toggle - Agents / Tools */}
+          <div className="flex-shrink-0 px-6 pt-5 pb-4 border-b-2 border-border-dark bg-white dark:bg-panel-dark">
+            <div className="inline-flex items-center gap-1 p-1 rounded-[4px] border-2 border-border-dark bg-background-light">
+              {(
+                [
+                  { id: 'agents', label: 'Agents', icon: 'smart_toy' },
+                  { id: 'tools', label: 'Tools', icon: 'construction' },
+                ] as Array<{ id: CenterMode; label: string; icon: string }>
+              ).map((m) => {
+                const active = centerMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setCenterMode(m.id);
+                      setSelectedItem(null);
+                    }}
+                    className={`flex items-center gap-1.5 px-4 h-9 rounded-[4px] font-mono text-xs font-semibold uppercase tracking-wide transition-all border-2 ${
+                      active
+                        ? 'bg-white border-border-dark shadow-[2px_2px_0_var(--color-border-dark)]'
+                        : 'border-transparent hover:border-border-dark'
+                    }`}
+                    style={{ color: active ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
+                  >
+                    <span className="material-symbols-outlined text-base">{m.icon}</span>
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {centerMode === 'tools' && selectedItem?.type === 'tool' ? (
+            /* Tools mode - Tool Configuration View */
+            <ToolConfigView
+              tool={selectedItem.data}
+              onSave={handleSaveTool}
+              onDelete={() => handleDeleteTool(selectedItem.data.tool_id)}
+              onClose={() => setSelectedItem(null)}
+            />
+          ) : centerMode === 'tools' ? (
+            /* Tools mode - Tools overview (your tools + templates) */
+            <ToolsModeView
+              tools={tools}
+              onCreateCustomTool={() => {
+                setEditingTool(null);
+                setToolTemplate(null);
+                setShowToolBuilder(true);
+              }}
+              onSelectToolPreset={handleSelectToolPreset}
+              onSelectExistingTool={(tool) => setSelectedItem({ type: 'tool', data: tool })}
+            />
+          ) : selectedItem === null || selectedItem.type === 'template' ? (
             /* Template Gallery */
             <div className="flex-1 overflow-y-auto flex items-center justify-center p-12">
               <div className="max-w-6xl w-full">
