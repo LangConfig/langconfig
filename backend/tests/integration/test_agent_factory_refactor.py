@@ -46,6 +46,23 @@ logger = logging.getLogger(__name__)
 # Test Fixtures
 # =============================================================================
 
+@pytest.fixture(autouse=True)
+def fake_provider_keys(monkeypatch):
+    """
+    These tests construct real provider clients (no network calls), which
+    require non-empty API keys. CI has no keys, so patch the read-only
+    Settings properties at class level (same pattern as
+    tests/test_anthropic_features.py). Real keys, when present locally,
+    are irrelevant to these tests.
+    """
+    from config import settings
+
+    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.setattr(
+            type(settings), key, property(lambda self, _k=key: "test-key")
+        )
+
+
 @pytest.fixture
 def basic_agent_config():
     """Basic agent configuration for testing."""
