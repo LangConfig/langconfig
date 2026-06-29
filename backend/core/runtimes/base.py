@@ -19,6 +19,9 @@ frame types emitted by ``api/chat/routes.py``:
     tool_start       tool_start
     tool_end         tool_end
     tool_artifact    tool_artifact
+    subagent_start   subagent_start
+    subagent_end     subagent_end
+    subagent_error   subagent_error
     custom_event     custom
     error            error
     complete         complete
@@ -70,6 +73,57 @@ def has_multimodal_blocks(blocks: Optional[List[Dict[str, Any]]]) -> bool:
     )
 
 
+def normalize_dynamic_subagent_event(custom_data: Any) -> Optional[Dict[str, Any]]:
+    """Map langchain-quickjs custom subagent events to LangConfig payloads."""
+    if not isinstance(custom_data, dict):
+        return None
+    if custom_data.get("type") != "subagent":
+        return None
+
+    phase = custom_data.get("phase")
+    type_by_phase = {
+        "start": "subagent_start",
+        "complete": "subagent_end",
+        "error": "subagent_error",
+    }
+    event_type = type_by_phase.get(phase)
+    if not event_type:
+        return None
+
+    eval_id = custom_data.get("eval_id")
+    subagent_id = str(custom_data.get("id") or f"dynamic-{eval_id or 'subagent'}")
+    label = (
+        custom_data.get("label")
+        or custom_data.get("subagent_type")
+        or custom_data.get("subagent_name")
+        or "Dynamic Subagent"
+    )
+    data = {
+        "subagent_name": label,
+        "subagent_run_id": subagent_id,
+        "parent_agent_label": custom_data.get("parent_agent_label"),
+        "parent_run_id": custom_data.get("parent_run_id") or eval_id,
+        "input_preview": custom_data.get("description"),
+        "output_preview": custom_data.get("output_preview"),
+        "is_dynamic": True,
+        "eval_id": eval_id,
+        "phase": phase,
+        "subagent_type": custom_data.get("subagent_type"),
+        "label": custom_data.get("label"),
+        "description": custom_data.get("description"),
+        "duration_ms": custom_data.get("duration_ms"),
+    }
+
+    if phase == "error":
+        data["success"] = False
+        data["error_type"] = "DynamicSubagentError"
+        data["error"] = custom_data.get("error") or "Dynamic subagent failed"
+    elif phase == "complete":
+        data["success"] = True
+
+    return {"type": event_type, "data": make_json_safe(data)}
+
+
 # =============================================================================
 # Runtime envelope types
 # =============================================================================
@@ -80,6 +134,9 @@ RuntimeEventType = Literal[
     "tool_start",
     "tool_end",
     "tool_artifact",
+    "subagent_start",
+    "subagent_end",
+    "subagent_error",
     "custom",
     "usage",
     "error",
@@ -94,6 +151,7 @@ class RuntimeEvent(TypedDict, total=False):
     - text_delta / thinking_delta: ``text`` (already flattened to str)
     - tool_start / tool_end: ``tool_name`` + ``data`` ({input|output, error, namespace})
     - tool_artifact: ``tool_name`` + ``data`` ({"artifact": {...}})
+    - subagent_start / subagent_end / subagent_error: ``data`` (normalized subagent payload)
     - custom: ``data`` (sanitized custom event payload)
     - usage: ``data`` (token/cost payload; reserved, not emitted yet)
     - error: ``error`` (message string)

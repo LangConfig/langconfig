@@ -67,6 +67,121 @@ class DeepAgentFactory:
         return errors
 
     @staticmethod
+    def _resolve_ptc_allowlist(config: DeepAgentConfig, available_tools: List[BaseTool]) -> Optional[List[BaseTool]]:
+        """Resolve interpreter PTC tool names to loaded BaseTool instances."""
+        interpreter = getattr(config, "interpreter", None)
+        allowlist = getattr(interpreter, "ptc_tool_allowlist", None) or []
+        if not allowlist:
+            return None
+
+        if "task" in allowlist:
+            raise ValueError(
+                "The interpreter PTC allowlist cannot include 'task'. "
+                "Dynamic subagents are exposed through the interpreter's top-level task() helper."
+            )
+
+        tools_by_name = {
+            tool.name: tool
+            for tool in available_tools
+            if isinstance(tool, BaseTool) and getattr(tool, "name", None)
+        }
+        missing = [name for name in allowlist if name not in tools_by_name]
+        if missing:
+            available = ", ".join(sorted(tools_by_name.keys())) or "none"
+            raise ValueError(
+                "Interpreter PTC tool allowlist contains unknown tools: "
+                f"{', '.join(missing)}. Available tools: {available}"
+            )
+
+        return [tools_by_name[name] for name in allowlist]
+
+    @staticmethod
+    def _build_code_interpreter_middleware(config: DeepAgentConfig, available_tools: List[BaseTool]) -> Optional[Any]:
+        """Create QuickJS CodeInterpreterMiddleware when explicitly enabled."""
+        interpreter = getattr(config, "interpreter", None)
+        if not interpreter or not interpreter.enabled:
+            return None
+
+        try:
+            from langchain_quickjs import CodeInterpreterMiddleware
+        except ImportError as exc:
+            raise RuntimeError(
+                "Dynamic subagents require the optional QuickJS interpreter package. "
+                "Install backend requirements with 'deepagents[quickjs]' and "
+                "'langchain-quickjs>=0.3.2,<0.4'."
+            ) from exc
+
+        ptc_tools = DeepAgentFactory._resolve_ptc_allowlist(config, available_tools)
+        middleware = CodeInterpreterMiddleware(
+            memory_limit=interpreter.memory_limit_bytes,
+            timeout=interpreter.timeout_seconds,
+            max_ptc_calls=interpreter.max_ptc_calls,
+            max_result_chars=interpreter.max_result_chars,
+            capture_console=interpreter.capture_console,
+            subagents=interpreter.dynamic_subagents,
+            ptc=ptc_tools,
+            mode=interpreter.mode,
+        )
+        logger.info(
+            "QuickJS interpreter enabled "
+            "(mode=%s, dynamic_subagents=%s, ptc_tools=%s)",
+            interpreter.mode,
+            interpreter.dynamic_subagents,
+            [tool.name for tool in ptc_tools] if ptc_tools else [],
+        )
+        return middleware
+
+    @staticmethod
+    def _schema_model_name(sub_config: SubAgentConfig) -> str:
+        """Build a valid Pydantic class name for inline subagent schemas."""
+        import re
+
+        raw_name = sub_config.response_schema_name or f"{sub_config.name}_result"
+        parts = [part for part in re.split(r"[^a-zA-Z0-9]+", raw_name) if part]
+        model_name = "".join(part[:1].upper() + part[1:] for part in parts)
+        if not model_name or not model_name[0].isalpha():
+            model_name = f"Subagent{model_name or 'Result'}"
+        return model_name
+
+    @staticmethod
+    def _resolve_subagent_response_format(sub_config: SubAgentConfig) -> Optional[Any]:
+        """Resolve configured subagent structured output into LangChain response_format."""
+        output_schema = None
+
+        if sub_config.response_schema:
+            from models.custom_schema import json_schema_to_pydantic
+
+            output_schema = json_schema_to_pydantic(
+                DeepAgentFactory._schema_model_name(sub_config),
+                sub_config.response_schema,
+            )
+        elif sub_config.response_schema_name:
+            from models.custom_schema import OutputSchemaRegistry
+
+            output_schema = OutputSchemaRegistry.get(sub_config.response_schema_name)
+            if not output_schema:
+                logger.warning(
+                    "Unknown subagent response schema '%s' for subagent '%s'",
+                    sub_config.response_schema_name,
+                    sub_config.name,
+                )
+                return None
+
+        if output_schema is None:
+            return None
+
+        strategy = sub_config.response_format_strategy
+        if strategy == "provider":
+            from langchain.agents.structured_output import ProviderStrategy
+
+            return ProviderStrategy(output_schema)
+        if strategy == "tool":
+            from langchain.agents.structured_output import ToolStrategy
+
+            return ToolStrategy(output_schema)
+        return output_schema
+
+    @staticmethod
     async def create_deep_agent(
         config: DeepAgentConfig,
         project_id: int,
@@ -135,6 +250,11 @@ class DeepAgentFactory:
         all_tools = base_tools + middleware_tools
         logger.info(f"Total tools: {len(all_tools)} (base={len(base_tools)}, middleware={len(middleware_tools)})")
 
+        code_interpreter_middleware = DeepAgentFactory._build_code_interpreter_middleware(
+            config,
+            all_tools,
+        )
+
         # Prepare subagent configurations (with workspace context for file-writing tools)
         subagents_config = await DeepAgentFactory._prepare_subagents(
             config.subagents,
@@ -150,6 +270,8 @@ class DeepAgentFactory:
         # Initialize middleware instances (custom/extra middleware only - the
         # deepagents harness supplies TodoList/Filesystem/SubAgent/Summarization)
         middleware_instances = []
+        if code_interpreter_middleware is not None:
+            middleware_instances.append(code_interpreter_middleware)
 
         # Resolve filesystem workspace backend if enabled
         filesystem_config = next(
@@ -296,7 +418,13 @@ class DeepAgentFactory:
             except Exception:
                 pass
 
-            interrupt_on = getattr(config, 'interrupt_on', {})
+            interrupt_on = dict(getattr(config, 'interrupt_on', {}) or {})
+            if (
+                getattr(config, "interpreter", None)
+                and config.interpreter.enabled
+                and config.interpreter.require_eval_approval
+            ):
+                interrupt_on.setdefault("eval", True)
             if interrupt_on:
                 agent_kwargs["interrupt_on"] = interrupt_on
 
@@ -339,6 +467,8 @@ class DeepAgentFactory:
 
         except Exception as e:
             logger.error(f"Error creating DeepAgent: {e}", exc_info=True)
+            if getattr(getattr(config, "interpreter", None), "enabled", False):
+                raise
             logger.critical(
                 "Falling back to regular AgentFactory - the fallback agent has "
                 "NO checkpointer, so chat sessions will have NO conversation "
@@ -497,6 +627,10 @@ class DeepAgentFactory:
 
                 if sub_config.interrupt_on:
                     subagent["interrupt_on"] = sub_config.interrupt_on
+
+                response_format = DeepAgentFactory._resolve_subagent_response_format(sub_config)
+                if response_format is not None:
+                    subagent["response_format"] = response_format
 
                 subagents.append(subagent)
                 logger.info(f"Dictionary subagent prepared: {sub_config.name} with {len(subagent_tools)} tools")

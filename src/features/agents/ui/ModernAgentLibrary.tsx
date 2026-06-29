@@ -106,7 +106,8 @@ const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   'documentation': 'Research',
   'planning': 'Research',
   'qa_validation': 'Quality & Testing',
-  'content_generation': 'Content Generation'
+  'content_generation': 'Content Generation',
+  'automation': 'Automation'
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -119,7 +120,8 @@ const CATEGORY_ICONS: Record<string, string> = {
   'documentation': 'search',
   'planning': 'search',
   'qa_validation': 'verified',
-  'content_generation': 'image'
+  'content_generation': 'image',
+  'automation': 'auto_awesome'
 };
 
 const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
@@ -128,6 +130,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string
   'Quality & Testing': { bg: '#f0fdf4', border: '#22c55e', text: '#22c55e' },
   'DevOps': { bg: '#fff7ed', border: '#ea580c', text: '#ea580c' },
   'Research': { bg: '#faf5ff', border: '#a855f7', text: '#a855f7' },
+  'Automation': { bg: '#ecfdf5', border: '#0f766e', text: '#0f766e' },
   'Content Generation': { bg: '#fef3c7', border: '#f59e0b', text: '#f59e0b' },
   'Control Nodes': { bg: '#f9fafb', border: '#6b7280', text: '#6b7280' }
 };

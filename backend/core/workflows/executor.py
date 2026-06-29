@@ -58,6 +58,7 @@ from models.workflow import WorkflowProfile
 from core.workflows.events.emitter import create_execution_callback_handler
 from core.workflows.events.progress import clear_execution_context
 from core.workflows.checkpointing.manager import get_store
+from core.runtimes.base import normalize_dynamic_subagent_event
 
 logger = logging.getLogger(__name__)
 
@@ -672,6 +673,20 @@ class SimpleWorkflowExecutor:
 
                 # astream_events yields ALL events including LLM tokens and state updates
                 kind = event.get("event")
+
+                if kind == "on_custom_event" or kind == "custom_event":
+                    subagent_event = normalize_dynamic_subagent_event(event.get("data", {}))
+                    if subagent_event:
+                        internal_event_type = {
+                            "subagent_start": "SUBAGENT_START",
+                            "subagent_end": "SUBAGENT_END",
+                            "subagent_error": "SUBAGENT_ERROR",
+                        }[subagent_event["type"]]
+                        await callback_handler._emit_event(
+                            event_type=internal_event_type,
+                            data=subagent_event["data"]
+                        )
+                    continue
 
                 # Handle LLM token streaming - batch and throttle to reduce spam
                 if kind == "on_chat_model_stream":
@@ -2351,6 +2366,19 @@ When your work is complete, deliver the final result and END."""
                                 # astream_events yields ALL events including LLM tokens and state updates
                                 # We only care about the final state for the agent response
                                 kind = event.get("event")
+                                if kind == "on_custom_event" or kind == "custom_event":
+                                    subagent_event = normalize_dynamic_subagent_event(event.get("data", {}))
+                                    if subagent_event:
+                                        internal_event_type = {
+                                            "subagent_start": "SUBAGENT_START",
+                                            "subagent_end": "SUBAGENT_END",
+                                            "subagent_error": "SUBAGENT_ERROR",
+                                        }[subagent_event["type"]]
+                                        await callback_handler._emit_event(
+                                            event_type=internal_event_type,
+                                            data=subagent_event["data"]
+                                        )
+                                    continue
                                 if kind == "on_chain_end" and event.get("name") == "LangGraph":
                                     # Extract final state from the agent completion event
                                     response = event.get("data", {}).get("output")

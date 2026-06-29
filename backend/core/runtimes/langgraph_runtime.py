@@ -34,6 +34,7 @@ from core.runtimes.base import (
     RuntimeSessionRef,
     has_multimodal_blocks,
     make_json_safe,
+    normalize_dynamic_subagent_event,
 )
 from core.streaming.adapters import normalize_stream_event
 from core.workflows.events.emitter import ExecutionEventCallbackHandler
@@ -251,6 +252,10 @@ class LangGraphRuntime(AgentRuntime):
             elif kind == "on_custom_event" or (kind == "custom_event"):
                 custom_data = event.get("data", {})
                 safe_data = make_json_safe(custom_data)
+                subagent_event = normalize_dynamic_subagent_event(safe_data)
+                if subagent_event:
+                    yield subagent_event
+                    continue
                 yield {"type": "custom", "data": safe_data}
 
             # Stream model thinking (Anthropic adaptive thinking summaries).

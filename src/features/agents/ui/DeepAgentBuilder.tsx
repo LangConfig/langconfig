@@ -24,7 +24,8 @@ import {
   AlertTriangle,
   X,
   Wrench,
-  Info
+  Info,
+  Code2
 } from 'lucide-react';
 import { useNotification } from '../../../hooks/useNotification';
 import { ModelSelectorInline } from '../../../components/common/ModelSelector';
@@ -71,6 +72,19 @@ interface MiddlewareConfig {
   config: Record<string, any>;
 }
 
+interface InterpreterConfig {
+  enabled: boolean;
+  mode: 'thread' | 'turn' | 'call';
+  memory_limit_bytes: number;
+  timeout_seconds: number;
+  max_ptc_calls: number;
+  max_result_chars: number;
+  capture_console: boolean;
+  dynamic_subagents: boolean;
+  ptc_tool_allowlist: string[];
+  require_eval_approval: boolean;
+}
+
 interface SubAgentConfig {
   name: string;
   description: string;
@@ -80,6 +94,9 @@ interface SubAgentConfig {
   tools: string[];
   middleware: string[];
   interrupt_on: Record<string, any>;
+  response_schema_name?: string;
+  response_schema?: Record<string, any>;
+  response_format_strategy?: 'auto' | 'provider' | 'tool';
 }
 
 interface BackendConfig {
@@ -126,9 +143,11 @@ interface DeepAgentConfig {
   custom_tools?: string[];  // User-created custom tools
   use_deepagents: boolean;
   middleware: MiddlewareConfig[];
+  interpreter: InterpreterConfig;
   subagents: SubAgentConfig[];
   backend: BackendConfig;
   guardrails: GuardrailsConfig;
+  interrupt_on?: Record<string, any>;
   export_format: string;
   include_chat_ui: boolean;
   include_docker: boolean;
@@ -207,6 +226,18 @@ const DEFAULT_CONFIG: DeepAgentConfig = {
       config: { max_depth: 3, max_concurrent: 5 }
     }
   ],
+  interpreter: {
+    enabled: false,
+    mode: 'thread',
+    memory_limit_bytes: 64 * 1024 * 1024,
+    timeout_seconds: 5,
+    max_ptc_calls: 256,
+    max_result_chars: 4000,
+    capture_console: true,
+    dynamic_subagents: true,
+    ptc_tool_allowlist: [],
+    require_eval_approval: true
+  },
   subagents: [],
   backend: {
     type: 'state',
@@ -337,7 +368,11 @@ export default function DeepAgentBuilder({
   const [config, setConfig] = useState<AgentConfig>(() => {
     const baseConfig: AgentConfig = {
       ...DEFAULT_CONFIG,
-      ...initialConfig
+      ...initialConfig,
+      interpreter: {
+        ...DEFAULT_CONFIG.interpreter,
+        ...(initialConfig?.interpreter || {})
+      }
     };
 
     // Add Regular Agent defaults if this is a regular agent
@@ -359,6 +394,7 @@ export default function DeepAgentBuilder({
     execution: false,  // Collapsed - advanced Regular Agent controls
     memory: false,     // Collapsed - advanced Regular Agent memory
     middleware: false, // Collapsed - middleware configuration (both agent types)
+    interpreter: false, // Collapsed - DeepAgents interpreter/dynamic subagents
     backend: false,    // Collapsed - advanced Deep Agent features
     guardrails: false  // Collapsed - advanced Deep Agent features
   });
@@ -379,6 +415,10 @@ export default function DeepAgentBuilder({
     config: {
       ...DEFAULT_CONFIG,
       ...initialConfig,
+      interpreter: {
+        ...DEFAULT_CONFIG.interpreter,
+        ...(initialConfig?.interpreter || {})
+      },
       ...(agentType === 'regular' ? REGULAR_AGENT_DEFAULTS : {})
     },
     customTools: initialConfig?.custom_tools || []
@@ -448,6 +488,29 @@ export default function DeepAgentBuilder({
   ) => {
     setConfig(prev => ({ ...prev, [key]: value }));
   };
+
+  const updateInterpreterConfig = <K extends keyof InterpreterConfig>(
+    key: K,
+    value: InterpreterConfig[K]
+  ) => {
+    setConfig(prev => ({
+      ...prev,
+      interpreter: {
+        ...DEFAULT_CONFIG.interpreter,
+        ...(prev.interpreter || {}),
+        [key]: value
+      }
+    }));
+  };
+
+  const interpreterToolOptions = useMemo(() => {
+    const configuredTools = [
+      ...(config.native_tools || []),
+      ...(config.cli_tools || []),
+      ...selectedCustomTools
+    ].filter(toolId => toolId && toolId !== 'task');
+    return Array.from(new Set(configuredTools)).sort();
+  }, [config.native_tools, config.cli_tools, selectedCustomTools]);
 
   // Runtime gating: Google ADK only executes Gemini models (and has no HITL).
   const isGoogleAdkRuntime = (config.runtime || 'langgraph') === 'google_adk';
@@ -538,6 +601,25 @@ export default function DeepAgentBuilder({
     );
   }, []);
 
+  const toggleInterpreterPtcTool = useCallback((toolId: string) => {
+    setConfig(prev => {
+      const interpreter = {
+        ...DEFAULT_CONFIG.interpreter,
+        ...(prev.interpreter || {})
+      };
+      const current = interpreter.ptc_tool_allowlist || [];
+      return {
+        ...prev,
+        interpreter: {
+          ...interpreter,
+          ptc_tool_allowlist: current.includes(toolId)
+            ? current.filter(t => t !== toolId)
+            : [...current, toolId]
+        }
+      };
+    });
+  }, []);
+
   const toggleBackend = useCallback((backendId: string) => {
     setConfig(prev => {
       // Get currently selected backends using helper
@@ -576,6 +658,18 @@ export default function DeepAgentBuilder({
       if (tl && !(tl.summarization_threshold < tl.eviction_threshold &&
         tl.eviction_threshold < tl.max_total_tokens)) {
         errors.push("Token limits: summarization < eviction < max_total");
+      }
+
+      if (cfg.interpreter?.enabled) {
+        if (cfg.interpreter.timeout_seconds <= 0) {
+          errors.push("Interpreter timeout must be greater than 0 seconds");
+        }
+        if (cfg.interpreter.memory_limit_bytes < 1000000) {
+          errors.push("Interpreter memory limit must be at least 1 MB");
+        }
+        if (cfg.interpreter.max_ptc_calls < 1) {
+          errors.push("Interpreter max PTC calls must be at least 1");
+        }
       }
     }
 
@@ -1749,6 +1843,175 @@ export default function DeepAgentBuilder({
                     ))}
                   </div>
                 )}
+              </div>
+            </ConfigSection>
+          )}
+
+          {/* JavaScript Interpreter - Deep Agent Only */}
+          {agentType === 'deep' && (
+            <ConfigSection
+              title="JavaScript Interpreter"
+              icon={<Code2 className="w-5 h-5" />}
+              expanded={expandedSections.interpreter}
+              onToggle={() => toggleSection('interpreter')}
+            >
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 text-sm font-medium text-gray-900 dark:text-white">
+                  <input
+                    type="checkbox"
+                    checked={config.interpreter?.enabled ?? false}
+                    onChange={(e) => updateInterpreterConfig('enabled', e.target.checked)}
+                  />
+                  Enable eval orchestration
+                </label>
+
+                <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    Eval runs JavaScript in-process. Approval is enabled by default, and direct host-tool calls stay allowlist-only.
+                  </p>
+                </div>
+
+                <div className={`space-y-4 ${config.interpreter?.enabled ? '' : 'opacity-60'}`}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                        Persistence Mode
+                      </label>
+                      <select
+                        value={config.interpreter?.mode ?? 'thread'}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('mode', e.target.value as InterpreterConfig['mode'])}
+                        className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      >
+                        <option value="thread">Thread</option>
+                        <option value="turn">Turn</option>
+                        <option value="call">Call</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                        Memory Limit (MB)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={Math.round((config.interpreter?.memory_limit_bytes ?? DEFAULT_CONFIG.interpreter.memory_limit_bytes) / (1024 * 1024))}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('memory_limit_bytes', Math.max(1, parseInt(e.target.value) || 64) * 1024 * 1024)}
+                        className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                        Timeout (seconds)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={config.interpreter?.timeout_seconds ?? 5}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('timeout_seconds', Math.max(0.1, parseFloat(e.target.value) || 5))}
+                        className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                        Max PTC Calls
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={config.interpreter?.max_ptc_calls ?? 256}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('max_ptc_calls', Math.max(1, parseInt(e.target.value) || 256))}
+                        className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 uppercase">
+                        Max Result Characters
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="500"
+                        value={config.interpreter?.max_result_chars ?? 4000}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('max_result_chars', Math.max(0, parseInt(e.target.value) || 4000))}
+                        className="w-full px-3 py-2 bg-white dark:bg-background-dark border border-gray-200 dark:border-border-dark rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={config.interpreter?.dynamic_subagents ?? true}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('dynamic_subagents', e.target.checked)}
+                      />
+                      Dynamic task()
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={config.interpreter?.require_eval_approval ?? true}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('require_eval_approval', e.target.checked)}
+                      />
+                      Require eval approval
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={config.interpreter?.capture_console ?? true}
+                        disabled={!config.interpreter?.enabled}
+                        onChange={(e) => updateInterpreterConfig('capture_console', e.target.checked)}
+                      />
+                      Capture console
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">
+                        PTC Tool Allowlist
+                      </label>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {(config.interpreter?.ptc_tool_allowlist || []).length} selected
+                      </span>
+                    </div>
+                    {interpreterToolOptions.length === 0 ? (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        No configured host tools are available for PTC.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {interpreterToolOptions.map(toolId => (
+                          <label
+                            key={toolId}
+                            className="flex items-center gap-2 text-xs px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(config.interpreter?.ptc_tool_allowlist || []).includes(toolId)}
+                              disabled={!config.interpreter?.enabled}
+                              onChange={() => toggleInterpreterPtcTool(toolId)}
+                            />
+                            <code className="font-mono text-gray-800 dark:text-gray-200">{toolId}</code>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </ConfigSection>
           )}

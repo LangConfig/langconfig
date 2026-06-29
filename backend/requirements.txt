@@ -12,19 +12,19 @@ psycopg[binary]>=3.2.0
 psycopg-pool>=3.2.0
 
 # LangChain v1.0 + LangGraph
-langchain>=1.3.7,<2
-langchain-core>=1.4.5,<2
+langchain>=1.3.11,<2
+langchain-core>=1.4.8,<2
 langchain-openai>=1.3.0,<2
-langchain-anthropic>=1.4.5,<2
+langchain-anthropic>=1.4.8,<2
 # Anthropic SDK: Managed Agents beta surface (client.beta.{agents,sessions,
 # environments}) used by core/runtimes/anthropic_managed_runtime.py.
-# langchain-anthropic 1.4.5 pins anthropic>=0.96,<1 — compatible.
+# langchain-anthropic 1.4.8 pins anthropic>=0.96,<1 — compatible.
 anthropic>=0.92,<1
 langchain-google-genai>=4.2.5,<5
 langchain-community>=0.4.2,<0.5  # Pinned major line for stability
 langchain-experimental>=0.4.2,<0.5  # pandas_agent (create_pandas_dataframe_agent)
 langchain-postgres>=0.0.17
-langgraph>=1.2.4,<1.3
+langgraph>=1.2.6,<1.3
 langgraph-checkpoint-postgres>=3.1.0,<4
 langgraph-prebuilt>=1.1.0
 langgraph-sdk>=0.4.2,<0.5
@@ -59,7 +59,10 @@ python-magic-bin>=0.4.14; platform_system=="Windows"  # File type detection on W
 fastapi-mcp>=0.1.0
 
 # DeepAgents - Agent harness (requires Python >=3.11)
-deepagents>=0.6.8,<0.7
+# The quickjs extra installs the optional CodeInterpreterMiddleware runtime
+# used for eval-driven dynamic subagents.
+deepagents[quickjs]>=0.6.12,<0.7
+langchain-quickjs>=0.3.2,<0.4
 
 # Real-time Monitoring (SSE for desktop app streaming)
 sse-starlette>=3.0.2,<4

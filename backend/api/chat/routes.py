@@ -132,6 +132,9 @@ def runtime_event_to_sse_payload(revent: RuntimeEvent) -> Optional[Dict[str, Any
             "artifact": (revent.get("data") or {}).get("artifact"),
         }
 
+    if rtype in {"subagent_start", "subagent_end", "subagent_error"}:
+        return {"type": rtype, "data": revent.get("data")}
+
     if rtype == "custom":
         return {"type": "custom_event", "data": revent.get("data")}
 

@@ -10,7 +10,7 @@ Extends the agent template system with DeepAgents-specific configuration.
 Supports middleware, subagents, backends, and advanced context management.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Literal
 from sqlalchemy import Column, Integer, String, JSON, Boolean, ForeignKey, DateTime, Text, Float, Enum, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -68,6 +68,18 @@ class SubAgentConfig(BaseModel):
     tools: List[str] = Field(default_factory=list, description="Tool names for this subagent")
     middleware: List[str] = Field(default_factory=list, description="Middleware to enable")
     interrupt_on: Dict[str, Any] = Field(default_factory=dict, description="HITL configuration")
+    response_schema_name: Optional[str] = Field(
+        None,
+        description="Registered structured output schema name for this subagent"
+    )
+    response_schema: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Inline JSON Schema used to build this subagent's structured result model"
+    )
+    response_format_strategy: Literal["auto", "provider", "tool"] = Field(
+        default="auto",
+        description="Structured output strategy for dictionary subagents"
+    )
 
     # For compiled subagents (workflow-based)
     workflow_id: Optional[int] = Field(None, description="ID of workflow to use as compiled subagent")
@@ -173,6 +185,54 @@ class GuardrailsConfig(BaseModel):
         return self
 
 
+class InterpreterConfig(BaseModel):
+    """Configuration for DeepAgents CodeInterpreterMiddleware."""
+    enabled: bool = Field(
+        default=False,
+        description="Enable the QuickJS code interpreter and eval tool"
+    )
+    mode: Literal["thread", "turn", "call"] = Field(
+        default="thread",
+        description="Interpreter state lifetime: thread, turn, or call"
+    )
+    memory_limit_bytes: int = Field(
+        default=64 * 1024 * 1024,
+        ge=1_000_000,
+        description="QuickJS heap limit in bytes"
+    )
+    timeout_seconds: float = Field(
+        default=5.0,
+        gt=0.0,
+        description="Maximum eval execution time in seconds"
+    )
+    max_ptc_calls: int = Field(
+        default=256,
+        ge=1,
+        description="Maximum pass-through tool calls from one eval"
+    )
+    max_result_chars: int = Field(
+        default=4000,
+        ge=0,
+        description="Maximum characters returned from eval results"
+    )
+    capture_console: bool = Field(
+        default=True,
+        description="Capture console output from interpreter code"
+    )
+    dynamic_subagents: bool = Field(
+        default=True,
+        description="Allow interpreter code to call task() for dynamic subagents"
+    )
+    ptc_tool_allowlist: List[str] = Field(
+        default_factory=list,
+        description="Tool names interpreter code may call directly through PTC"
+    )
+    require_eval_approval: bool = Field(
+        default=True,
+        description="Require HITL approval before running eval"
+    )
+
+
 class DeepAgentConfig(BaseModel):
     """Complete DeepAgent configuration (Pydantic model for validation)."""
     # Execution runtime (see core/runtimes/): langgraph (default), or future
@@ -231,9 +291,17 @@ class DeepAgentConfig(BaseModel):
         default_factory=list,
         description="Middleware configurations"
     )
+    interpreter: InterpreterConfig = Field(
+        default_factory=InterpreterConfig,
+        description="QuickJS interpreter and dynamic subagent configuration"
+    )
     subagents: List[SubAgentConfig] = Field(
         default_factory=list,
         description="Specialized subagent configurations"
+    )
+    interrupt_on: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Top-level HITL interrupt policy passed to LangGraph/DeepAgents"
     )
     backend: BackendConfig = Field(
         default_factory=BackendConfig,
