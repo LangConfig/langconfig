@@ -71,9 +71,11 @@ jobs:
       - name: Audit backend dependencies
         # Ignored advisories (no installable fix exists for our dependency tree):
         #   PYSEC-2026-161                  starlette (fix is 1.x, but fastapi
-        #                                   — incl. latest 0.136.3 — pins
-        #                                   starlette<1.0; revisit when FastAPI
-        #                                   supports starlette 1.x)
+        #   PYSEC-2026-249 / PYSEC-2026-248 starlette (fixes are 1.x; the
+        #   CVE-2026-48818 / CVE-2026-48817 current google-adk 1.x line pins
+        #                                   starlette<1.0. Move this to a real
+        #                                   dependency bump when we migrate ADK
+        #                                   2.x + FastAPI/Starlette 1.x.)
         #   PYSEC-2025-217 / CVE-2026-1839  transformers (fix is 5.0.0rc3, RC
         #                                   only; transitive via
         #                                   sentence-transformers v3, held back
@@ -82,6 +84,10 @@ jobs:
         run: |
           pip-audit -r backend/requirements.txt --strict \
             --ignore-vuln PYSEC-2026-161 \
+            --ignore-vuln PYSEC-2026-249 \
+            --ignore-vuln PYSEC-2026-248 \
+            --ignore-vuln CVE-2026-48818 \
+            --ignore-vuln CVE-2026-48817 \
             --ignore-vuln PYSEC-2025-217 \
             --ignore-vuln CVE-2026-1839 \
             --ignore-vuln CVE-2025-3000

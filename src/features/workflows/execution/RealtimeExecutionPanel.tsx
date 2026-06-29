@@ -545,16 +545,32 @@ export default function RealtimeExecutionPanel({
       status: 'running' | 'completed' | 'error';
       inputPreview: string;
       outputPreview: string;
+      isDynamic?: boolean;
+      evalId?: string;
+      phase?: string;
+      durationMs?: number;
+      subagentType?: string;
+      error?: string;
     }>();
 
     for (const event of events) {
       // DEBUG: Log all subagent-related events
-      if (event.type === 'subagent_start' || event.type === 'subagent_end') {
+      if (event.type === 'subagent_start' || event.type === 'subagent_end' || event.type === 'subagent_error') {
         console.log('[SUBAGENT EVENT]', event.type, event.data);
       }
 
       if (event.type === 'subagent_start') {
-        const { subagent_name, subagent_run_id, parent_agent_label, parent_run_id, input_preview } = event.data as any;
+        const {
+          subagent_name,
+          subagent_run_id,
+          parent_run_id,
+          input_preview,
+          is_dynamic,
+          eval_id,
+          phase,
+          duration_ms,
+          subagent_type
+        } = event.data as any;
         console.log('[SUBAGENT PANEL] Creating panel for:', subagent_name, 'run_id:', subagent_run_id);
         subagentMap.set(subagent_run_id, {
           id: subagent_run_id,
@@ -563,16 +579,87 @@ export default function RealtimeExecutionPanel({
           events: [],
           status: 'running',
           inputPreview: input_preview || '',
-          outputPreview: ''
+          outputPreview: '',
+          isDynamic: Boolean(is_dynamic),
+          evalId: eval_id,
+          phase,
+          durationMs: duration_ms,
+          subagentType: subagent_type
         });
       } else if (event.type === 'subagent_end') {
-        const { subagent_run_id, success, output_preview, full_output } = event.data as any;
-        const subagent = subagentMap.get(subagent_run_id);
+        const {
+          subagent_name,
+          subagent_run_id,
+          success,
+          output_preview,
+          full_output,
+          duration_ms,
+          phase,
+          is_dynamic,
+          eval_id,
+          subagent_type
+        } = event.data as any;
+        const subagent = subagentMap.get(subagent_run_id) || {
+          id: subagent_run_id,
+          label: subagent_name || 'Subagent',
+          parentRunId: (event.data as any)?.parent_run_id || '',
+          events: [],
+          status: 'running' as const,
+          inputPreview: '',
+          outputPreview: '',
+          isDynamic: Boolean(is_dynamic),
+          evalId: eval_id,
+          phase,
+          durationMs: duration_ms,
+          subagentType: subagent_type,
+          error: undefined
+        };
         if (subagent) {
           subagent.status = success ? 'completed' : 'error';
           // Use full_output for complete result, fallback to output_preview
           subagent.outputPreview = full_output || output_preview || '';
+          subagent.phase = phase || subagent.phase;
+          subagent.durationMs = duration_ms ?? subagent.durationMs;
+          subagent.isDynamic = subagent.isDynamic || Boolean(is_dynamic);
+          subagent.evalId = eval_id || subagent.evalId;
+          subagent.subagentType = subagent_type || subagent.subagentType;
+          subagentMap.set(subagent_run_id, subagent);
         }
+      } else if (event.type === 'subagent_error') {
+        const {
+          subagent_name,
+          subagent_run_id,
+          error,
+          duration_ms,
+          phase,
+          is_dynamic,
+          eval_id,
+          subagent_type
+        } = event.data as any;
+        const subagent = subagentMap.get(subagent_run_id) || {
+          id: subagent_run_id,
+          label: subagent_name || 'Subagent',
+          parentRunId: (event.data as any)?.parent_run_id || '',
+          events: [],
+          status: 'running' as const,
+          inputPreview: '',
+          outputPreview: '',
+          isDynamic: Boolean(is_dynamic),
+          evalId: eval_id,
+          phase,
+          durationMs: duration_ms,
+          subagentType: subagent_type,
+          error: undefined
+        };
+        subagent.status = 'error';
+        subagent.outputPreview = error || '';
+        subagent.error = error;
+        subagent.phase = phase || subagent.phase;
+        subagent.durationMs = duration_ms ?? subagent.durationMs;
+        subagent.isDynamic = subagent.isDynamic || Boolean(is_dynamic);
+        subagent.evalId = eval_id || subagent.evalId;
+        subagent.subagentType = subagent_type || subagent.subagentType;
+        subagentMap.set(subagent_run_id, subagent);
       }
       // SUBAGENT EVENT ROUTING: Route events using subagent_run_id or subgraph_run_id
       // Primary: subagent_run_id (from callback handler's task tool detection)
@@ -593,6 +680,13 @@ export default function RealtimeExecutionPanel({
             if (sub.parentRunId === parentId || subId === parentId) {
               sub.events.push(event);
               console.log('[SUBAGENT EVENT ROUTED via parent]', event.type, 'to', subId);
+            }
+          }
+        } else if (eventData?.eval_id) {
+          for (const [subId, sub] of subagentMap) {
+            if (sub.evalId === eventData.eval_id) {
+              sub.events.push(event);
+              console.log('[SUBAGENT EVENT ROUTED via eval]', event.type, 'to', subId);
             }
           }
         }

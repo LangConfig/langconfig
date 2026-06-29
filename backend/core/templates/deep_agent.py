@@ -13,6 +13,7 @@ of the DeepAgents framework including planning, subagents, and context managemen
 from typing import List
 from models.deep_agent import (
     DeepAgentConfig,
+    InterpreterConfig,
     SubAgentConfig,
     MiddlewareConfig,
     BackendConfig,
@@ -392,6 +393,105 @@ Use subagents for specialized testing:
     )
 
 
+def create_dynamic_workflow_agent() -> DeepAgentConfig:
+    """
+    DYNAMIC_WORKFLOW_AGENT: Eval-orchestrated DeepAgent for dynamic fan-out.
+
+    Use Case: Complex workflows where the agent benefits from writing a small
+    JavaScript orchestration program that dispatches typed subagent tasks.
+    """
+    return DeepAgentConfig(
+        model="claude-sonnet-4-6",
+        temperature=0.2,
+        system_prompt="""You are a dynamic workflow orchestrator.
+
+Use the eval tool for complex orchestration only when code-shaped control flow
+is clearer than serial tool calls. Inside eval, use task() to dispatch typed
+subagent work, batch parallel calls with Promise.all, compare results, and
+return a concise synthesis.
+
+Safety rules:
+- Keep eval programs small and auditable.
+- Prefer task() over direct host tool access.
+- Do not use PTC host tools unless explicitly allowlisted.
+- Ask for approval before eval when the runtime pauses for review.
+- Include verification passes for high-stakes or code-producing work.
+""",
+        native_tools=["ls", "read_file", "write_file", "edit_file", "glob", "grep", "web_search", "web_fetch"],
+        cli_tools=[],
+        use_deepagents=True,
+        middleware=create_default_middleware_config(),
+        interpreter=InterpreterConfig(
+            enabled=True,
+            mode="thread",
+            timeout_seconds=5.0,
+            memory_limit_bytes=64 * 1024 * 1024,
+            max_ptc_calls=256,
+            max_result_chars=4000,
+            capture_console=True,
+            dynamic_subagents=True,
+            ptc_tool_allowlist=[],
+            require_eval_approval=True
+        ),
+        interrupt_on={"eval": True},
+        subagents=[
+            SubAgentConfig(
+                name="analyzer",
+                description="Breaks a problem into findings with confidence.",
+                system_prompt="You are Analyzer. Return concrete findings, risks, and confidence. Avoid broad summaries.",
+                tools=["web_search", "web_fetch", "ls", "read_file", "glob", "grep"],
+                middleware=["filesystem"],
+                response_schema_name="DynamicAnalyzerResult",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "findings": {"type": "array", "items": {"type": "string"}},
+                        "confidence": {"type": "number"}
+                    },
+                    "required": ["summary", "findings"]
+                }
+            ),
+            SubAgentConfig(
+                name="verifier",
+                description="Checks another result for errors, missing evidence, and next tests.",
+                system_prompt="You are Verifier. Check claims against evidence, identify gaps, and return specific verification steps.",
+                tools=["web_search", "web_fetch", "ls", "read_file", "glob", "grep"],
+                middleware=["filesystem"],
+                response_schema_name="DynamicVerifierResult",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "passed": {"type": "boolean"},
+                        "issues": {"type": "array", "items": {"type": "string"}},
+                        "next_tests": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["passed", "issues"]
+                }
+            ),
+            SubAgentConfig(
+                name="synthesizer",
+                description="Combines parallel subagent outputs into a final recommendation.",
+                system_prompt="You are Synthesizer. Merge typed results, call out disagreements, and produce a final recommendation with trade-offs.",
+                tools=[],
+                middleware=[],
+                response_schema_name="DynamicSynthesisResult",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "recommendation": {"type": "string"},
+                        "tradeoffs": {"type": "array", "items": {"type": "string"}},
+                        "open_questions": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["recommendation"]
+                }
+            )
+        ],
+        backend=create_default_backend_config(),
+        guardrails=create_default_guardrails_config()
+    )
+
+
 # =============================================================================
 # Template Registry
 # =============================================================================
@@ -493,6 +593,26 @@ class DeepAgentTemplateRegistry:
                 "Coverage improvement",
                 "Legacy code testing",
                 "Regression test generation"
+            ]
+        },
+        "DYNAMIC_WORKFLOW_AGENT": {
+            "name": "Dynamic Workflow Agent",
+            "description": "QuickJS eval-orchestrated DeepAgent for typed dynamic subagent fan-out and verification",
+            "category": "automation",
+            "factory": create_dynamic_workflow_agent,
+            "capabilities": [
+                "Eval-gated JavaScript orchestration",
+                "Dynamic task() subagent fan-out",
+                "Typed subagent response schemas",
+                "Parallel analysis and verification passes",
+                "PTC disabled by default"
+            ],
+            "use_cases": [
+                "Parallel document or code review",
+                "Tournament-style answer comparison",
+                "Fan-out research and synthesis",
+                "Verifier loops for high-risk outputs",
+                "Dynamic LangGraph workflow prototyping"
             ]
         }
     }

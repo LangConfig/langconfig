@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Maximize2, Minimize2, Bot, Loader2, Wrench, CheckCircle, XCircle, X, PenLine } from 'lucide-react';
+import { Maximize2, Minimize2, Bot, Loader2, Wrench, CheckCircle, XCircle, X, PenLine, Code2 } from 'lucide-react';
 import { AgentOutputRenderer, sanitizeAgentOutput } from '@/components/ui/AgentOutputRenderer';
 import type { WorkflowEvent } from '@/types/events';
 
@@ -21,6 +21,10 @@ interface SubAgentPanelProps {
   status: 'running' | 'completed' | 'error';
   inputPreview?: string;  // Task description from subagent_start
   outputPreview?: string;  // Result from subagent_end
+  isDynamic?: boolean;
+  evalId?: string;
+  durationMs?: number;
+  subagentType?: string;
 }
 
 export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
@@ -32,7 +36,11 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
   onClose,
   status,
   inputPreview = '',
-  outputPreview = ''
+  outputPreview = '',
+  isDynamic = false,
+  evalId,
+  durationMs,
+  subagentType
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isAutoScroll, setIsAutoScroll] = useState(true);
@@ -130,7 +138,9 @@ export const SubAgentPanel: React.FC<SubAgentPanelProps> = ({
             {subagentLabel}
           </div>
           <div className="text-xs" style={{ color: 'color-mix(in srgb, var(--color-on-accent) 70%, transparent)' }}>
-            {status === 'running' ? 'Working...' : status === 'completed' ? 'Complete' : 'Error'}
+            {isDynamic ? 'Dynamic' : status === 'running' ? 'Working...' : status === 'completed' ? 'Complete' : 'Error'}
+            {subagentType && ` • ${subagentType}`}
+            {typeof durationMs === 'number' && ` • ${(durationMs / 1000).toFixed(1)}s`}
             {toolCalls.length > 0 && ` • ${toolCalls.length} tool calls`}
           </div>
         </div>
@@ -248,6 +258,12 @@ interface SubAgentInfo {
   status: 'running' | 'completed' | 'error';
   inputPreview?: string;
   outputPreview?: string;
+  isDynamic?: boolean;
+  evalId?: string;
+  phase?: string;
+  durationMs?: number;
+  subagentType?: string;
+  error?: string;
 }
 
 interface SubAgentPanelStackProps {
@@ -267,23 +283,51 @@ export const SubAgentPanelStack: React.FC<SubAgentPanelStackProps> = ({
   const visibleSubagents = subagents.filter(s => !dismissedIds.has(s.id));
   if (visibleSubagents.length === 0) return null;
 
+  const limitedSubagents = visibleSubagents.slice(0, 3);
+  const regularSubagents = limitedSubagents.filter(subagent => !subagent.isDynamic);
+  const dynamicGroups = new Map<string, SubAgentInfo[]>();
+  for (const subagent of limitedSubagents) {
+    if (!subagent.isDynamic) continue;
+    const evalId = subagent.evalId || 'dynamic';
+    const group = dynamicGroups.get(evalId) || [];
+    group.push(subagent);
+    dynamicGroups.set(evalId, group);
+  }
+
+  const renderSubagent = (subagent: SubAgentInfo) => (
+    <SubAgentPanel
+      key={subagent.id}
+      subagentId={subagent.id}
+      subagentLabel={subagent.label}
+      events={subagent.events}
+      isExpanded={expandedId === subagent.id}
+      onToggleExpand={() => setExpandedId(expandedId === subagent.id ? null : subagent.id)}
+      onClose={subagent.status !== 'running' ? () => setDismissedIds(new Set([...dismissedIds, subagent.id])) : undefined}
+      status={subagent.status}
+      inputPreview={subagent.inputPreview}
+      outputPreview={subagent.outputPreview}
+      isDynamic={subagent.isDynamic}
+      evalId={subagent.evalId}
+      durationMs={subagent.durationMs}
+      subagentType={subagent.subagentType}
+    />
+  );
+
   return (
     <div className="flex flex-col gap-3 p-4 h-full overflow-auto custom-scrollbar" style={{ backgroundColor: 'var(--surface-1)' }}>
 
+      {regularSubagents.map(renderSubagent)}
 
-      {visibleSubagents.slice(0, 3).map((subagent) => (
-        <SubAgentPanel
-          key={subagent.id}
-          subagentId={subagent.id}
-          subagentLabel={subagent.label}
-          events={subagent.events}
-          isExpanded={expandedId === subagent.id}
-          onToggleExpand={() => setExpandedId(expandedId === subagent.id ? null : subagent.id)}
-          onClose={subagent.status !== 'running' ? () => setDismissedIds(new Set([...dismissedIds, subagent.id])) : undefined}
-          status={subagent.status}
-          inputPreview={subagent.inputPreview}
-          outputPreview={subagent.outputPreview}
-        />
+      {Array.from(dynamicGroups.entries()).map(([evalId, group]) => (
+        <div key={evalId} className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+            <Code2 className="w-3.5 h-3.5" />
+            Eval phase
+            <span className="truncate normal-case tracking-normal">#{evalId.slice(0, 12)}</span>
+            <span className="ml-auto">{group.filter(s => s.status === 'running').length} running</span>
+          </div>
+          {group.map(renderSubagent)}
+        </div>
       ))}
 
       {visibleSubagents.length > 3 && (

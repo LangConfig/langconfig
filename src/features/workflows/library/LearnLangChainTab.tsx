@@ -761,6 +761,113 @@ export default function LearnLangChainTab() {
               </div>
             )}
           </div>
+
+          {/* Section 10: Dynamic Subagents */}
+          <div className="border border-gray-200 dark:border-border-dark rounded-lg overflow-hidden bg-white dark:bg-panel-dark">
+            <button
+              onClick={() => toggleSection('dynamic-subagents')}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary">account_tree</span>
+                <span className="font-semibold text-left" style={{ color: 'var(--color-text-primary)' }}>
+                  10. Dynamic Subagents
+                </span>
+              </div>
+              <span
+                className={`material-symbols-outlined transition-transform ${expandedSection === 'dynamic-subagents' ? 'rotate-180' : ''
+                  }`}
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                expand_more
+              </span>
+            </button>
+            {expandedSection === 'dynamic-subagents' && (
+              <div className="px-6 pb-6 space-y-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <div>
+                  <h4 className="font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Eval as an Orchestration Layer
+                  </h4>
+                  <p className="leading-relaxed mb-3">
+                    DeepAgents can expose a QuickJS eval tool. The agent writes a small JavaScript program, dispatches configured subagents with task(), and composes their typed results with normal control flow such as loops, branches, and Promise.all.
+                  </p>
+                  <div className="space-y-2">
+                    <a
+                      href="https://docs.langchain.com/oss/python/deepagents/dynamic-subagents"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline text-xs mr-4"
+                    >
+                      <span>Dynamic subagents docs</span>
+                      <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    </a>
+                    <a
+                      href="https://docs.langchain.com/oss/python/deepagents/interpreters"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
+                    >
+                      <span>Interpreter docs</span>
+                      <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Good Fit
+                  </h4>
+                  <ul className="space-y-2 ml-4 list-disc">
+                    <li><strong style={{ color: 'var(--color-text-primary)' }}>Fan-out research:</strong> run multiple analysts in parallel, then synthesize disagreements.</li>
+                    <li><strong style={{ color: 'var(--color-text-primary)' }}>Verification loops:</strong> generate an answer, send it to critics, and revise from structured issues.</li>
+                    <li><strong style={{ color: 'var(--color-text-primary)' }}>Tournament patterns:</strong> compare competing plans or implementations before selecting one.</li>
+                    <li><strong style={{ color: 'var(--color-text-primary)' }}>Typed reductions:</strong> ask subagents for JSON-shaped outputs, then aggregate them in eval.</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Safety Model
+                  </h4>
+                  <ul className="space-y-2 ml-4 list-disc">
+                    <li>Keep eval approval enabled unless the agent is fully sandboxed and low-risk.</li>
+                    <li>Use task() for dynamic subagents; keep direct host-tool PTC disabled unless a tool is explicitly safe.</li>
+                    <li>Subagent task calls from eval are not parent tool calls, so put approval rules inside subagents for sensitive work.</li>
+                    <li>Keep eval code short enough to review in the execution trace.</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    Pattern
+                  </h4>
+                  <pre className="text-xs p-4 rounded-lg bg-gray-50 dark:bg-black/20 overflow-x-auto border border-gray-200 dark:border-border-dark font-mono leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
+{`const docs = ["api.md", "workflows.md", "agents.md"];
+const reviews = await Promise.all(
+  docs.map((doc) =>
+    task({
+      subagentType: "analyzer",
+      label: "Review " + doc,
+      description: "Find risks and upgrade opportunities in " + doc,
+      responseSchema: {
+        summary: "string",
+        findings: "string[]",
+        confidence: "number"
+      }
+    })
+  )
+);
+
+return await task({
+  subagentType: "synthesizer",
+  label: "Synthesize reviews",
+  description: JSON.stringify(reviews)
+});`}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Additional Resources */}

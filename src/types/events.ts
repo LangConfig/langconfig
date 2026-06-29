@@ -159,6 +159,13 @@ export interface SubagentStartEvent extends BaseEvent {
     parent_agent_label?: string;
     parent_run_id?: string;
     input_preview?: string;
+    is_dynamic?: boolean;
+    eval_id?: string;
+    phase?: 'start' | 'complete' | 'error';
+    subagent_type?: string;
+    label?: string;
+    description?: string;
+    duration_ms?: number;
   };
 }
 
@@ -172,6 +179,11 @@ export interface SubagentEndEvent extends BaseEvent {
     parent_run_id?: string;
     output_preview?: string;
     success: boolean;
+    is_dynamic?: boolean;
+    eval_id?: string;
+    phase?: 'start' | 'complete' | 'error';
+    subagent_type?: string;
+    duration_ms?: number;
   };
 }
 
@@ -186,6 +198,11 @@ export interface SubagentErrorEvent extends BaseEvent {
     error_type: string;
     error: string;
     success: false;
+    is_dynamic?: boolean;
+    eval_id?: string;
+    phase?: 'start' | 'complete' | 'error';
+    subagent_type?: string;
+    duration_ms?: number;
   };
 }
 
