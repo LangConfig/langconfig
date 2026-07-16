@@ -410,7 +410,7 @@ await delete_thread_checkpoints(thread_id=session_id)
 Regularly check system health:
 
 ```bash
-curl http://localhost:8765/api/chat/health
+curl http://localhost:8780/api/chat/health
 ```
 
 Watch for:
@@ -474,14 +474,11 @@ SELECT * FROM checkpoints WHERE thread_id = 'session-uuid' ORDER BY created_at D
 ### Running Tests
 
 ```bash
-# Unit tests
-pytest backend/tests/test_chat_session_manager.py
-
-# Integration tests
-pytest backend/tests/integration/test_chat_api.py
+# From backend/: streaming contract tests
+python -m pytest tests/test_chat_stream_contract.py
 
 # Health check
-curl http://localhost:8765/api/chat/health
+curl http://localhost:8780/api/chat/health
 ```
 
 ### Monitoring Logs

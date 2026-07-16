@@ -12,9 +12,13 @@ Provides test database fixtures for isolated testing.
 import pytest
 import os
 import subprocess
+import sys
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from db.database import Base
+import models  # noqa: F401 - register all application models with Base
+from tests.database_safety import is_disposable_test_database
 
 # Test database URL - separate from production
 TEST_DATABASE_URL = os.getenv(
@@ -30,28 +34,39 @@ async def test_db_engine():
 
     This fixture:
     1. Creates a test database engine
-    2. Runs Alembic migrations to set up schema
+    2. Rebuilds current metadata and stamps the Alembic head
     3. Yields the engine for tests
     4. Cleans up on teardown
     """
+    if not is_disposable_test_database(TEST_DATABASE_URL):
+        raise RuntimeError("TEST_DATABASE_URL must name a disposable test database")
+
     # Create test engine
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
-    # Run migrations to set up test database schema
+    # Rebuild the disposable test schema from current metadata. The historical
+    # baseline migration upgrades legacy schemas and cannot bootstrap an empty DB.
     try:
-        # Use subprocess to run alembic upgrade
+        async with engine.begin() as connection:
+            await connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await connection.execute(text("CREATE SCHEMA public"))
+            await connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await connection.run_sync(Base.metadata.create_all)
+
+        sync_database_url = TEST_DATABASE_URL.replace(
+            "postgresql+asyncpg://", "postgresql://"
+        )
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
+            [sys.executable, "-m", "alembic", "stamp", "head"],
             cwd=os.path.dirname(__file__),
             capture_output=True,
             text=True,
-            env={**os.environ, "DATABASE_URL": TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")}
+            env={**os.environ, "DATABASE_URL": sync_database_url},
         )
 
         if result.returncode != 0:
-            print(f"Migration output: {result.stdout}")
-            print(f"Migration errors: {result.stderr}")
-            raise Exception(f"Failed to run migrations: {result.stderr}")
+            raise Exception(f"Failed to stamp test schema: {result.stderr}")
 
     except Exception as e:
         await engine.dispose()

@@ -14,7 +14,11 @@ import subprocess
 import os
 import sys
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+
+import models  # noqa: F401 - register all current models
+from db.database import Base
+from tests.database_safety import is_disposable_test_database
 
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -70,11 +74,47 @@ def run_alembic_command(command_args, env_vars=None):
     return result
 
 
+@pytest.fixture(scope="module", autouse=True)
+def prepare_disposable_migration_database():
+    """Bootstrap a blank test DB using the same supported path as setup.py."""
+    test_db_url = get_test_db_url()
+    if not is_disposable_test_database(test_db_url):
+        pytest.fail("TEST_DATABASE_URL must identify a disposable test database")
+
+    engine = None
+    try:
+        engine = create_engine(test_db_url)
+        with engine.connect():
+            pass
+    except Exception as exc:
+        if engine is not None:
+            engine.dispose()
+        pytest.skip(f"Test PostgreSQL database is not available at {test_db_url}: {exc}")
+
+    try:
+        with engine.begin() as connection:
+            # This module owns a disposable schema. Rebuild it unconditionally
+            # so earlier database-backed tests cannot leave current tables
+            # without a matching Alembic revision marker.
+            connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+            connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            Base.metadata.create_all(bind=connection)
+
+        stamp_result = run_alembic_command(["stamp", "head"])
+        assert stamp_result.returncode == 0, stamp_result.stderr
+        yield
+    finally:
+        engine.dispose()
+
+
 def test_alembic_current():
     """Test that alembic current command works."""
     require_test_database()
     result = run_alembic_command(["current"])
     assert result.returncode == 0, f"Failed to run 'alembic current': {result.stderr}"
+    assert "head" in result.stdout or "head" in result.stderr
 
 
 def test_alembic_history():
@@ -88,11 +128,6 @@ def test_alembic_history():
 def test_migration_upgrade_head():
     """Test that migrations can be applied to head."""
     require_test_database()
-    # First downgrade to base
-    downgrade_result = run_alembic_command(["downgrade", "base"])
-    # It's okay if this fails (database might not be at a downgrade-able state)
-
-    # Upgrade to head
     upgrade_result = run_alembic_command(["upgrade", "head"])
     assert upgrade_result.returncode == 0, f"Failed to upgrade to head: {upgrade_result.stderr}"
 
@@ -140,15 +175,14 @@ def test_migration_check():
 @pytest.mark.slow
 def test_migration_full_cycle():
     """
-    Test complete migration cycle: downgrade to base and upgrade to head.
+    Test the supported migration cycle: downgrade one revision and upgrade to head.
 
     This is marked as 'slow' because it can take a while.
     Run with: pytest -m slow
     """
     require_test_database()
-    # Downgrade to base
-    downgrade_result = run_alembic_command(["downgrade", "base"])
-    # Note: May fail if baseline migration isn't reversible - that's okay
+    downgrade_result = run_alembic_command(["downgrade", "-1"])
+    assert downgrade_result.returncode == 0, f"Failed to downgrade one revision: {downgrade_result.stderr}"
 
     # Upgrade to head
     upgrade_result = run_alembic_command(["upgrade", "head"])
@@ -193,5 +227,14 @@ def test_database_url_configuration():
 
     # Ensure we're not accidentally using production database
     if test_db_url:
-        assert "test" in test_db_url.lower(), \
-            "TEST_DATABASE_URL should contain 'test' to avoid accidentally using production database"
+        assert is_disposable_test_database(test_db_url), \
+            "TEST_DATABASE_URL database name should contain 'test' to avoid accidentally using production data"
+
+
+def test_disposable_database_check_uses_database_name_not_credentials_or_host():
+    assert is_disposable_test_database(
+        "postgresql://test_user:test_password@test-host.example/langconfig"
+    ) is False
+    assert is_disposable_test_database(
+        "postgresql://langconfig:password@db.example/langconfig_test"
+    ) is True

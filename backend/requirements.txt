@@ -44,6 +44,7 @@ llama-index-vector-stores-postgres
 llama-index-embeddings-huggingface
 llama-index-embeddings-openai
 sentence-transformers>=3.2.0,<4  # stay on v3: embedding-vector compat with existing pgvector data
+huggingface-hub>=0.34.0,<1  # compatible with sentence-transformers 3.x and Transformers
 pgvector
 numpy
 

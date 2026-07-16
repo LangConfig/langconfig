@@ -19,6 +19,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 DEFAULT_INSECURE_KEY = "langconfig-default-insecure-key-change-me"
+SHIPPED_PLACEHOLDER_KEY = "replace-with-a-generated-fernet-key"
+INSECURE_KEY_VALUES = {"", DEFAULT_INSECURE_KEY, SHIPPED_PLACEHOLDER_KEY}
 
 class EncryptionService:
     _instance = None
@@ -38,7 +40,7 @@ class EncryptionService:
         environment = os.getenv("ENVIRONMENT", "development").strip().lower()
         key_str = os.getenv("APP_ENCRYPTION_KEY")
 
-        if not key_str or key_str == DEFAULT_INSECURE_KEY:
+        if (key_str or "").strip() in INSECURE_KEY_VALUES:
             if environment == "production":
                 raise RuntimeError(
                     "APP_ENCRYPTION_KEY must be set to a non-default value in production"
@@ -47,7 +49,7 @@ class EncryptionService:
                 "=" * 70 + "\n"
                 "SECURITY WARNING: APP_ENCRYPTION_KEY is not set (or is the default).\n"
                 "Sensitive data is being encrypted with an INSECURE DEFAULT key.\n"
-                "Set APP_ENCRYPTION_KEY in backend/.env before storing real secrets.\n"
+                "Set APP_ENCRYPTION_KEY in the root .env before storing real secrets.\n"
                 + "=" * 70
             )
             key_str = DEFAULT_INSECURE_KEY

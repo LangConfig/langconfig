@@ -41,11 +41,13 @@ There are many ways to contribute to LangConfig:
 
 ## Development Setup
 
+The complete, tested onboarding path is in [docs/SETUP.md](docs/SETUP.md).
+
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.11+
-- Docker Desktop
+- Node.js `^20.19.0` or `>=22.12.0` with npm 10+
+- Python 3.11-3.13 (Python 3.12 recommended)
+- Docker with Compose v2
 - Git
 
 ### Installation
@@ -55,25 +57,12 @@ There are many ways to contribute to LangConfig:
 git clone https://github.com/YOUR_USERNAME/langconfig.git
 cd langconfig
 
-# Install frontend dependencies
-npm install
-
-# Install backend dependencies
-cd backend
-pip install -r requirements.txt
-cd ..
-
-# Start PostgreSQL
-docker-compose up -d postgres
-
-# Configure environment
+# Create an isolated Python environment and configure the app
+python -m venv .venv
+# Activate .venv using the command for your shell; see docs/SETUP.md
+npm ci
 cp .env.example .env
-# Edit .env with your API keys
-
-# Initialize database
-cd backend
-alembic upgrade head
-cd ..
+python backend/scripts/setup.py
 ```
 
 ### Running in Development
@@ -100,9 +89,10 @@ npm run dev
    ```bash
    # Backend tests
    cd backend
-   pytest
+   python -m pytest
 
    # Frontend (ensure it builds)
+   cd ..
    npm run build
    ```
 
@@ -223,4 +213,3 @@ If you have questions, feel free to:
 - Review the documentation
 
 Thank you for contributing to LangConfig!
-
