@@ -1508,6 +1508,7 @@ AVAILABLE_MODELS = {
     "gpt-5.4": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.4"},
     "gpt-5.4-mini": {"provider": "openai", "api_key_env": "OPENAI_API_KEY", "display": "GPT-5.4 Mini"},
     "claude-fable-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Fable 5"},
+    "claude-sonnet-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Sonnet 5"},
     "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Opus 4.8"},
     "claude-sonnet-4-6": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Sonnet 4.6"},
     "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "display": "Claude Haiku 4.5"},

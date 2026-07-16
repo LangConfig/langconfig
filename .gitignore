@@ -58,6 +58,7 @@ update_*.py
 # Backend storage
 backend/backups/
 backend/storage/
+backend/data/codex_runs/
 
 # Personal AI assistant folders (not for public repo)
 .agent/

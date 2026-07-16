@@ -64,6 +64,7 @@ class ContextWindowManager:
         "gpt-4": 8192,
         "gpt-3.5-turbo": 16385,
         "claude-fable-5": 1000000,
+        "claude-sonnet-5": 1000000,
         "claude-opus-4-8": 1000000,
         "claude-sonnet-4-6": 1000000,
         "claude-3-5-sonnet": 200000,

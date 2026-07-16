@@ -161,8 +161,11 @@ class APIClient {
 
       case 403: {
         // Forbidden
-        const message = errorData?.message || 'Access denied';
-        this.showToast(message, 'error');
+        const detail = typeof errorData?.detail === 'string' ? errorData.detail : undefined;
+        const message = errorData?.message || detail || 'Access denied';
+        if (detail !== 'Experimental local APIs are disabled') {
+          this.showToast(message, 'error');
+        }
         throw error;
       }
 
@@ -1183,6 +1186,99 @@ class APIClient {
     return this.client.post('/api/triggers/validate-path', null, {
       params: { path }
     });
+  }
+
+  // Codex Harness
+  async getCodexStatus() {
+    return this.client.get('/api/codex/status');
+  }
+
+  async startCodexDeviceLogin() {
+    return this.client.post('/api/codex/login/device');
+  }
+
+  async startCodexRun(data: {
+    prompt: string;
+    mode?: 'exec';
+    sandbox_dir?: string;
+    model?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return this.client.post('/api/codex/runs', data);
+  }
+
+  async getCodexRunEvents(runId: string) {
+    return this.client.get(`/api/codex/runs/${runId}/events`, {
+      params: { stream: false }
+    });
+  }
+
+  async cancelCodexRun(runId: string) {
+    return this.client.post(`/api/codex/runs/${runId}/cancel`);
+  }
+
+  getCodexRunEventsUrl(runId: string, startIndex = 0) {
+    return `${this.baseURL}/api/codex/runs/${runId}/events?stream=true&start_index=${startIndex}`;
+  }
+
+  // Hermes Drafts
+  async listHermesDrafts(params?: {
+    project_id?: number;
+    status?: string;
+    artifact_type?: string;
+    limit?: number;
+  }) {
+    return this.client.get('/api/hermes/drafts', { params });
+  }
+
+  async createHermesDraft(data: {
+    artifact_type: string;
+    title: string;
+    payload_json: Record<string, unknown>;
+    project_id?: number | null;
+    source_session_id?: string | null;
+    codex_run_id?: string | null;
+    validate_on_create?: boolean;
+  }) {
+    return this.client.post('/api/hermes/drafts', data);
+  }
+
+  async validateHermesDraft(draftId: number) {
+    return this.client.post(`/api/hermes/drafts/${draftId}/validate`);
+  }
+
+  async applyHermesDraft(draftId: number, data?: {
+    target_id?: number | null;
+    lock_version?: number | null;
+    approval_note?: string | null;
+  }) {
+    return this.client.post(`/api/hermes/drafts/${draftId}/apply`, data || {});
+  }
+
+  async rejectHermesDraft(draftId: number, reason?: string) {
+    return this.client.post(`/api/hermes/drafts/${draftId}/reject`, { reason });
+  }
+
+  async validateHermesWorkflow(payload_json: Record<string, unknown>) {
+    return this.client.post('/api/hermes/validate/workflow', { payload_json });
+  }
+
+  // Platform Brain
+  async getPlatformBrainStatus() {
+    return this.client.get('/api/platform-brain/status');
+  }
+
+  async reindexPlatformBrain() {
+    return this.client.post('/api/platform-brain/reindex');
+  }
+
+  async queryPlatformBrain(data: {
+    query: string;
+    top_k?: number;
+    source_types?: string[];
+    project_id?: number | null;
+  }) {
+    return this.client.post('/api/platform-brain/query', data);
   }
 }
 

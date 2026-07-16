@@ -577,6 +577,7 @@ class CostTracker:
     PRICING: Dict[str, Dict[str, float]] = {
         "gpt-5.4": {"input": 2.50, "output": 15.00},
         "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
+        "claude-sonnet-5": {"input": 2.00, "output": 10.00},
         "claude-sonnet-4-6": {"input": 3.00, "output": 15.00}
     }
 
@@ -650,7 +651,7 @@ client = Anthropic()
 
 # Mark blocks for caching with cache_control
 response = client.messages.create(
-    model="claude-sonnet-4-6",
+    model="claude-sonnet-5",
     max_tokens=1024,
     system=[
         {

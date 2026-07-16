@@ -393,6 +393,103 @@ Use subagents for specialized testing:
     )
 
 
+def create_hermes_platform_builder() -> DeepAgentConfig:
+    """
+    HERMES_PLATFORM_BUILDER: LangConfig-native automation architect.
+
+    Use Case: Build and validate LangConfig workflows, DeepAgents, tools,
+    schedules, and triggers while delegating bounded code tasks to Codex.
+    """
+    hermes_tools = [
+        "langconfig_search",
+        "langconfig_validate_workflow",
+        "langconfig_create_draft",
+        "langconfig_apply_draft",
+        "langconfig_export_workflow",
+        "codex_run_task",
+        "codex_get_status",
+        "web_search",
+        "web_fetch",
+        "get_current_time",
+    ]
+
+    return DeepAgentConfig(
+        model="claude-sonnet-4-6",
+        temperature=0.25,
+        system_prompt="""You are Hermes, LangConfig's platform-native automation architect.
+
+You understand LangConfig as an operating model: projects, visual workflow profiles,
+LangGraph execution, DeepAgent templates, native and custom tools, schedules,
+triggers, RAG context, execution traces, and approval-gated publishing.
+
+Your job is to turn user intent into safe LangConfig artifacts:
+- Search Platform Brain before drafting so your plans match the real platform.
+- Prefer no-code workflow/agent/tool drafts when they satisfy the request.
+- Use Codex only for bounded code-heavy work in isolated local workspaces.
+- Create Hermes drafts instead of publishing directly.
+- Validate every workflow draft before suggesting apply.
+- Require explicit approval for publishing, scheduling, destructive edits, or external side effects.
+- Explain trade-offs in terms of reliability, maintainability, and operational safety.
+
+When drafting workflows, use existing LangConfig payload shapes:
+WorkflowProfileCreate.configuration, optional blueprint, DeepAgentConfig,
+CustomTool configuration, schedule payloads, and trigger payloads.
+""",
+        native_tools=hermes_tools,
+        cli_tools=[],
+        use_deepagents=True,
+        interrupt_on={
+            "langconfig_apply_draft": True,
+            "codex_run_task": True,
+        },
+        middleware=[
+            MiddlewareConfig(
+                type=MiddlewareType.TODO_LIST,
+                enabled=True,
+                config={"auto_track": True}
+            ),
+            MiddlewareConfig(
+                type=MiddlewareType.SUBAGENT,
+                enabled=True,
+                config={"max_depth": 2, "max_concurrent": 4}
+            )
+        ],
+        subagents=[
+            SubAgentConfig(
+                name="platform_cartographer",
+                description="Maps LangConfig platform sources, routes, schemas, recipes, and prior runs before drafting.",
+                system_prompt="You are Platform Cartographer. Search Platform Brain and summarize the exact LangConfig sources, API contracts, recipes, and constraints relevant to the user's automation request.",
+                tools=["langconfig_search", "web_search", "web_fetch"],
+                middleware=[]
+            ),
+            SubAgentConfig(
+                name="automation_architect",
+                description="Designs LangConfig workflows, DeepAgents, tools, schedules, and triggers from user intent.",
+                system_prompt="You are Automation Architect. Convert intent into LangConfig-native workflow, DeepAgent, tool, schedule, and trigger drafts. Use existing shapes and keep apply actions approval-gated.",
+                tools=["langconfig_search", "langconfig_validate_workflow", "langconfig_create_draft"],
+                middleware=[]
+            ),
+            SubAgentConfig(
+                name="codex_engineer",
+                description="Delegates bounded code-heavy tasks to local Codex and summarizes run events/results.",
+                system_prompt="You are Codex Engineer. Check Codex status first, then use Codex only for bounded code-heavy work in isolated workspaces. Return run IDs and summarize outputs without claiming unpublished changes were applied.",
+                tools=["codex_get_status", "codex_run_task", "langconfig_create_draft"],
+                interrupt_on={"codex_run_task": True},
+                middleware=[]
+            ),
+            SubAgentConfig(
+                name="verification_agent",
+                description="Validates drafted artifacts and identifies missing approval, execution, export, or test steps.",
+                system_prompt="You are Verification Agent. Validate workflow drafts, check that artifacts are approval-gated, and produce concrete verification steps before apply or export.",
+                tools=["langconfig_search", "langconfig_validate_workflow", "langconfig_export_workflow"],
+                middleware=[]
+            )
+        ],
+        backend=create_default_backend_config(),
+        guardrails=create_default_guardrails_config()
+    )
+
+
 def create_dynamic_workflow_agent() -> DeepAgentConfig:
     """
     DYNAMIC_WORKFLOW_AGENT: Eval-orchestrated DeepAgent for dynamic fan-out.
@@ -593,6 +690,26 @@ class DeepAgentTemplateRegistry:
                 "Coverage improvement",
                 "Legacy code testing",
                 "Regression test generation"
+            ]
+        },
+        "HERMES_PLATFORM_BUILDER": {
+            "name": "Hermes Platform Builder",
+            "description": "LangConfig-native automation architect with approval-gated drafts and local Codex delegation",
+            "category": "automation",
+            "factory": create_hermes_platform_builder,
+            "capabilities": [
+                "Platform Brain search",
+                "Workflow and DeepAgent draft generation",
+                "Custom tool, schedule, and trigger drafting",
+                "Local Codex CLI delegation",
+                "Draft validation and approval-gated apply"
+            ],
+            "use_cases": [
+                "No-code workflow automation",
+                "DeepAgent design",
+                "LangChain/LangGraph workflow assembly",
+                "Codex-assisted implementation tasks",
+                "Safe automation publishing"
             ]
         },
         "DYNAMIC_WORKFLOW_AGENT": {

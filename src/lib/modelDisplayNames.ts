@@ -6,7 +6,7 @@
  */
 
 // Maps internal model IDs to user-friendly display names.
-// Single source of truth for the frontend - updated June 10, 2026.
+// Single source of truth for the frontend - updated June 30, 2026.
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // OpenAI - selectable current models
   'gpt-5.5': 'GPT-5.5',
@@ -16,6 +16,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
 
   // Anthropic - selectable current models
   'claude-fable-5': 'Claude Fable 5',
+  'claude-sonnet-5': 'Claude Sonnet 5',
   'claude-opus-4-8': 'Claude Opus 4.8',
   'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
