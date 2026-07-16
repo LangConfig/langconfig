@@ -5,7 +5,7 @@
   "identifier": "com.langconfig.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1425",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -23,7 +23,7 @@
         "script-src": "'self' 'wasm-unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'",
         "img-src": "'self' data: blob: https:",
-        "connect-src": "'self' http://127.0.0.1:8765 http://localhost:8765",
+        "connect-src": "'self' http://127.0.0.1:8780 http://localhost:8780",
         "font-src": "'self' data:",
         "object-src": "'none'",
         "base-uri": "'self'",
