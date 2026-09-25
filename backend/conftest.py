@@ -10,6 +10,7 @@ Provides test database fixtures for isolated testing.
 """
 
 import pytest
+import pytest_asyncio
 import os
 import subprocess
 import sys
@@ -27,7 +28,7 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def test_db_engine():
     """
     Create test database engine.
@@ -78,7 +79,7 @@ async def test_db_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_db_session(test_db_engine):
     """
     Create test database session for each test.
@@ -107,7 +108,7 @@ async def test_db_session(test_db_engine):
             await session.rollback()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_db_session_commit(test_db_engine):
     """
     Create test database session that commits changes.

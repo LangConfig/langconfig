@@ -15,6 +15,8 @@ import os
 import sys
 from pathlib import Path
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 import models  # noqa: F401 - register all current models
 from db.database import Base
@@ -25,10 +27,14 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 def get_test_db_url():
-    return os.getenv(
+    url = make_url(os.getenv(
         "TEST_DATABASE_URL",
         "postgresql://langconfig:langconfig_dev@localhost:5433/langconfig_test"
-    )
+    ))
+    # The shared async fixtures use asyncpg; Alembic and this module are sync.
+    if url.drivername == "postgresql+asyncpg":
+        url = url.set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
 
 
 def require_test_database():
@@ -38,8 +44,8 @@ def require_test_database():
         with engine.connect():
             pass
         engine.dispose()
-    except Exception as e:
-        pytest.skip(f"Test PostgreSQL database is not available at {test_db_url}: {e}")
+    except OperationalError:
+        pytest.skip("Disposable test PostgreSQL is unavailable")
 
 
 def run_alembic_command(command_args, env_vars=None):
@@ -86,10 +92,10 @@ def prepare_disposable_migration_database():
         engine = create_engine(test_db_url)
         with engine.connect():
             pass
-    except Exception as exc:
+    except OperationalError:
         if engine is not None:
             engine.dispose()
-        pytest.skip(f"Test PostgreSQL database is not available at {test_db_url}: {exc}")
+        pytest.skip("Disposable test PostgreSQL is unavailable")
 
     try:
         with engine.begin() as connection:
@@ -229,6 +235,27 @@ def test_database_url_configuration():
     if test_db_url:
         assert is_disposable_test_database(test_db_url), \
             "TEST_DATABASE_URL database name should contain 'test' to avoid accidentally using production data"
+
+
+@pytest.mark.parametrize("driver", ["postgresql", "postgresql+asyncpg"])
+def test_migration_connection_accepts_shared_async_database_url(driver, monkeypatch):
+    monkeypatch.setenv("TEST_DATABASE_URL", f"{driver}://test_user:p%40ss@localhost:55439/langconfig_test")
+    url = make_url(get_test_db_url())
+    assert url.drivername == "postgresql"
+    assert (url.username, url.password, url.port, url.database) == (
+        "test_user", "p@ss", 55439, "langconfig_test"
+    )
+
+
+def test_migration_connection_programming_error_is_not_skipped(monkeypatch):
+    from sqlalchemy.exc import MissingGreenlet
+
+    def wrong_driver(*args, **kwargs):
+        raise MissingGreenlet("wrong synchronous driver")
+
+    monkeypatch.setattr(sys.modules[__name__], "create_engine", wrong_driver)
+    with pytest.raises(MissingGreenlet, match="wrong synchronous driver"):
+        require_test_database()
 
 
 def test_disposable_database_check_uses_database_name_not_credentials_or_host():

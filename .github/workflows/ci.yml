@@ -2,10 +2,30 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  python-lint:
+    name: Focused Python lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install development checks
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Check existing runtime and database safety interfaces
+        run: python -m ruff check .
+
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
@@ -25,7 +45,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://langconfig:langconfig_dev@localhost:5433/langconfig
+      DATABASE_URL: postgresql://langconfig:langconfig_dev@localhost:5433/langconfig_test
       TEST_DATABASE_URL: postgresql+asyncpg://langconfig:langconfig_dev@localhost:5433/langconfig_test
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +57,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+        run: python -m pip install -r backend/requirements.txt
 
       - name: Create test database
         # backend/conftest.py runs Alembic against langconfig_test; the service
@@ -93,7 +113,7 @@ jobs:
             --ignore-vuln CVE-2025-3000
 
   frontend-build:
-    name: Frontend build
+    name: Frontend lint, types, and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,6 +126,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Tauri app, but `npm run build` is only `tsc && vite build` — no Rust toolchain needed.
+      - name: Lint scoped JavaScript and check formatting
+        run: |
+          npm run lint
+          npm run format:check
+
+      # Includes application types and static-import contracts; no Rust toolchain needed.
       - name: Build frontend
         run: npm run build

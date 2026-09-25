@@ -60,6 +60,7 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
+    manifest: true,
     chunkSizeWarningLimit: 2500,
     rollupOptions: {
       output: {
