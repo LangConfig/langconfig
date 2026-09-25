@@ -159,7 +159,7 @@ job integration/process tests exist.
 | --- | --- | --- |
 | `codex/langchain-middleware-compat` | `eab7d2e`; pushed; [draft PR #73](https://github.com/LangConfig/langconfig/pull/73) | 28 middleware/factory regressions passed |
 | `codex/quality-gates` | `45b7b63`; pushed; [draft PR #74](https://github.com/LangConfig/langconfig/pull/74) | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed |
-| `codex/runtime-schema-foundation` | Prepared in this branch, based on quality-gates; remote CI pending | 22 database-safety/migration/schema tests passed; all eight scoped Ruff files pass |
+| `codex/runtime-schema-foundation` | `a59beff`; pushed; [draft PR #75](https://github.com/LangConfig/langconfig/pull/75), based on #74 | 22 database-safety/migration/schema tests passed; all eight scoped Ruff files pass |
 | `codex/mcp-stdio-sessions` | Local extraction; not published | Awaiting dependency-refresh parent (ADK 1 / MCP 2 install conflict) |
 | Remaining queue | Not published | Requires extraction and branch-specific gates |
 
@@ -168,6 +168,12 @@ dependency set and exemptions predate this split. The staged dependency refresh
 has not been published, and none of these bootstrap branches claims a clean
 backend advisory scan. The original integration tree's zero-advisory npm result
 also must not be attributed to these branches, which retain the older npm pins.
+
+The first publication wave is complete: #73 → #74 → #75. None is merged.
+Remote frontend/lint jobs on #74 passed; backend jobs and the new schema runs
+were still in progress when this record was written. Check the PRs for current
+results. Next prepare the dependency refresh, then rebase the local MCP extraction
+onto that compatible parent and rerun its full install and runtime checks.
 
 For each completed slice, commit its implementation, regressions and guide;
 push with normal upstream tracking; open a draft PR against the stated parent;
