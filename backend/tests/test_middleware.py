@@ -29,6 +29,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def test_custom_middleware_runs_with_current_langchain():
+    """Exercise the upstream middleware contract, including trace configuration."""
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+    from core.middleware.core import TimestampMiddleware
+
+    agent = create_agent(
+        model=FakeListChatModel(responses=["middleware executed"]),
+        middleware=[TimestampMiddleware()],
+    )
+
+    result = agent.invoke({"messages": [{"role": "user", "content": "Hello"}]})
+
+    assert result["messages"][-1].content == "middleware executed"
+
+
 def test_middleware_imports():
     """Test that all middleware modules can be imported."""
     try:
