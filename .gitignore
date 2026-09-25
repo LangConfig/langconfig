@@ -122,3 +122,9 @@ langconfig/
 # Private/unreleased features (uncomment before pushing to public)
 # backend/core/codegen/generators/streamlit_configurable.py
 langconfig/
+
+# Public branch preparation and contributor guides
+!docs/QUALITY_GATES.md
+!docs/BRANCH_PLAN_2026-09.md
+!docs/BRANCH_INVENTORY_2026-09.json
+!docs/MIDDLEWARE_COMPATIBILITY.md

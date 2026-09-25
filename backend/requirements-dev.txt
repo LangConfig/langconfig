@@ -1,0 +1,2 @@
+# Development gates only; install alongside backend/requirements.txt.
+ruff==0.16.6
