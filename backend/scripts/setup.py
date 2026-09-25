@@ -101,7 +101,7 @@ def check_docker():
 
 
 def ensure_env_encryption_key(contents: str) -> tuple[str, bool]:
-    """Populate a blank or shipped-placeholder APP_ENCRYPTION_KEY."""
+    """Populate a blank or shipped-placeholder key in a new .env template."""
     insecure_values = {"", "replace-with-a-generated-fernet-key"}
     lines = contents.splitlines(keepends=True)
     for index, line in enumerate(lines):
@@ -122,20 +122,20 @@ def setup_env_file():
     root = get_project_root()
     env_file = root / ".env"
     env_example = root / ".env.example"
+
+    if env_file.exists():
+        # An existing database may already contain credentials encrypted with
+        # this key, including the development fallback used by a blank value.
+        print_success(".env already exists; preserved without changes")
+        print_warning(
+            "Before changing APP_ENCRYPTION_KEY, back up .env and the database, "
+            "then explicitly migrate encrypted secrets or plan to re-enter credentials."
+        )
+        return True
     
     if not env_example.exists():
         print_error(".env.example not found!")
         return False
-
-    if env_file.exists():
-        contents = env_file.read_text(encoding="utf-8")
-        rendered, generated = ensure_env_encryption_key(contents)
-        if generated:
-            env_file.write_text(rendered, encoding="utf-8")
-            print_success("Generated a unique APP_ENCRYPTION_KEY in existing .env")
-        else:
-            print_success(".env already exists")
-        return True
 
     contents = env_example.read_text(encoding="utf-8")
     rendered, generated = ensure_env_encryption_key(contents)

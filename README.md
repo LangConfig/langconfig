@@ -327,11 +327,9 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and configure:
-
-```bash
-cp .env.example .env
-```
+The setup script creates a new `.env` with a unique encryption key. Edit that
+file to configure the application. Existing `.env` files are preserved; see
+[setup and key preservation](docs/SETUP.md) before changing a key used by saved credentials.
 
 **Required:**
 | Variable | Description |
@@ -350,7 +348,7 @@ cp .env.example .env
 |----------|-------------|--------|
 | `GITHUB_TOKEN` | GitHub token for private repository access | - |
 | `GITLAB_TOKEN` | GitLab token for GitLab MCP tools | - |
-| `APP_ENCRYPTION_KEY` | Key used to encrypt credentials saved in Settings | Generated uniquely by the setup script; required in production |
+| `APP_ENCRYPTION_KEY` | Key used to encrypt credentials saved in Settings | Generated when setup creates a new `.env`; existing keys preserved; required in production |
 | `ENVIRONMENT` | `development` or `production` | `development` |
 | `DEBUG` | Enable verbose backend logging (`true` or `false`) | `true` in development |
 
