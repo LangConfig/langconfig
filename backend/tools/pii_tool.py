@@ -22,7 +22,7 @@ from typing import Optional, List, Tuple, Dict, Any, Callable
 
 from langchain_core.tools import tool
 from langchain.agents.middleware import PIIMiddleware
-from langchain.agents.middleware.pii import PIIMatch
+from langchain.agents.middleware.pii import PIIMatch, apply_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -633,7 +633,11 @@ def _run_detection(
             logger.warning(f"Unknown PII type: {pii_type}, skipping")
             continue
         mw = _get_middleware(pii_type, strategy)
-        processed, matches = mw._process_content(processed)
+        # _process_content is a private hook: newer LangChain releases return
+        # a changed flag, not the matches needed by our detection summary.
+        matches = mw.detector(processed)
+        if matches:
+            processed = apply_strategy(processed, matches, mw.strategy)
         all_matches.extend(matches)
 
     return processed, all_matches
@@ -773,23 +777,15 @@ def _run_detection_with_profile(
         if pii_type not in ALL_PII_TYPES:
             continue
         mw = _get_middleware(pii_type, strategy)
-        new_processed, matches = mw._process_content(processed)
+        matches = mw.detector(processed)
         # Filter out allowlisted matches. Match offsets refer to the current
         # `processed` text, so recompute allowlist spans against it first.
         allowed_spans = _allowed_spans_in(processed)
         if matches:
             # Keep matches that are NOT inside allowed spans
             safe_matches = [m for m in matches if not is_allowed(m["start"], m["end"])]
-            if len(safe_matches) == len(matches):
-                # No allowlist conflicts — use the redacted output
-                processed = new_processed
-                all_matches.extend(matches)
-            else:
-                # Some matches were in allowed spans — selectively re-redact
-                # just the safe ones on the original text
-                for m in sorted(safe_matches, key=lambda x: x["start"], reverse=True):
-                    label = f"[REDACTED_{m['type'].upper()}]"
-                    processed = processed[:m["start"]] + label + processed[m["end"]:]
+            if safe_matches:
+                processed = apply_strategy(processed, safe_matches, mw.strategy)
                 all_matches.extend(safe_matches)
 
     return processed, all_matches
@@ -870,7 +866,7 @@ async def pii_redact(
                 return f"{processed}\n\n{summary}"
         except Exception as e:
             logger.error(f"Failed to apply profile {profile_id}: {e}", exc_info=True)
-            return f"Error applying profile {profile_id}: {e}"
+            raise RuntimeError(f"PII profile {profile_id} redaction failed") from e
 
     # Standard path — built-in detectors only
     types_list = [t.strip() for t in pii_types.split(",")] if pii_types else None
