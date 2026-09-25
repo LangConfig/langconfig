@@ -104,6 +104,7 @@ documentation in the same branch as the code:
 
 | Feature | Captured documentation |
 | --- | --- |
+| Schema foundation | [Runtime schema and migration guide](RUNTIME_SCHEMA.md) |
 | Dependency/model upgrade | `docs/AUDIT_2026-09.md` (historical audit; retain its date) |
 | MCP | `docs/MCP_STDIO.md` |
 | Recovery/checkpoints and jobs | `docs/CHECKPOINTS.md`, `docs/BACKGROUND_JOBS.md` |
@@ -141,7 +142,8 @@ again after extraction.
 | Generated API/OpenAPI agreement | Passed |
 | Installed Python dependency consistency | Passed |
 | npm advisory check / dependency-policy regression tests | Zero npm advisories; 36 policy tests passed |
-| Full backend suite with coverage | In progress in the disposable database; no pass claim yet |
+| Full backend suite with coverage | 1,297 passed, 8 skipped (manual Playwright tools script excluded); 2,036 warnings retained |
+| Coverage / Python lock | 41.213% statements (13,539 / 32,851), above 22.4%; all five packages measured; universal hashed lock agrees with manifest |
 | Current external dependency advisories / OS matrix / packaged desktop | Not established by the checks above |
 
 Do not reuse September 9 test counts as fresh release evidence. Python and Rust
@@ -156,8 +158,8 @@ job integration/process tests exist.
 | Branch | Commit / remote state | Readiness |
 | --- | --- | --- |
 | `codex/langchain-middleware-compat` | `eab7d2e`; pushed; [draft PR #73](https://github.com/LangConfig/langconfig/pull/73) | 28 middleware/factory regressions passed |
-| `codex/quality-gates` | Prepared in this branch; remote CI pending | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed |
-| `codex/runtime-schema-foundation` | Prepared locally; publication follows tooling | 2 isolated schema tests passed, including populated upgrade/downgrade/reupgrade |
+| `codex/quality-gates` | `45b7b63`; pushed; [draft PR #74](https://github.com/LangConfig/langconfig/pull/74) | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed |
+| `codex/runtime-schema-foundation` | Prepared in this branch, based on quality-gates; remote CI pending | 22 database-safety/migration/schema tests passed; all eight scoped Ruff files pass |
 | `codex/mcp-stdio-sessions` | Local extraction; not published | Awaiting dependency-refresh parent (ADK 1 / MCP 2 install conflict) |
 | Remaining queue | Not published | Requires extraction and branch-specific gates |
 
