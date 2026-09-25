@@ -1,9 +1,12 @@
-from pathlib import Path
+import json
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
+import psutil
 import pytest
-
 import services.codex_harness as codex_harness_module
 from services.codex_harness import CodexHarness, CodexHarnessError, CodexRun
 
@@ -412,3 +415,210 @@ async def test_codex_missing_run_raises_for_cancel_list_and_stream(tmp_path):
         harness.list_events("missing")
     with pytest.raises(CodexHarnessError, match="not found"):
         await anext(harness.stream_events("missing"))
+
+
+def process_alive(process):
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+@pytest.fixture
+def owned_process_tree(tmp_path):
+    """Real Python descendants only; always reap fixture-owned processes."""
+    recorded = []
+    roots = []
+    helpers = []
+    pid_file = tmp_path / "descendants.json"
+    grandchild_code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
+    child_code = (
+        "import json,os,subprocess,sys,time; from pathlib import Path; "
+        f"child=subprocess.Popen([sys.executable, '-c', {grandchild_code!r}]); "
+        f"Path({str(pid_file)!r}).write_text(json.dumps([os.getppid(), os.getpid(), child.pid])); "
+        "time.sleep(30)"
+    )
+
+    def launch(harness, *, parent_exits=False, short=False):
+        parent_code = (
+            "import subprocess,sys,time; "
+            f"child=subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            + ("time.sleep(0.2)" if parent_exits else "time.sleep(30)")
+        )
+        command = [sys.executable, "-c", parent_code]
+        if short:
+            result = {}
+            helper = threading.Thread(target=lambda: result.update(harness._run_short(command, timeout=1)))
+            helpers.append(helper)
+            helper.start()
+        else:
+            run = CodexRun(id="real-tree", mode="test", command=command, sandbox_dir=tmp_path)
+            harness._register_and_start(run)
+            roots.append(run)
+        deadline = time.monotonic() + 5
+        pids = None
+        while time.monotonic() < deadline:
+            try:
+                pids = json.loads(pid_file.read_text())
+                break
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+            time.sleep(0.01)
+        assert pids, "Fixture failed to spawn descendants"
+        recorded.extend(psutil.Process(pid) for pid in pids)
+        if short:
+            return helper, recorded, result
+        if parent_exits:
+            run.process.wait(timeout=5)
+        return run, recorded
+
+    yield launch
+    # Use recorded Process identities, not a global process-name kill. This
+    # also removes descendants when the regression intentionally fails.
+    if not recorded and pid_file.exists():
+        for pid in json.loads(pid_file.read_text()):
+            try:
+                recorded.append(psutil.Process(pid))
+            except psutil.NoSuchProcess:
+                pass
+    cleanup = set(recorded)
+    for process in recorded:
+        try:
+            cleanup.update(process.children(recursive=True))
+        except psutil.NoSuchProcess:
+            pass
+    for process in reversed(list(cleanup)):
+        try:
+            process.kill()
+        except psutil.NoSuchProcess:
+            pass
+    psutil.wait_procs(cleanup, timeout=3)
+    for run in roots:
+        if run.process is not None:
+            if run.process.poll() is None:
+                run.process.kill()
+            run.process.wait(timeout=3)
+    for helper in helpers:
+        helper.join(timeout=3)
+        assert not helper.is_alive()
+
+
+@pytest.mark.parametrize("action", ["cancel", "shutdown"])
+@pytest.mark.parametrize("parent_exits", [False, True])
+def test_real_descendants_stop_with_run(tmp_path, owned_process_tree, action, parent_exits):
+    harness = CodexHarness(run_root=tmp_path)
+    # An unrelated process owned by this test must survive the harness cleanup.
+    unrelated = harness._spawn_process([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        run, descendants = owned_process_tree(harness, parent_exits=parent_exits)
+        started = time.monotonic()
+        if action == "cancel":
+            harness.cancel_run(run.id)
+        else:
+            harness.shutdown(timeout=3)
+        deadline = time.monotonic() + 2
+        while any(process_alive(process) for process in descendants) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not any(process_alive(process) for process in descendants)
+        assert time.monotonic() - started < 5
+        assert run.status == "cancelled"
+        assert unrelated.poll() is None
+    finally:
+        harness._terminate_process(unrelated, timeout=3)
+        harness.shutdown(timeout=1)
+
+
+def test_short_helper_timeout_stops_descendants(tmp_path, owned_process_tree):
+    harness = CodexHarness(run_root=tmp_path)
+    started = time.monotonic()
+    helper, descendants, result = owned_process_tree(harness, short=True)
+    helper.join(timeout=4)
+    assert not helper.is_alive()
+    deadline = time.monotonic() + 2
+    while any(process_alive(process) for process in descendants) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert time.monotonic() - started < 5
+    assert result["returncode"] == 1
+    assert "timed out" in result["stderr"]
+    assert not any(process_alive(process) for process in descendants)
+
+
+def test_shutdown_does_not_signal_retained_completed_process(tmp_path):
+    harness = CodexHarness(run_root=tmp_path)
+    process = FakeProcess()
+    run = CodexRun(id="retained", mode="test", command=[], sandbox_dir=tmp_path,
+                   status="completed", process=process)
+    harness._runs[run.id] = run
+    harness.shutdown(timeout=0.1)
+    assert not process.terminated and not process.killed
+
+
+def test_cleanup_failure_is_reported(tmp_path, monkeypatch, caplog):
+    harness = CodexHarness(run_root=tmp_path)
+    run = CodexRun(id="cannot-stop", mode="test", command=[], sandbox_dir=tmp_path,
+                   status="running", process=FakeProcess())
+    harness._runs[run.id] = run
+
+    def fail_cleanup(*args, **kwargs):
+        raise OSError("access denied")
+
+    monkeypatch.setattr(harness, "_terminate_process", fail_cleanup)
+    with pytest.raises(CodexHarnessError, match="cleanup failed"):
+        harness.cancel_run(run.id)
+    assert "access denied" in run.error
+    assert run.events[-1]["type"] == "run.cleanup_failed"
+    assert "access denied" in caplog.text
+
+
+@pytest.mark.skipif(codex_harness_module.os.name != "nt", reason="Windows suspended-process failure path")
+@pytest.mark.parametrize("failure_stage", ["assignment", "resume"])
+def test_windows_containment_failure_reaps_suspended_child(tmp_path, monkeypatch, failure_stage):
+    harness = CodexHarness(run_root=tmp_path)
+    created = []
+    real_popen = subprocess.Popen
+
+    def record_popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        created.append(process)
+        return process
+
+    def fail_job(process):
+        raise OSError("containment failed")
+
+    monkeypatch.setattr(codex_harness_module.subprocess, "Popen", record_popen)
+    if failure_stage == "assignment":
+        monkeypatch.setattr(codex_harness_module, "_WindowsJob", fail_job)
+    else:
+        monkeypatch.setattr(psutil.Process, "resume", fail_job)
+    marker = tmp_path / "must-not-run"
+    try:
+        with pytest.raises(OSError, match="containment failed"):
+            harness._spawn_process([sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"])
+        assert len(created) == 1
+        assert created[0].poll() is not None
+        assert not marker.exists()
+        if failure_stage == "resume":
+            assert created[0]._codex_job._handle is None
+    finally:
+        for process in created:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+
+
+def test_termination_uses_one_deadline(tmp_path, monkeypatch):
+    clock = [0.0]
+    waits = []
+
+    class StubbornProcess(FakeProcess):
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            clock[0] += timeout
+            raise subprocess.TimeoutExpired("fixture", timeout)
+
+    monkeypatch.setattr(codex_harness_module.time, "monotonic", lambda: clock[0])
+    process = StubbornProcess()
+    with pytest.raises(CodexHarnessError, match="cleanup deadline"):
+        CodexHarness._terminate_process(process, timeout=0.5)
+    assert process.terminated and process.killed
+    assert sum(waits) <= 0.5

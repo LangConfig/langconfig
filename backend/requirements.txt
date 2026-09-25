@@ -81,6 +81,7 @@ faster-whisper>=1.0.0
 
 # Security & Utilities
 cryptography==50.0.1  # Includes fixes requiring cryptography 49 and 50
+psutil==7.2.2  # Owned local CLI process lifecycle on Windows
 python-dotenv>=1.2.2,<2  # GHSA-mf9w-mj56-hr94: symlink-following file overwrite in set_key (<1.2.2)
 httpx>=0.28.1
 aiofiles==24.1.0
