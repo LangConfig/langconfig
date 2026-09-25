@@ -36,6 +36,16 @@ def alembic(database_url, *arguments, check=True):
     return result
 
 
+def rebuild_current_schema(engine, database_url):
+    with engine.begin() as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        connection.execute(text("CREATE SCHEMA public"))
+        connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        Base.metadata.create_all(connection)
+    alembic(database_url, "stamp", HEAD)
+
+
 @pytest.fixture
 def schema_database():
     raw_url = os.getenv("TEST_DATABASE_URL")
@@ -52,17 +62,17 @@ def schema_database():
         # Historical revision 001 upgrades an existing schema. Bootstrap using
         # the supported fresh-install metadata path, then use real migrations
         # to reach revision 022 before inserting any regression data.
-        with engine.begin() as connection:
-            connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-            connection.execute(text("CREATE SCHEMA public"))
-            connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            Base.metadata.create_all(connection)
-        alembic(database_url, "stamp", HEAD)
+        rebuild_current_schema(engine, database_url)
         alembic(database_url, "downgrade", BASELINE)
         yield engine, database_url
     finally:
-        engine.dispose()
+        try:
+            # Explicit legacy IDs do not advance PostgreSQL sequences. Leave
+            # a clean current schema so later tests and repeated runs cannot
+            # collide with seeded rows or inherit a partially downgraded DB.
+            rebuild_current_schema(engine, database_url)
+        finally:
+            engine.dispose()
 
 
 def reflect(engine, name):

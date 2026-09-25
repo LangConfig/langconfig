@@ -197,7 +197,8 @@ the preserved snapshot. Every difference must be an intentional, documented
 cleanup. Keep the backup until all original changes are accounted for.
 
 Additional cleanup beyond the captured source currently consists of the schema
-constraint-name alignment, model export registration, new migration regressions,
+constraint-name alignment, model export registration, new migration regressions
+with clean schema teardown for repeatable database sequences,
 the PII profile-failure regression, the enforcing security assessment gate and
 its tests, preservation of existing setup encryption keys, and owned CLI
 process-tree containment with real subprocess regressions. Preserve those

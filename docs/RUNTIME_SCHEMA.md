@@ -64,7 +64,10 @@ whose database name contains an underscore- or hyphen-delimited `test` segment.
 Use a database reserved exclusively for this test: it rebuilds its `public` schema.
 It bootstraps current metadata and downgrades to revision 022 before inserting
 legacy rows because the historical initial migration cannot bootstrap an empty
-database. No application or provider runtime is invoked.
+database. Teardown rebuilds a clean current schema, including fresh sequences,
+even if the migration assertion fails. This prevents explicitly seeded legacy
+IDs from colliding with inserts in later tests or a repeated suite. No application
+or provider runtime is invoked by the migration test.
 
 ```console
 python -m pytest tests/test_runtime_schema_migrations.py -q
