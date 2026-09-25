@@ -27,6 +27,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://langconfig:langconfig_dev@localhost:5433/langconfig
       TEST_DATABASE_URL: postgresql+asyncpg://langconfig:langconfig_dev@localhost:5433/langconfig_test
+      LANGCONFIG_TEST_EMBEDDINGS: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +39,9 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip check
 
       - name: Create test database
         # backend/conftest.py runs Alembic against langconfig_test; the service
@@ -55,9 +59,8 @@ jobs:
             --ignore=tests/test_playwright_tools.py
 
   dependency-audit:
-    name: Dependency audit (informational)
+    name: Python dependency security
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -66,31 +69,22 @@ jobs:
           python-version: '3.12'
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: python -m pip install pip-audit==2.10.1 pytest==9.1.1
 
-      - name: Audit backend dependencies
-        # Ignored advisories (no installable fix exists for our dependency tree):
-        #   PYSEC-2026-161                  starlette (fix is 1.x, but fastapi
-        #   PYSEC-2026-249 / PYSEC-2026-248 starlette (fixes are 1.x; the
-        #   CVE-2026-48818 / CVE-2026-48817 current google-adk 1.x line pins
-        #                                   starlette<1.0. Move this to a real
-        #                                   dependency bump when we migrate ADK
-        #                                   2.x + FastAPI/Starlette 1.x.)
-        #   PYSEC-2025-217 / CVE-2026-1839  transformers (fix is 5.0.0rc3, RC
-        #                                   only; transitive via
-        #                                   sentence-transformers v3, held back
-        #                                   for pgvector embedding compat)
-        #   CVE-2025-3000                   torch (no fixed release published)
+      - name: Test advisory policy
+        run: python -m pytest --noconftest backend/tests/test_python_advisory_policy.py -q
+
+      - name: Audit fully resolved backend dependencies
         run: |
-          pip-audit -r backend/requirements.txt --strict \
-            --ignore-vuln PYSEC-2026-161 \
-            --ignore-vuln PYSEC-2026-249 \
-            --ignore-vuln PYSEC-2026-248 \
-            --ignore-vuln CVE-2026-48818 \
-            --ignore-vuln CVE-2026-48817 \
-            --ignore-vuln PYSEC-2025-217 \
-            --ignore-vuln CVE-2026-1839 \
-            --ignore-vuln CVE-2025-3000
+          python scripts/check-python-advisories.py --report python-advisories.json
+
+      - name: Retain complete advisory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-advisories
+          path: python-advisories.json
+          if-no-files-found: error
 
   frontend-build:
     name: Frontend build

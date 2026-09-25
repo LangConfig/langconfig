@@ -31,11 +31,13 @@ python -m pytest tests/test_pii_tool.py tests/test_pii_edge_cases.py tests/test_
 ```
 
 September 25 verification: **111 passed**, with Python 3.12.10 and the local
-LangChain 1.4.0 environment. This is a small compatibility prerequisite for
-the branch split; it does not upgrade dependency ranges or introduce the
-later execution-policy/retry changes. The complete dependency refresh and
-its reproducible lock still need their own validation.
+LangChain 1.4.0 environment. This is a compatibility prerequisite for
+the branch split; later execution-policy/retry changes remain separate.
+The follow-up [dependency security repair](DEPENDENCY_SECURITY.md) upgrades the
+four packages needed to resolve fixable advisory findings and enforces explicit
+assessment of remaining findings. The complete dependency refresh and its
+reproducible lock still need their own validation.
 
 This extraction resolves the 74 PII failures seen in the initial remote CI run.
-The complete remote suite must run again on the updated branch. Its inherited
-dependency-advisory findings remain outside this compatibility slice.
+The complete remote suite runs again for the dependency security repair,
+including an active embedding compatibility regression.
