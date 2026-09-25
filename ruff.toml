@@ -3,6 +3,12 @@ line-length = 120
 include = [
     "backend/core/runtimes/base.py",
     "backend/tests/database_safety.py",
+    "backend/alembic/versions/023_durable_workflow_dispatch.py",
+    "backend/alembic/versions/024_scope_skills.py",
+    "backend/alembic/versions/025_workflow_evaluations.py",
+    "backend/alembic/versions/026_subagent_jobs.py",
+    "backend/models/subagent_job.py",
+    "backend/tests/test_runtime_schema_migrations.py",
     "scripts/check-python-advisories.py",
     "backend/tests/test_python_advisory_policy.py",
     "backend/tests/test_embedding_compatibility.py",

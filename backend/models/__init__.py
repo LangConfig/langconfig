@@ -45,11 +45,16 @@ from .workflow_trigger import WorkflowTrigger, TriggerLog, TriggerType, TriggerS
 from .pii_profile import PIIProfile
 from .git_repository import GitRepository, RepoSyncStatus
 from .hermes import HermesDraft
+from .subagent_job import SubagentJob
+from .skill import Skill, SkillExecution
 
 __all__ = [
     "Project",
     "Task",
     "ContextDocument",
+    "Skill",
+    "SkillExecution",
+    "SubagentJob",
     "WorkflowProfile",
     "WorkflowStrategy",
     "WorkflowVersion",

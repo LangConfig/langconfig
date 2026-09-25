@@ -37,7 +37,7 @@ into earlier branches.
 
 | Branch (`codex/` prefix) | Changes and review boundary | Required verification |
 | --- | --- | --- |
-| `langchain-middleware-compat` | Inherit the public LangChain middleware contract, repair PII tools, and resolve inherited audit failures with four compatible package pins plus an enforcing assessment gate. Preserve allowlist strategies and propagate profile failures. | Middleware/PII/factory regressions, complete intermediate backend suite, real pinned embedding comparison, full resolved advisory scan and fail-closed policy tests. |
+| `langchain-middleware-compat` | Inherit the public LangChain middleware contract, repair PII tools, resolve inherited audit failures, preserve existing encryption keys during setup, and contain local CLI process trees. | Middleware/PII/factory regressions, complete intermediate backend suite, real pinned embedding comparison, full resolved advisory scan, fail-closed policy tests, ciphertext preservation, and real Windows/Linux descendant cleanup. |
 | `quality-gates` | Conventional lint/type/format commands, exact initial scopes, build import-graph guard, feature-push CI, contributor instructions and this inventory. Preserve existing runtime dependency versions. | Clean npm install, declared lint/format/type checks, build including lazy-import guard, disposable-DB safety tests, CI configuration review. |
 | `runtime-schema-foundation` | Add migrations 023–026 and matching ORM fields/tables. No worker or API activation. Preserve populated revision-022 records. | Upgrade, downgrade and reupgrade on a disposable database; compare legacy rows; validate global/project skill uniqueness and ORM registration. |
 | `dependency-refresh` | Universal hashed Python lock, compatible LangChain/Deep Agents packages, Vite 8/Rolldown/TypeScript 7, Tauri dependencies, fail-closed advisory assessment. Preserve `reactflow` until canvas migration. | Hashed install, pip consistency, universal lock comparison, Python OS/version resolution matrix, compatibility tests, npm audit, Rust audit/locked check, frontend build. |
@@ -104,6 +104,7 @@ documentation in the same branch as the code:
 
 | Feature | Captured documentation |
 | --- | --- |
+| Schema foundation | [Runtime schema and migration guide](RUNTIME_SCHEMA.md) |
 | Dependency/model upgrade | `docs/AUDIT_2026-09.md` (historical audit; retain its date) |
 | MCP | `docs/MCP_STDIO.md` |
 | Recovery/checkpoints and jobs | `docs/CHECKPOINTS.md`, `docs/BACKGROUND_JOBS.md` |
@@ -141,7 +142,8 @@ again after extraction.
 | Generated API/OpenAPI agreement | Passed |
 | Installed Python dependency consistency | Passed |
 | npm advisory check / dependency-policy regression tests | Zero npm advisories; 36 policy tests passed |
-| Full backend suite with coverage | In progress in the disposable database; no pass claim yet |
+| Full backend suite with coverage | 1,297 passed, 8 skipped (manual Playwright tools script excluded); 2,036 warnings retained |
+| Coverage / Python lock | 41.213% statements (13,539 / 32,851), above 22.4%; all five packages measured; universal hashed lock agrees with manifest |
 | Current external dependency advisories / OS matrix / packaged desktop | Not established by the checks above |
 
 Do not reuse September 9 test counts as fresh release evidence. Python and Rust
@@ -153,11 +155,11 @@ job integration/process tests exist.
 
 ## Publication record and continuation
 
-| Branch | Commit / remote state | Readiness |
+| Branch | Pull request / publication | Validation scope |
 | --- | --- | --- |
-| `codex/langchain-middleware-compat` | `eab7d2e`; pushed; [draft PR #73](https://github.com/LangConfig/langconfig/pull/73) | 28 middleware/factory regressions passed |
-| `codex/quality-gates` | Prepared in this branch; remote CI pending | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed |
-| `codex/runtime-schema-foundation` | Prepared locally; publication follows tooling | 2 isolated schema tests passed, including populated upgrade/downgrade/reupgrade |
+| `codex/langchain-middleware-compat` | [PR #73](https://github.com/LangConfig/langconfig/pull/73) | Complete backend suite, real pinned embeddings, dependency consistency/security, setup key preservation, and real subprocess cleanup on Windows and Linux |
+| `codex/quality-gates` | [PR #74](https://github.com/LangConfig/langconfig/pull/74), follows #73 | Complete backend suite, database safety, scoped lint/format/types/build; includes the enforcing dependency-security prerequisite |
+| `codex/runtime-schema-foundation` | [PR #75](https://github.com/LangConfig/langconfig/pull/75), follows #74 | Complete backend suite, populated migration downgrade/reupgrade, expanded Ruff, frontend lint/types/build and dependency security |
 | `codex/mcp-stdio-sessions` | Local extraction; not published | Awaiting dependency-refresh parent (ADK 1 / MCP 2 install conflict) |
 | Remaining queue | Not published | Requires extraction and branch-specific gates |
 
@@ -168,6 +170,18 @@ gate; see [DEPENDENCY_SECURITY.md](DEPENDENCY_SECURITY.md). Only the existing
 NLTK 3.10.3 assessment remains, with its October 8 expiry unchanged. A passing
 policy gate does not mean zero vulnerabilities. The complete SDK/lock refresh
 remains separate, and npm versions are still the earlier pins.
+
+The first publication wave is #73 → #74 → #75. These PRs land in dependency
+order on the existing `codex/onboarding-hermes-platform-tools` destination.
+Their linked PR descriptions and checks record the final commit-specific CI
+results and merge state. Every job must pass on the current PR head; the old
+workflow's successful overall conclusion hid a failing informational audit.
+Normal merges propagate fixes and establish each squash destination as an
+ancestor of the next child without rewriting published history.
+The branches have no configured required-check list; successful jobs should not
+be confused with enforced branch protection. Next prepare the dependency refresh,
+then rebase the local MCP extraction
+onto that compatible parent and rerun its full install and runtime checks.
 
 For each completed slice, commit its implementation, regressions and guide;
 push with normal upstream tracking; open a draft PR against the stated parent;
@@ -181,3 +195,14 @@ force-push published branches without coordinating a history change.
 Before declaring the complete split finished, compare the assembled tip with
 the preserved snapshot. Every difference must be an intentional, documented
 cleanup. Keep the backup until all original changes are accounted for.
+
+Additional cleanup beyond the captured source currently consists of the schema
+constraint-name alignment, model export registration, new migration regressions
+with clean schema teardown for repeatable database sequences,
+the PII profile-failure regression, the enforcing security assessment gate and
+its tests, preservation of existing setup encryption keys, and owned CLI
+process-tree containment with real subprocess regressions. Preserve those
+improvements when assembling the final tip. Do not restore obsolete Accelerate
+exceptions from the captured snapshot: current resolution selects a patched version.
+Bootstrap quality configurations intentionally remain narrower than the captured
+final configurations until their corresponding features land.
