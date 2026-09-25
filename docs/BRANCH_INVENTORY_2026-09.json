@@ -7,7 +7,9 @@
   "meaning": "Primary final-file ownership, not git add lists. Shared files require intermediate versions. Branches are planned unless the release plan records a pushed commit.",
   "groups": {
     "langchain-middleware-compat": [
-      "backend/tests/test_middleware.py"
+      "backend/tests/test_middleware.py",
+      "backend/tests/test_pii_tool.py",
+      "backend/tools/pii_tool.py"
     ],
     "quality-gates": [
       "backend/conftest.py",
@@ -24,8 +26,6 @@
       "backend/tests/fixtures/minilm_embedding_baseline.json",
       "backend/tests/test_dependency_policy.py",
       "backend/tests/test_dependency_upgrade_compatibility.py",
-      "backend/tests/test_pii_tool.py",
-      "backend/tools/pii_tool.py",
       "package-lock.json",
       "package.json",
       "scripts/check-python-advisories.py",
