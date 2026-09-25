@@ -112,12 +112,15 @@ The async database fixtures now use `pytest_asyncio.fixture`, matching strict
 asyncio mode. Migration tests normalize the asyncpg URL to a synchronous driver
 for Alembic and no longer skip programming errors as database outages. Their
 20 migration/database-safety regressions passed against a disposable database.
-The existing Python dependency audit remains informational with its current
-exceptions; replacing it belongs with the dependency refresh and its reviewed
-lockfile/advisory policy.
+The inherited Python dependency audit is now an enforcing security job. It
+resolves the full manifest, rejects unassessed findings and scanner errors, and
+retains the complete report. The four security dependency upgrades and the sole
+existing NLTK assessment (expires October 8) are documented in
+[DEPENDENCY_SECURITY.md](DEPENDENCY_SECURITY.md). CI enables the pinned MiniLM
+embedding regression and checks installed dependency consistency with pip.
 
 Add frontend unit/browser runners, API generation checks, scoped mypy, recipe
-evaluations, expanded lint lists, and coverage/advisory enforcement in branches
+evaluations, expanded lint lists, and coverage enforcement in branches
 that also contain their required tests, modules, and dependency changes.
 Do not enable a CI command before its inputs exist on that branch.
 

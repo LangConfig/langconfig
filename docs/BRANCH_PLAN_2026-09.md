@@ -37,7 +37,7 @@ into earlier branches.
 
 | Branch (`codex/` prefix) | Changes and review boundary | Required verification |
 | --- | --- | --- |
-| `langchain-middleware-compat` | Inherit the public LangChain middleware contract and repair PII detection/redaction after the private hook changed. Preserve allowlist strategies and propagate profile failures. No dependency-range or retry-policy change. | Real fixture-model agent invocation, factory/middleware tests, PII edge cases, profile strategies and failure propagation: 111 passed. |
+| `langchain-middleware-compat` | Inherit the public LangChain middleware contract, repair PII tools, and resolve inherited audit failures with four compatible package pins plus an enforcing assessment gate. Preserve allowlist strategies and propagate profile failures. | Middleware/PII/factory regressions, complete intermediate backend suite, real pinned embedding comparison, full resolved advisory scan and fail-closed policy tests. |
 | `quality-gates` | Conventional lint/type/format commands, exact initial scopes, build import-graph guard, feature-push CI, contributor instructions and this inventory. Preserve existing runtime dependency versions. | Clean npm install, declared lint/format/type checks, build including lazy-import guard, disposable-DB safety tests, CI configuration review. |
 | `runtime-schema-foundation` | Add migrations 023–026 and matching ORM fields/tables. No worker or API activation. Preserve populated revision-022 records. | Upgrade, downgrade and reupgrade on a disposable database; compare legacy rows; validate global/project skill uniqueness and ORM registration. |
 | `dependency-refresh` | Universal hashed Python lock, compatible LangChain/Deep Agents packages, Vite 8/Rolldown/TypeScript 7, Tauri dependencies, fail-closed advisory assessment. Preserve `reactflow` until canvas migration. | Hashed install, pip consistency, universal lock comparison, Python OS/version resolution matrix, compatibility tests, npm audit, Rust audit/locked check, frontend build. |
@@ -161,19 +161,22 @@ job integration/process tests exist.
 | `codex/mcp-stdio-sessions` | Local extraction; not published | Awaiting dependency-refresh parent (ADK 1 / MCP 2 install conflict) |
 | Remaining queue | Not published | Requires extraction and branch-specific gates |
 
-The inherited informational dependency-audit job on PR #73 is failing; its
-dependency set and exemptions predate this split. The staged dependency refresh
-has not been published, and none of these bootstrap branches claims a clean
-backend advisory scan. The original integration tree's zero-advisory npm result
-also must not be attributed to these branches, which retain the older npm pins.
+The shared CI failure was traced to inherited cryptography/embedding constraints
+and an informational audit with broad advisory ignores. The compatibility
+prerequisite now supplies four patched package pins and an enforcing assessment
+gate; see [DEPENDENCY_SECURITY.md](DEPENDENCY_SECURITY.md). Only the existing
+NLTK 3.10.3 assessment remains, with its October 8 expiry unchanged. A passing
+policy gate does not mean zero vulnerabilities. The complete SDK/lock refresh
+remains separate, and npm versions are still the earlier pins.
 
 For each completed slice, commit its implementation, regressions and guide;
 push with normal upstream tracking; open a draft PR against the stated parent;
 record the commit and checks. Review and merge parents before children.
-If a parent is squash-merged, explicitly rebase/cherry-pick the child onto
-the new main before changing its PR base; simply changing the base may show
-already-reviewed parent commits again. Never force-push published branches
-without coordinating the history change.
+If a parent is squash-merged, integrate the updated destination into the child
+before changing its PR base. A normal merge preserves published history and
+establishes the destination as an ancestor; verify the resulting PR diff contains
+only the child's changes and rerun CI. Do not merely change the PR base or
+force-push published branches without coordinating a history change.
 
 Before declaring the complete split finished, compare the assembled tip with
 the preserved snapshot. Every difference must be an intentional, documented
