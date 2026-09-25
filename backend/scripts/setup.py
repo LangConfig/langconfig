@@ -192,7 +192,7 @@ def start_database():
         import time
         for i in range(30):
             try:
-                result = subprocess.run(
+                subprocess.run(
                     [
                         "docker", "compose", "exec", "-T", "postgres",
                         "sh", "-c",
@@ -225,9 +225,9 @@ def init_database(reset_db: bool = False):
     
     try:
         # Import all models to register them with Base
-        from models import core, workflow, deep_agent, audit_log, settings
-        from models import custom_tool, execution_event, local_model, background_task
-        from models import skill
+        from models import core, workflow, deep_agent, audit_log, settings  # noqa: F401
+        from models import custom_tool, execution_event, local_model, background_task  # noqa: F401
+        from models import skill  # noqa: F401
         
         # Import and run init_db
         from db.database import Base, engine
@@ -390,10 +390,10 @@ def print_next_steps():
     print("     - ANTHROPIC_API_KEY=sk-ant-...")
     print("     - GOOGLE_API_KEY=AIza...")
     print()
-    print(f"  2. Start the backend:")
+    print("  2. Start the backend:")
     print(f"     {Colors.BOLD}cd backend && python main.py{Colors.RESET}")
     print()
-    print(f"  3. Start the frontend (in another terminal):")
+    print("  3. Start the frontend (in another terminal):")
     print(f"     {Colors.BOLD}npm ci && npm run dev{Colors.RESET}")
     print()
     print(f"  4. Open {Colors.BOLD}http://localhost:1425{Colors.RESET} in your browser")
