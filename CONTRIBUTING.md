@@ -61,7 +61,6 @@ cd langconfig
 python -m venv .venv
 # Activate .venv using the command for your shell; see docs/SETUP.md
 npm ci
-cp .env.example .env
 python backend/scripts/setup.py
 ```
 
