@@ -1,6 +1,12 @@
 target-version = "py312"
 line-length = 120
-include = ["backend/core/runtimes/base.py", "backend/tests/database_safety.py"]
+include = [
+    "backend/core/runtimes/base.py",
+    "backend/tests/database_safety.py",
+    "scripts/check-python-advisories.py",
+    "backend/tests/test_python_advisory_policy.py",
+    "backend/tests/test_embedding_compatibility.py",
+]
 
 [lint]
 select = ["E4", "E7", "E9", "F"]
