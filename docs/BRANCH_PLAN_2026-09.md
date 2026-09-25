@@ -157,8 +157,8 @@ job integration/process tests exist.
 
 | Branch | Commit / remote state | Readiness |
 | --- | --- | --- |
-| `codex/langchain-middleware-compat` | `eab7d2e`; pushed; [draft PR #73](https://github.com/LangConfig/langconfig/pull/73) | 28 middleware/factory regressions passed |
-| `codex/quality-gates` | `45b7b63`; pushed; [draft PR #74](https://github.com/LangConfig/langconfig/pull/74) | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed |
+| `codex/langchain-middleware-compat` | `a35a34b`; pushed; [draft PR #73](https://github.com/LangConfig/langconfig/pull/73) | 111 PII/middleware/factory regressions passed; fixes all 74 failures in the initial remote run |
+| `codex/quality-gates` | `1856c56`; pushed; [draft PR #74](https://github.com/LangConfig/langconfig/pull/74) | Clean npm install, scoped lint/format/types/build, 20 database-safety/migration checks passed; compatibility prerequisite merged normally |
 | `codex/runtime-schema-foundation` | `a59beff`; pushed; [draft PR #75](https://github.com/LangConfig/langconfig/pull/75), based on #74 | 22 database-safety/migration/schema tests passed; all eight scoped Ruff files pass |
 | `codex/mcp-stdio-sessions` | Local extraction; not published | Awaiting dependency-refresh parent (ADK 1 / MCP 2 install conflict) |
 | Remaining queue | Not published | Requires extraction and branch-specific gates |
@@ -170,9 +170,14 @@ backend advisory scan. The original integration tree's zero-advisory npm result
 also must not be attributed to these branches, which retain the older npm pins.
 
 The first publication wave is complete: #73 → #74 → #75. None is merged.
-Remote frontend/lint jobs on #74 passed; backend jobs and the new schema runs
-were still in progress when this record was written. Check the PRs for current
-results. Next prepare the dependency refresh, then rebase the local MCP extraction
+The initial remote backend runs exposed 74 PII failures and no other failing
+test cases. The staged PII fix now belongs to the compatibility prerequisite,
+and normal merges propagate it through the published stack without rewriting
+history. Updated remote suites were queued when this record was written;
+frontend/lint passed on the preceding heads. Check the PRs for current results.
+The branches have no configured required-check list; successful jobs should not
+be confused with enforced branch protection. Next prepare the dependency refresh,
+then rebase the local MCP extraction
 onto that compatible parent and rerun its full install and runtime checks.
 
 For each completed slice, commit its implementation, regressions and guide;
@@ -186,3 +191,9 @@ without coordinating the history change.
 Before declaring the complete split finished, compare the assembled tip with
 the preserved snapshot. Every difference must be an intentional, documented
 cleanup. Keep the backup until all original changes are accounted for.
+
+Additional cleanup beyond the captured source currently consists of the schema
+constraint-name alignment, model export registration, new migration regressions,
+and the PII profile-failure regression. Preserve those improvements when assembling
+the final tip. Bootstrap quality configurations intentionally remain narrower than
+the captured final configurations until their corresponding features land.
