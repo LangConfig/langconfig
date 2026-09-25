@@ -18,7 +18,7 @@ Run these commands from the repository root unless stated otherwise.
 | `npm run check:interfaces` | Compatibility alias that runs lint, formatting check, and application type checking. |
 | `npm run format:interfaces` | Compatibility alias for `npm run format`. |
 | `npm run build` | Runs application type checking, the Vite production build, and the static-import guard. |
-| `python -m ruff check .` | Checks the runtime envelope, database safety helper, schema migrations 023–026, new subagent-job model and schema regression using `E4`, `E7`, `E9`, and `F`. The exact eight paths are in `ruff.toml`. |
+| `python -m ruff check .` | Checks the runtime envelope, database safety helper, schema migrations 023–026, subagent-job model/schema regression, advisory gate/policy tests, and embedding compatibility test using `E4`, `E7`, `E9`, and `F`. The exact eleven paths are in `ruff.toml`. |
 
 The build guard traverses every application entry's static imports, including
 indirect imports, using `dist/.vite/manifest.json`. It rejects eager

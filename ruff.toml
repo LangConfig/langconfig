@@ -9,6 +9,9 @@ include = [
     "backend/alembic/versions/026_subagent_jobs.py",
     "backend/models/subagent_job.py",
     "backend/tests/test_runtime_schema_migrations.py",
+    "scripts/check-python-advisories.py",
+    "backend/tests/test_python_advisory_policy.py",
+    "backend/tests/test_embedding_compatibility.py",
 ]
 
 [lint]
