@@ -39,7 +39,6 @@ source .venv/Scripts/activate
 
 python -m pip install --upgrade pip
 npm ci
-cp .env.example .env
 python backend/scripts/setup.py
 ```
 
@@ -49,9 +48,17 @@ It preserves an existing LangConfig database and runs forward migrations instead
 
 Edit the root `.env` before using model providers. At least one of
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` is needed for its
-corresponding hosted models. The setup script writes a unique
-`APP_ENCRYPTION_KEY` into `.env`; generate one manually before saving real
-credentials through the Settings UI if you do not use the script.
+corresponding hosted models. When creating a new `.env` from `.env.example`,
+the setup script generates a unique `APP_ENCRYPTION_KEY`. Let the script create
+the file rather than copying the template first. If you create `.env` manually,
+generate a unique key before saving real credentials through the Settings UI.
+
+Setup preserves an existing `.env` byte-for-byte, including blank or placeholder
+encryption keys. An existing database may already contain credentials encrypted
+with its current key or the development fallback. Before changing that key,
+back up `.env` and the database, then explicitly migrate the encrypted secrets
+or plan to re-enter the saved credentials. Changing the key alone makes those
+credentials unreadable; rerunning setup does not rotate or migrate them.
 
 The root `.env` is canonical. `backend/.env` is optional and is only for local
 backend overrides; when the backend is started from `backend/`, values already

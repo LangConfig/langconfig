@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -23,6 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+import psutil
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CODEX_RUN_ROOT = REPO_ROOT / "backend" / "data" / "codex_runs"
@@ -31,6 +36,68 @@ TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 DEFAULT_MAX_RETAINED_RUNS = 100
 DEFAULT_MAX_EVENTS_PER_RUN = 2_000
 DEFAULT_RETENTION_SECONDS = 24 * 60 * 60
+
+
+class _WindowsJob:
+    """Own all descendants, including children whose immediate parent exits."""
+
+    def __init__(self, process):
+        import ctypes
+        from ctypes import wintypes
+
+        class BasicLimits(ctypes.Structure):
+            _fields_ = [
+                ("process_time", ctypes.c_longlong), ("job_time", ctypes.c_longlong),
+                ("flags", wintypes.DWORD), ("min_working_set", ctypes.c_size_t),
+                ("max_working_set", ctypes.c_size_t), ("active_processes", wintypes.DWORD),
+                ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD), ("scheduling", wintypes.DWORD),
+            ]
+
+        class ExtendedLimits(ctypes.Structure):
+            _fields_ = [
+                ("basic", BasicLimits), ("io_counters", ctypes.c_ulonglong * 6),
+                ("process_memory", ctypes.c_size_t), ("job_memory", ctypes.c_size_t),
+                ("peak_process_memory", ctypes.c_size_t), ("peak_job_memory", ctypes.c_size_t),
+            ]
+
+        self._api = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._api.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        self._api.CreateJobObjectW.restype = wintypes.HANDLE
+        self._api.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        self._api.SetInformationJobObject.restype = wintypes.BOOL
+        self._api.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        self._api.AssignProcessToJobObject.restype = wintypes.BOOL
+        self._api.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        self._api.TerminateJobObject.restype = wintypes.BOOL
+        self._api.CloseHandle.argtypes = [wintypes.HANDLE]
+        self._api.CloseHandle.restype = wintypes.BOOL
+        self._handle = self._api.CreateJobObjectW(None, None)
+        if not self._handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            limits = ExtendedLimits()
+            limits.basic.flags = 0x00002000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if not self._api.SetInformationJobObject(self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not self._api.AssignProcessToJobObject(self._handle, int(process._handle)):
+                raise ctypes.WinError(ctypes.get_last_error())
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        import ctypes
+
+        if self._handle is None:
+            return
+        error = None
+        if not self._api.TerminateJobObject(self._handle, 1):
+            error = ctypes.WinError(ctypes.get_last_error())
+        if not self._api.CloseHandle(self._handle):
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._handle = None
+        if error is not None:
+            raise error
 
 
 @dataclass
@@ -208,7 +275,11 @@ class CodexHarness:
             self._mark_cancelled_locked(run, "Codex run cancelled")
 
         if process is not None:
-            self._terminate_process(process)
+            try:
+                self._terminate_process(process)
+            except Exception as exc:
+                self._record_cleanup_failure(run, exc)
+                raise CodexHarnessError(run.error) from exc
             with self._lock:
                 run.exit_code = process.returncode
 
@@ -301,11 +372,7 @@ class CodexHarness:
                     },
                 )
 
-            creationflags = 0
-            if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
-                creationflags = subprocess.CREATE_NO_WINDOW
-
-            process = subprocess.Popen(
+            process = self._spawn_process(
                 run.command,
                 cwd=str(run.sandbox_dir),
                 stdout=subprocess.PIPE,
@@ -313,7 +380,6 @@ class CodexHarness:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                creationflags=creationflags,
             )
             with self._lock:
                 run.process = process
@@ -371,6 +437,11 @@ class CodexHarness:
                     run.completed_at = time.time()
                     self._append_event_locked(run, {"type": "run.failed", "error": str(exc)})
         finally:
+            if run.process is not None:
+                try:
+                    self._terminate_process(run.process)
+                except Exception as exc:
+                    self._record_cleanup_failure(run, exc)
             with self._lock:
                 self._workers.pop(run.id, None)
             self.prune_retained_runs()
@@ -395,37 +466,111 @@ class CodexHarness:
         self._append_event_locked(run, {"type": "run.cancelled", "message": message})
 
     @staticmethod
-    def _terminate_process(process: subprocess.Popen, timeout: float = 5.0) -> None:
-        if process.poll() is not None:
-            return
-        process.terminate()
+    def _spawn_process(command, **kwargs):
+        # Windows must join the job before its first instruction can spawn a
+        # child. POSIX descendants inherit the private session/process group.
+        process = subprocess.Popen(
+            command, **kwargs,
+            creationflags=(subprocess.CREATE_NO_WINDOW | 0x00000004) if os.name == "nt" else 0,
+            start_new_session=os.name != "nt",
+        )
+        process._codex_cleanup_lock = threading.Lock()
+        if not isinstance(getattr(process, "pid", None), int):
+            return process  # Test doubles never perform OS process operations.
         try:
-            process.wait(timeout=max(timeout, 0.01))
-        except subprocess.TimeoutExpired:
-            process.kill()
+            process._codex_identity = psutil.Process(process.pid)
+            if os.name == "nt":
+                process._codex_job = _WindowsJob(process)
+                process._codex_identity.resume()
+            else:
+                process._codex_process_group = process.pid
+        except BaseException:
+            # The Windows child is still suspended if containment fails.
+            # Popen's owned process handle cannot target an unrelated PID.
             try:
-                process.wait(timeout=max(timeout, 0.01))
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=1)
+            finally:
+                job = getattr(process, "_codex_job", None)
+                if job is not None:
+                    job.close()
+            raise
+        return process
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen, timeout: float = 5.0) -> None:
+        deadline = time.monotonic() + max(timeout, 0.0)
+        lock = getattr(process, "_codex_cleanup_lock", threading.Lock())
+        if not lock.acquire(timeout=max(deadline - time.monotonic(), 0.0)):
+            raise CodexHarnessError("Timed out waiting for process cleanup")
+        try:
+            job = getattr(process, "_codex_job", None)
+            group = getattr(process, "_codex_process_group", None)
+            if job is not None:
+                job.close()
+            elif group is not None:
+                # The group is created by this harness, never inferred from a
+                # caller's PID. Check identity if the leader still exists.
+                try:
+                    current = psutil.Process(process.pid)
+                    if current.create_time() != process._codex_identity.create_time():
+                        raise CodexHarnessError("Process identity changed before cleanup")
+                except psutil.NoSuchProcess:
+                    pass  # An owned group can outlive its original leader.
+                try:
+                    os.killpg(group, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
+                process.terminate()
+            else:
+                return
+
+            try:
+                process.wait(timeout=max((deadline - time.monotonic()) / 2, 0.0))
             except subprocess.TimeoutExpired:
-                pass
+                if group is None:
+                    process.kill()
+            # A successful parent wait does not prove the descendants exited.
+            if group is not None:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process._codex_process_group = None
+            try:
+                process.wait(timeout=max(deadline - time.monotonic(), 0.0))
+            except subprocess.TimeoutExpired as exc:
+                raise CodexHarnessError("Process did not exit before cleanup deadline") from exc
+        finally:
+            lock.release()
+
+    def _record_cleanup_failure(self, run, error):
+        with self._lock:
+            run.error = f"Codex process cleanup failed: {error}"
+            self._append_event_locked(run, {"type": "run.cleanup_failed", "error": run.error})
+        logger.warning("%s (%s)", run.error, run.id)
 
     def shutdown(self, timeout: float = 10.0) -> None:
         """Cancel active runs, terminate children, and join worker threads."""
         deadline = time.monotonic() + max(timeout, 0.0)
         with self._lock:
             self._shutting_down = True
+            active = [run for run in self._runs.values() if run.status not in TERMINAL_STATUSES
+                      or (run.status == "cancelled" and run.id in self._workers)]
             for run in self._runs.values():
                 if run.status not in TERMINAL_STATUSES:
                     self._mark_cancelled_locked(run, "Codex harness is shutting down")
-            processes = [
-                run.process
-                for run in self._runs.values()
-                if run.process is not None and run.process.poll() is None
-            ]
             workers = list(self._workers.values())
 
-        for process in processes:
-            remaining = max(deadline - time.monotonic(), 0.01)
-            self._terminate_process(process, timeout=min(5.0, remaining))
+        for run in active:
+            if run.process is not None:
+                remaining = max(deadline - time.monotonic(), 0.0)
+                try:
+                    self._terminate_process(run.process, timeout=min(5.0, remaining))
+                except Exception as exc:
+                    self._record_cleanup_failure(run, exc)
 
         current_thread = threading.current_thread()
         for worker in workers:
@@ -509,23 +654,36 @@ class CodexHarness:
         return binary
 
     def _run_short(self, command: List[str], timeout: int) -> Dict[str, Any]:
+        process = None
         try:
-            result = subprocess.run(
+            process = self._spawn_process(
                 command,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=timeout,
-                check=False,
             )
+            stdout, stderr = process.communicate(timeout=timeout)
+            self._terminate_process(process)
             return {
-                "returncode": result.returncode,
-                "stdout": result.stdout or "",
-                "stderr": result.stderr or "",
+                "returncode": process.returncode,
+                "stdout": stdout or "",
+                "stderr": stderr or "",
             }
         except Exception as exc:
+            if process is not None:
+                try:
+                    self._terminate_process(process)
+                except Exception as cleanup_error:
+                    logger.warning("Codex helper process cleanup failed: %s", cleanup_error)
+                    return {"returncode": 1, "stdout": "", "stderr": f"{exc}; cleanup failed: {cleanup_error}"}
             return {"returncode": 1, "stdout": "", "stderr": str(exc)}
+        finally:
+            if process is not None:
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
 
     def _redacted_command(self, command: List[str]) -> List[str]:
         if not command:

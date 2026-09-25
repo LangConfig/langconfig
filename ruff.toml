@@ -12,6 +12,10 @@ include = [
     "scripts/check-python-advisories.py",
     "backend/tests/test_python_advisory_policy.py",
     "backend/tests/test_embedding_compatibility.py",
+    "backend/scripts/setup.py",
+    "backend/tests/test_setup_script.py",
+    "backend/services/codex_harness.py",
+    "backend/tests/test_codex_harness.py",
 ]
 
 [lint]

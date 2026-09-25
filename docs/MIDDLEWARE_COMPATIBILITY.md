@@ -1,4 +1,4 @@
-# LangChain middleware and PII compatibility
+# Runtime compatibility and safe local operation
 
 The local `AgentMiddleware` base now inherits LangChain's public middleware
 base as well as `ABC`. Current agent construction reads inherited upstream
@@ -41,3 +41,18 @@ reproducible lock still need their own validation.
 This extraction resolves the 74 PII failures seen in the initial remote CI run.
 The complete remote suite runs again for the dependency security repair,
 including an active embedding compatibility regression.
+
+Pre-merge review also found that setup regenerated a blank key in an existing
+`.env`, making previously encrypted credentials unreadable. Setup now generates
+a key only when creating a new file; existing files are preserved byte-for-byte.
+The [setup guide](SETUP.md) explains deliberate key migration, and a regression
+encrypts a fixture before setup and decrypts it afterward.
+
+Local Codex cancellation and backend shutdown now stop the owned process tree,
+including descendants whose launcher has already exited. Windows starts the
+child suspended, assigns it to a kill-on-close Job Object, then resumes it;
+Unix uses a private process group with bounded termination and kill fallback.
+The same ownership applies to short status helpers when they time out. Cleanup
+failures are recorded in run events and logs. Real Python subprocess regressions
+check cancellation, shutdown, exited launchers, timeout cleanup, and survival
+of an unrelated process; Windows also tests containment failure before execution.
