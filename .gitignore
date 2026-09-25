@@ -107,6 +107,7 @@ token.json
 client_secret*.json
 
 # Backend outputs
+/python-advisories.json
 /backend/outputs/
 /backend/workspace/
 
@@ -115,6 +116,7 @@ docs/*
 !docs/.gitkeep
 !docs/GOOGLE_OAUTH_SETUP.md
 !docs/SETUP.md
+!docs/DEPENDENCY_SECURITY.md
 langconfig/
 
 # Private/unreleased features (uncomment before pushing to public)

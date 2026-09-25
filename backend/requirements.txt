@@ -43,8 +43,9 @@ llama-index
 llama-index-vector-stores-postgres
 llama-index-embeddings-huggingface
 llama-index-embeddings-openai
-sentence-transformers>=3.2.0,<4  # stay on v3: embedding-vector compat with existing pgvector data
-huggingface-hub>=0.34.0,<1  # compatible with sentence-transformers 3.x and Transformers
+sentence-transformers==6.0.1  # Supports patched Transformers 5; pinned MiniLM vectors regression-tested
+huggingface-hub==1.30.0
+transformers==5.16.1  # Fixes reported Transformers 4.x advisories
 pgvector
 numpy
 
@@ -79,7 +80,7 @@ playwright>=1.48.0  # For browser tool (requires: python -m playwright install c
 faster-whisper>=1.0.0
 
 # Security & Utilities
-cryptography>=48.0.1,<49
+cryptography==50.0.1  # Includes fixes requiring cryptography 49 and 50
 python-dotenv>=1.2.2,<2  # GHSA-mf9w-mj56-hr94: symlink-following file overwrite in set_key (<1.2.2)
 httpx>=0.28.1
 aiofiles==24.1.0
