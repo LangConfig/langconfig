@@ -197,6 +197,9 @@ cleanup. Keep the backup until all original changes are accounted for.
 
 Additional cleanup beyond the captured source currently consists of the schema
 constraint-name alignment, model export registration, new migration regressions,
-and the PII profile-failure regression. Preserve those improvements when assembling
-the final tip. Bootstrap quality configurations intentionally remain narrower than
-the captured final configurations until their corresponding features land.
+the PII profile-failure regression, the enforcing security assessment gate and
+its tests, and preservation of existing setup encryption keys. Preserve those
+improvements when assembling the final tip. Do not restore obsolete Accelerate
+exceptions from the captured snapshot: current resolution selects a patched version.
+Bootstrap quality configurations intentionally remain narrower than the captured
+final configurations until their corresponding features land.
