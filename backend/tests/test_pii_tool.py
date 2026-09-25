@@ -3,7 +3,9 @@
 import pytest
 import asyncio
 
-from tools.pii_tool import pii_redact, pii_detect, _run_detection, ALL_PII_TYPES
+from tools.pii_tool import (
+    pii_redact, pii_detect, _run_detection, _run_detection_with_profile, ALL_PII_TYPES,
+)
 
 
 # ── Helper to run async tool functions ───────────────────────────────────────
@@ -133,3 +135,36 @@ class TestRunDetection:
         assert "ssn" in ALL_PII_TYPES
         assert "credit_card" in ALL_PII_TYPES
         assert "api_key" in ALL_PII_TYPES
+
+
+@pytest.mark.parametrize("strategy", ["redact", "mask", "hash"])
+def test_profile_allowlist_preserves_selected_strategy(strategy):
+    allowed = "public@example.com"
+    private = "private@example.com"
+    processed, matches = _run_detection_with_profile(
+        f"{allowed} and {private}",
+        strategy=strategy,
+        profile={"allowlist": [allowed], "enabled_builtin_types": ["email"]},
+    )
+    expected_private, _ = _run_detection(private, strategy, ["email"])
+    assert processed == f"{allowed} and {expected_private}"
+    assert [match["value"] for match in matches] == [private]
+
+
+def test_profile_with_no_matches_returns_unchanged_text():
+    text = "No sensitive information here."
+    assert _run_detection_with_profile(
+        text, strategy="redact", profile={"enabled_builtin_types": ["email"]},
+    ) == (text, [])
+
+
+def test_profile_failure_raises_instead_of_returning_successful_tool_output(monkeypatch):
+    from db import database
+
+    def unavailable_session():
+        raise OSError("profile database unavailable")
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", unavailable_session)
+    with pytest.raises(RuntimeError, match="PII profile 7 redaction failed") as error:
+        run(pii_redact.ainvoke({"text": "private@example.com", "profile_id": 7}))
+    assert isinstance(error.value.__cause__, OSError)
