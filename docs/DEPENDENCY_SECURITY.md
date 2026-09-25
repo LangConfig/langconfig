@@ -4,7 +4,8 @@ The September 25 CI failures came from inherited dependency constraints:
 `cryptography<49` selected vulnerable 48.0.1, and Sentence Transformers 3
 required the vulnerable Transformers 4 line. This compatibility prerequisite
 now pins cryptography 50.0.1, Sentence Transformers 6.0.1, Transformers 5.16.1,
-and Hugging Face Hub 1.30.0. Other runtime ranges remain unchanged.
+and Hugging Face Hub 1.30.0. The local CLI cleanup also declares its psutil 7.2.2
+dependency directly. Other runtime ranges remain unchanged.
 
 The Python dependency security job is enforcing. It no longer has
 `continue-on-error`, and no advisory is hidden with `--ignore-vuln`.
