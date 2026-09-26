@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node](https://img.shields.io/badge/Node-%5E20.19.0%20%7C%7C%20%3E%3D22.12.0-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
-[![LangChain](https://img.shields.io/badge/LangChain-v1.3-orange.svg)](https://langchain.com/)
+[![LangChain](https://img.shields.io/badge/LangChain-v1.x-orange.svg)](https://langchain.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-v1.2-orange.svg)](https://langchain-ai.github.io/langgraph/)
 
 
@@ -115,14 +115,18 @@ python backend/db/seed_langconfig_dev.py --refresh-templates
 
 This only updates rows marked as templates (`is_template = true`) — your own workflows are never touched.
 
-**4. Add Your API Keys**
+**4. Configure Your Model Provider**
 
-Edit `.env` and add your API keys:
+For hosted models, add the key for the provider you use to `.env`:
 ```env
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AIza...
 ```
+
+Local models through Ollama or LM Studio do not require these provider keys.
+The optional Codex harness uses `codex login`; GitHub branch and PR operations
+use your GitHub authentication and do not require an LLM API key.
 
 ---
 
@@ -336,7 +340,7 @@ file to configure the application. Existing `.env` files are preserved; see
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string (default: `postgresql://langconfig:langconfig_dev@localhost:5433/langconfig`) |
 
-**LLM API Keys** (at least one required):
+**LLM API Keys** (required only for the corresponding hosted provider):
 | Variable | Description |
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key for GPT models |
@@ -351,6 +355,7 @@ file to configure the application. Existing `.env` files are preserved; see
 | `APP_ENCRYPTION_KEY` | Key used to encrypt credentials saved in Settings | Generated when setup creates a new `.env`; existing keys preserved; required in production |
 | `ENVIRONMENT` | `development` or `production` | `development` |
 | `DEBUG` | Enable verbose backend logging (`true` or `false`) | `true` in development |
+| `ENABLE_EXPERIMENTAL_LOCAL_APIS` | Enable loopback-only Hermes, Platform Brain, and Codex APIs; see [setup](docs/SETUP.md#local-codex-harness-experimental) | `false` |
 
 **Workflow Execution:**
 | Variable | Description | Default |
@@ -376,7 +381,7 @@ Run models locally with zero API costs:
 
 **Native Python Tools** (no external dependencies):
 - `web_search` - Web search via DuckDuckGo (free, no API key)
-- `web_fetch` - Fetch webpage content
+- `web_fetch` - Fetch public HTTP(S) webpage content; private and loopback destinations are blocked
 - `file_read` / `file_write` / `file_list` - File system operations
 - `memory_store` / `memory_recall` - Long-term memory (PostgreSQL-backed)
 - `reasoning_chain` - Break down complex tasks into logical steps
@@ -413,7 +418,7 @@ Run models locally with zero API costs:
 **Backend:**
 - Python 3.11-3.13 (3.12 regularly tested)
 - FastAPI 0.136
-- LangChain 1.3.x (full ecosystem)
+- LangChain 1.x (`>=1.3.11,<2`; integrations have their own ranges)
 - LangGraph 1.2.x (with checkpoint-postgres, supervisor, swarm, bigtool)
 - Deep Agents 0.6.x
 - LlamaIndex (document indexing & RAG)
@@ -549,14 +554,21 @@ installed backend environment.
 
 ### Running Tests
 
+First create a disposable test database and set both `DATABASE_URL` and
+`TEST_DATABASE_URL` as described in [Quality gates](docs/QUALITY_GATES.md#backend-tests-use-a-disposable-database).
+Test fixtures rebuild that database's schema.
+
 ```bash
 # Backend tests
 cd backend
-python -m pytest
+python -m pytest -q --ignore=tests/test_playwright_tools.py
 
-# Frontend type-check and production build
+# Frontend checks and focused Hermes browser regressions
 cd ..
+npm run check:interfaces
 npm run build
+npx playwright install chromium
+npm run test:hermes
 ```
 
 ### Database Migrations
@@ -593,6 +605,9 @@ python db/init_deepagents.py
 ## Documentation
 
 - **[Development Setup](./docs/SETUP.md)** - Canonical fresh-clone and upgrade instructions
+- **[Quality Gates](./docs/QUALITY_GATES.md)** - Current lint, type, build, browser, and backend test commands
+- **[Runtime Schema](./docs/RUNTIME_SCHEMA.md)** - Migration 023–026 scope and upgrade guidance
+- **[Branch Plan](./docs/BRANCH_PLAN_2026-09.md)** - Completed first wave and remaining feature queue
 - **[Google OAuth Setup](./docs/GOOGLE_OAUTH_SETUP.md)** - Google Slides export credentials
 - **[Chat API Documentation](./backend/api/chat/README.md)** - Interactive chat testing API
 - **[GitHub Issues](https://github.com/langconfig/langconfig/issues)** - Report bugs and request features
@@ -611,10 +626,10 @@ We welcome contributions! Whether you're:
 **How to Contribute:**
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
+2. Create a feature branch: `git checkout -b codex/amazing-feature`
 3. Make your changes and add tests
 4. Commit: `git commit -m 'Add amazing feature'`
-5. Push: `git push origin feature/amazing-feature`
+5. Push: `git push origin codex/amazing-feature`
 6. Open a Pull Request
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.

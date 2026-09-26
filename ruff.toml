@@ -16,6 +16,11 @@ include = [
     "backend/tests/test_setup_script.py",
     "backend/services/codex_harness.py",
     "backend/tests/test_codex_harness.py",
+    "backend/tools/public_http.py",
+    "backend/tests/test_public_http_tools.py",
+    "backend/services/hermes_service.py",
+    "backend/services/triggers/file_watcher.py",
+    "backend/tests/test_hermes_service.py",
 ]
 
 [lint]

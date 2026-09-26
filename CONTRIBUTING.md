@@ -98,12 +98,17 @@ npm run dev
    npm run format:check
    npm run typecheck
    npm run build
+   npx playwright install chromium
+   npm run test:hermes
    ```
 
    For backend tests, first configure both database URLs to the same disposable
    test database and create it as described in [Quality gates](docs/QUALITY_GATES.md).
    Then run `python -m pytest -q --ignore=tests/test_playwright_tools.py` from
    `backend/`. Test fixtures rebuild that database's schema.
+
+   `test:hermes` exercises the real Hermes component in Chromium with mocked
+   APIs. Install Chromium once after setup or a Playwright version change.
 
    Biome and Ruff currently check the explicit files listed in their configs;
    TypeScript checks the application. Run `npm run format` to apply formatting

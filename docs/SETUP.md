@@ -131,6 +131,12 @@ them on a shared, proxied, remote, or hosted backend: Codex can launch local
 CLI work, Hermes can publish persisted artifacts, and Platform Brain can search
 project-scoped database content.
 
+The native `http_request` and `web_fetch` tools accept public HTTP(S) destinations
+only. Every DNS answer and redirect is checked before connection; private,
+loopback, link-local and other non-public addresses are blocked. URL credentials
+and environment proxies are not supported by these tools. Use the dedicated
+approval-gated tools for local LangConfig actions.
+
 ### Hermes and Platform Brain (experimental)
 
 Hermes provides approval-gated drafts that validate before applying changes to
@@ -139,6 +145,18 @@ lexical catalog over tracked documentation, API routes, workflow recipes, native
 tools, and explicitly project-scoped projects, workflows, custom tools,
 schedules, triggers, execution traces, and chat history. It is not a persistent
 vector store.
+
+Editing a saved draft's title, type or JSON clears its selection and validation.
+Click **Draft** to save the edited version before validating or applying it.
+Draft controls are locked while requests are pending, and changing drafts does
+not disconnect the current Codex event stream.
+
+Schedule drafts validate their cron expression and timezone and save the first
+UTC run time. Enabled file-watch triggers start after their artifact commits.
+Their apply result reports `activation.status` as `active`, `disabled`, or
+`failed`; a startup failure includes a reason and leaves the trigger disabled.
+The draft remains applied to prevent duplicate artifacts. Correct the saved
+trigger's configuration and enable it through the trigger controls to retry.
 
 ### Google Slides export
 
@@ -154,27 +172,37 @@ it does not bundle Python or backend wheels.
 
 ## Tests
 
-```bash
-# Backend unit and integration tests
-cd backend
-python -m pytest
-
-# Frontend type-check and production build
-cd ..
-npm run build
-```
-
 Database-backed tests use a separate `langconfig_test` database by default. With
 the default Compose credentials, create it once:
 
 ```bash
+docker compose up -d postgres
 docker compose exec postgres createdb -U langconfig langconfig_test
 ```
 
+Before running pytest, set **both** `DATABASE_URL` and `TEST_DATABASE_URL` to
+that disposable database in a dedicated test terminal. Use the shell-specific
+commands in [Quality gates](QUALITY_GATES.md#backend-tests-use-a-disposable-database),
+adjusting the credentials and port for your installation. Application imports
+and test fixtures must target the same database.
+
+```bash
+# Backend unit and integration tests, after configuring both database URLs
+cd backend
+python -m pytest -q --ignore=tests/test_playwright_tools.py
+
+# Frontend checks and focused Hermes browser regressions
+cd ..
+npm run check:interfaces
+npm run build
+npx playwright install chromium
+npm run test:hermes
+```
+
 The migration tests bootstrap a blank `langconfig_test` schema using current
-metadata and stamp it at the current Alembic head. Override `TEST_DATABASE_URL`
-if you use different credentials or a different port. Never point it at a
-database containing data you need.
+metadata and stamp it at the current Alembic head. Never use a database containing
+data you need. The excluded Python Playwright file is a manual browser-tool smoke
+script; `test:hermes` is a separate Chromium suite with mocked API responses.
 
 ## Troubleshooting
 

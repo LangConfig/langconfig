@@ -2,7 +2,7 @@
 
 The quality bootstrap adds focused linting, explicit formatting and type-check
 commands, and a production-build import check. It preserves the existing
-production dependency versions, React Flow 11, Vite 7, and TypeScript 5.
+frontend production dependency versions, React Flow 11, Vite 7, and TypeScript 5.
 Later feature branches extend the checks alongside the code they introduce.
 
 ## Current checks
@@ -18,7 +18,8 @@ Run these commands from the repository root unless stated otherwise.
 | `npm run check:interfaces` | Compatibility alias that runs lint, formatting check, and application type checking. |
 | `npm run format:interfaces` | Compatibility alias for `npm run format`. |
 | `npm run build` | Runs application type checking, the Vite production build, and the static-import guard. |
-| `python -m ruff check .` | Checks the runtime envelope, database safety helper, schema migrations 023–026, subagent-job model, advisory gate, embedding compatibility, setup, and local CLI lifecycle with their regression tests using `E4`, `E7`, `E9`, and `F`. The exact paths are in `ruff.toml`. |
+| `npm run test:hermes` | Runs the real Hermes React component in Chromium with mocked API responses. Checks saved-draft approval identity, in-flight edits, and Codex stream ownership. Uses only `tests/hermes` and its isolated Vite fixture. |
+| `python -m ruff check .` | Checks the runtime envelope, database safety helper, schema migrations 023–026, subagent-job model, advisory gate, embedding compatibility, setup, local CLI lifecycle, public HTTP transport, and Hermes/trigger activation with their regression tests using `E4`, `E7`, `E9`, and `F`. The exact paths are in `ruff.toml`. |
 
 The build guard traverses every application entry's static imports, including
 indirect imports, using `dist/.vite/manifest.json`. It rejects eager
@@ -46,6 +47,8 @@ python -m pip install -r backend/requirements-dev.txt
 python -m ruff check .
 npm run check:interfaces
 npm run build
+npx playwright install chromium
+npm run test:hermes
 ```
 
 Verify `python --version` before installing or running backend commands. On
@@ -106,7 +109,9 @@ dispatches. Concurrency is grouped by workflow and ref, so a new run cancels
 an obsolete run on the same ref. A PR and a branch push may each start a run.
 
 The bootstrap adds a Python lint job and frontend lint/format checks. The
-frontend build also checks application types and lazy vendor imports. Existing
+frontend build also checks application types and lazy vendor imports. The main
+integration adds focused Hermes browser regressions to that CI job; failed runs
+retain browser traces. This is not the broader future frontend unit/E2E suite. Existing
 backend tests continue with both database URLs pointing to `langconfig_test`.
 The async database fixtures now use `pytest_asyncio.fixture`, matching strict
 asyncio mode. Migration tests normalize the asyncpg URL to a synchronous driver
@@ -119,7 +124,7 @@ existing NLTK assessment (expires October 8) are documented in
 [DEPENDENCY_SECURITY.md](DEPENDENCY_SECURITY.md). CI enables the pinned MiniLM
 embedding regression and checks installed dependency consistency with pip.
 
-Add frontend unit/browser runners, API generation checks, scoped mypy, recipe
+Add frontend unit tests, broader browser coverage, API generation checks, scoped mypy, recipe
 evaluations, expanded lint lists, and coverage enforcement in branches
 that also contain their required tests, modules, and dependency changes.
 Do not enable a CI command before its inputs exist on that branch.

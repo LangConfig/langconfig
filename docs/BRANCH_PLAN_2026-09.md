@@ -25,7 +25,12 @@ The existing onboarding branch has three commits above `origin/main`:
 
 These are an explicit prerequisite. Initial review branches target that branch
 or a prepared successor, so their diffs do not repeat the onboarding work.
-The onboarding prerequisite still needs its own review before merging to main.
+The first wave was validated and merged into the onboarding branch as PRs
+[#73](https://github.com/LangConfig/langconfig/pull/73),
+[#74](https://github.com/LangConfig/langconfig/pull/74), and
+[#75](https://github.com/LangConfig/langconfig/pull/75). The `main` integration
+includes these three onboarding commits as well as those completed slices;
+its final PR checks validate the combined tree against `main`.
 
 ## Branch queue
 
@@ -122,8 +127,9 @@ Use [QUALITY_GATES.md](QUALITY_GATES.md) for checks that exist on the bootstrap
 branch. Later branches extend that guide together with their enforced scopes.
 The final staged Biome configuration checks four interfaces, Ruff checks four
 Python modules and mypy checks three. Those checks are incremental adoption,
-not whole-repository lint/type coverage. The 12 existing Biome `any` warnings
-remain a visible limitation until addressed.
+not whole-repository lint/type coverage. The 12 Biome `any` warnings recorded
+for that captured configuration belong to the unsplit source; they do not
+describe the narrower first-wave lint gate.
 
 ## Fresh verification of the captured integration tree
 
@@ -171,8 +177,19 @@ NLTK 3.10.3 assessment remains, with its October 8 expiry unchanged. A passing
 policy gate does not mean zero vulnerabilities. The complete SDK/lock refresh
 remains separate, and npm versions are still the earlier pins.
 
-The first publication wave is #73 → #74 → #75. These PRs land in dependency
-order on the existing `codex/onboarding-hermes-platform-tools` destination.
+The first publication wave is #73 → #74 → #75. These PRs merged in dependency
+order on `codex/onboarding-hermes-platform-tools`, ending at `60e53e3`.
+The main integration branch carries that complete tree forward. The remaining
+feature queue and the preserved staged source are outside this landing.
+After the main-bound review fixes, the local backend run passed **734 tests**
+with **7 skipped and 80 warnings**, using a disposable PostgreSQL database.
+Focused Ruff, installed Python dependency consistency, frontend scoped lint,
+formatting, application types, production build, and lazy-import checks passed.
+The **8 Chromium Hermes tests** passed against the real component with mocked
+APIs, covering draft approval, stream ownership, and visible activation failures.
+These results describe the first-wave integration tree, not the
+historical 1,297-test unsplit tree above. Current-head PR checks still need to
+pass before the main merge; no release version is being created by this landing.
 Their linked PR descriptions and checks record the final commit-specific CI
 results and merge state. Every job must pass on the current PR head; the old
 workflow's successful overall conclusion hid a failing informational audit.
@@ -201,7 +218,10 @@ constraint-name alignment, model export registration, new migration regressions
 with clean schema teardown for repeatable database sequences,
 the PII profile-failure regression, the enforcing security assessment gate and
 its tests, preservation of existing setup encryption keys, and owned CLI
-process-tree containment with real subprocess regressions. Preserve those
+process-tree containment with real subprocess regressions. Main-bound review
+also adds public-only native HTTP connections (including DNS and redirects),
+Hermes draft approval/stream ownership browser regressions, and working schedule
+and file-watch activation with explicit failure results. Preserve those
 improvements when assembling the final tip. Do not restore obsolete Accelerate
 exceptions from the captured snapshot: current resolution selects a patched version.
 Bootstrap quality configurations intentionally remain narrower than the captured
