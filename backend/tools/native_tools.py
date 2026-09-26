@@ -28,6 +28,7 @@ from langchain_core.tools import StructuredTool, tool
 from langchain_community.tools import DuckDuckGoSearchRun
 import httpx
 import os
+from tools.public_http import public_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +324,9 @@ async def web_fetch(url: str, timeout: int = 10) -> str:
     Fetch the content of a webpage.
 
     Useful for reading articles, documentation, and web pages.
+    Only public HTTP(S) destinations are allowed, including after redirects.
+    Local/private addresses, URL credentials, and unresolved hosts return an
+    explicit error; this tool cannot call local LangConfig APIs.
 
     Args:
         url: The URL to fetch
@@ -337,7 +341,7 @@ async def web_fetch(url: str, timeout: int = 10) -> str:
     try:
         logger.info(f"Fetching URL: {url}")
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with _get_http_client(timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
 
@@ -1489,12 +1493,12 @@ _HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
 
 def _get_http_client(timeout: float) -> httpx.AsyncClient:
     """
-    Create the AsyncClient used by http_request.
+    Create the public-network-only client used by http_request and web_fetch.
 
     Module-level factory so tests can monkeypatch it with an
     httpx.MockTransport-backed client instead of hitting the network.
     """
-    return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+    return public_http_client(timeout)
 
 
 @tool
@@ -1544,6 +1548,9 @@ async def http_request(
 
     Use this for calling REST/JSON APIs with full control over method,
     headers, and body. For reading regular web pages, prefer web_fetch.
+    Only public destinations are allowed, including after redirects. Local or
+    private addresses, URL credentials, and unresolved hosts return an explicit
+    error; use the dedicated approval-gated tools for local LangConfig actions.
 
     Args:
         url: Full URL including scheme. Only http:// and https:// are allowed.
