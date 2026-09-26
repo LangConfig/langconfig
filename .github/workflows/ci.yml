@@ -107,7 +107,7 @@ jobs:
           if-no-files-found: error
 
   frontend-build:
-    name: Frontend lint, types, and build
+    name: Frontend lint, types, build, and Hermes tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,3 +128,17 @@ jobs:
       # Includes application types and static-import contracts; no Rust toolchain needed.
       - name: Build frontend
         run: npm run build
+
+      - name: Install Chromium for Hermes interaction regressions
+        run: npx playwright install --with-deps chromium
+
+      - name: Check Hermes approval and stream lifecycle
+        run: npm run test:hermes
+
+      - name: Retain failed Hermes browser traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-browser-results
+          path: test-results/hermes
+          if-no-files-found: ignore

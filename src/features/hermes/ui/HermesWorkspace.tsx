@@ -131,9 +131,15 @@ export default function HermesWorkspace() {
   const [experimentalDisabled, setExperimentalDisabled] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  const selectedValidation = selectedDraft?.validation_result || validationResult;
+  const selectedResult = selectedDraft?.status === 'applied'
+    ? selectedDraft.apply_result
+    : selectedDraft?.validation_result || validationResult;
   const codexReady = Boolean(codexStatus?.installed && codexStatus?.logged_in);
-  const selectedDraftId = selectedDraft?.id;
+
+  const invalidateDraftSelection = () => {
+    setSelectedDraft(null);
+    setValidationResult(null);
+  };
 
   const refresh = useCallback(async () => {
     setBusy('refresh');
@@ -150,10 +156,11 @@ export default function HermesWorkspace() {
       setBrainStatus(brain.data);
       setDrafts(draftList.data);
       setExperimentalDisabled(false);
-      if (selectedDraftId) {
-        const updated = draftList.data.find((draft: HermesDraft) => draft.id === selectedDraftId);
-        setSelectedDraft(updated || null);
-      }
+      // Reconcile the current selection so a completed create or editor change
+      // cannot be overwritten by the selection captured before the request.
+      setSelectedDraft((current) => current
+        ? draftList.data.find((draft: HermesDraft) => draft.id === current.id) || null
+        : null);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       const isDisabled = err?.response?.status === 403 && detail === 'Experimental local APIs are disabled';
@@ -162,12 +169,16 @@ export default function HermesWorkspace() {
     } finally {
       setBusy(null);
     }
-  }, [activeProject?.id, selectedDraftId]);
+  }, [activeProject?.id]);
 
   useEffect(() => {
     refresh();
-    return () => eventSourceRef.current?.close();
   }, [refresh]);
+
+  useEffect(() => () => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+  }, []);
 
   const searchBrain = async () => {
     setBusy('search');
@@ -277,6 +288,7 @@ export default function HermesWorkspace() {
     setBusy('codex');
     setError(null);
     eventSourceRef.current?.close();
+    eventSourceRef.current = null;
     try {
       const response = await apiClient.startCodexRun({
         prompt: codexPrompt,
@@ -288,6 +300,7 @@ export default function HermesWorkspace() {
       const source = new EventSource(apiClient.getCodexRunEventsUrl(response.data.id));
       eventSourceRef.current = source;
       source.onmessage = (event) => {
+        if (eventSourceRef.current !== source) return;
         try {
           const parsed = JSON.parse(event.data);
           setCodexEvents((events) => [...events, parsed].slice(-80));
@@ -295,6 +308,7 @@ export default function HermesWorkspace() {
           if (terminalType === 'run.completed' || terminalType === 'run.failed' || terminalType === 'run.cancelled') {
             source.close();
             apiClient.getCodexRunEvents(response.data.id).then((eventsResponse) => {
+              if (eventSourceRef.current !== source) return;
               const events = eventsResponse.data.events || [];
               setCodexEvents(events);
               const last = events[events.length - 1];
@@ -372,6 +386,7 @@ export default function HermesWorkspace() {
           <button
             type="button"
             onClick={refresh}
+            disabled={Boolean(busy)}
             className="flex h-10 items-center gap-2 rounded-[4px] border-2 border-border-dark bg-white px-3 font-mono text-sm font-semibold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)]"
           >
             <RefreshCw className="h-4 w-4" />
@@ -406,7 +421,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={searchBrain}
-                disabled={busy === 'search'}
+                disabled={Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-primary px-3 font-mono text-sm font-semibold text-white shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <Search className="h-4 w-4" />
@@ -415,7 +430,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={reindexBrain}
-                disabled={busy === 'reindex'}
+                disabled={Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-white px-3 font-mono text-sm font-semibold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -461,12 +476,20 @@ export default function HermesWorkspace() {
             <div className="grid grid-cols-[1fr_160px] gap-3">
               <input
                 value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
+                disabled={Boolean(busy)}
+                onChange={(event) => {
+                  setDraftTitle(event.target.value);
+                  invalidateDraftSelection();
+                }}
                 className="h-10 rounded-[4px] border-2 border-border-dark bg-white px-3 text-sm font-semibold text-text-primary outline-none focus:ring-2 focus:ring-primary"
               />
               <select
                 value={artifactType}
-                onChange={(event) => setArtifactType(event.target.value)}
+                disabled={Boolean(busy)}
+                onChange={(event) => {
+                  setArtifactType(event.target.value);
+                  invalidateDraftSelection();
+                }}
                 className="h-10 rounded-[4px] border-2 border-border-dark bg-white px-3 text-sm font-semibold text-text-primary outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="workflow">Workflow</option>
@@ -480,7 +503,11 @@ export default function HermesWorkspace() {
             <div className="grid min-h-0 grid-cols-[1fr_220px] gap-3">
               <textarea
                 value={payloadText}
-                onChange={(event) => setPayloadText(event.target.value)}
+                disabled={Boolean(busy)}
+                onChange={(event) => {
+                  setPayloadText(event.target.value);
+                  invalidateDraftSelection();
+                }}
                 className="min-h-0 resize-none rounded-[4px] border-2 border-border-dark bg-[#1f1b24] p-3 font-mono text-xs leading-5 text-[#f8f0e8] outline-none focus:ring-2 focus:ring-primary"
                 spellCheck={false}
               />
@@ -489,6 +516,7 @@ export default function HermesWorkspace() {
                   <button
                     key={draft.id}
                     type="button"
+                    disabled={Boolean(busy)}
                     onClick={() => {
                       setSelectedDraft(draft);
                       setDraftTitle(draft.title);
@@ -516,7 +544,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={createDraft}
-                disabled={busy === 'create-draft'}
+                disabled={Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-primary px-3 font-mono text-sm font-semibold text-white shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <Send className="h-4 w-4" />
@@ -525,7 +553,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={validateSelectedDraft}
-                disabled={!selectedDraft || busy === 'validate'}
+                disabled={!selectedDraft || Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-white px-3 font-mono text-sm font-semibold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <ShieldCheck className="h-4 w-4" />
@@ -534,7 +562,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={rejectSelectedDraft}
-                disabled={!selectedDraft || busy === 'reject'}
+                disabled={!selectedDraft || Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-white px-3 font-mono text-sm font-semibold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <XCircle className="h-4 w-4" />
@@ -545,12 +573,14 @@ export default function HermesWorkspace() {
             <div className="grid grid-cols-[1fr_1fr_130px] gap-2">
               <input
                 value={targetId}
+                disabled={Boolean(busy)}
                 onChange={(event) => setTargetId(event.target.value)}
                 placeholder="target id"
                 className="h-10 rounded-[4px] border-2 border-border-dark bg-white px-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-primary"
               />
               <input
                 value={lockVersion}
+                disabled={Boolean(busy)}
                 onChange={(event) => setLockVersion(event.target.value)}
                 placeholder="lock version"
                 className="h-10 rounded-[4px] border-2 border-border-dark bg-white px-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-primary"
@@ -558,7 +588,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={applySelectedDraft}
-                disabled={!selectedDraft || busy === 'apply'}
+                disabled={!selectedDraft || Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-green-700 px-3 font-mono text-sm font-semibold text-white shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <CheckCircle2 className="h-4 w-4" />
@@ -566,9 +596,9 @@ export default function HermesWorkspace() {
               </button>
             </div>
 
-            {selectedValidation && (
+            {selectedResult && (
               <pre className="max-h-44 overflow-auto rounded-[4px] border-2 border-border-dark bg-white p-3 font-mono text-xs leading-5 text-text-primary">
-                {formatJson(selectedValidation)}
+                {formatJson(selectedResult)}
               </pre>
             )}
           </div>
@@ -599,7 +629,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={startCodexRun}
-                disabled={busy === 'codex' || !codexPrompt.trim()}
+                disabled={Boolean(busy) || !codexPrompt.trim()}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-primary px-3 font-mono text-sm font-semibold text-white shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <Play className="h-4 w-4" />
@@ -608,7 +638,7 @@ export default function HermesWorkspace() {
               <button
                 type="button"
                 onClick={cancelCodexRun}
-                disabled={!codexRun || busy === 'cancel-codex'}
+                disabled={!codexRun || Boolean(busy)}
                 className="flex h-10 items-center justify-center gap-2 rounded-[4px] border-2 border-border-dark bg-white px-3 font-mono text-sm font-semibold text-text-primary shadow-[3px_3px_0_var(--color-border-dark)] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[1px_1px_0_var(--color-border-dark)] disabled:opacity-60"
               >
                 <CircleStop className="h-4 w-4" />

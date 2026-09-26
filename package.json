@@ -13,6 +13,7 @@
     "build": "npm run typecheck && vite build && node scripts/check-build.mjs",
     "lint": "biome lint",
     "typecheck": "tsc --noEmit",
+    "test:hermes": "playwright test --config playwright.hermes.config.ts",
     "format:check": "biome format",
     "format": "biome format --write",
     "check:interfaces": "npm run lint && npm run format:check && npm run typecheck",
@@ -57,6 +58,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/postcss": "^4.1.16",
     "@tauri-apps/cli": "^2",

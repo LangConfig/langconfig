@@ -108,6 +108,8 @@ client_secret*.json
 
 # Backend outputs
 /python-advisories.json
+/test-results/
+/playwright-report/
 /backend/outputs/
 /backend/workspace/
 
