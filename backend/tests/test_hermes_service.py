@@ -1,7 +1,10 @@
+import asyncio
 import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -29,6 +32,321 @@ from services.hermes_service import (
     validate_existing_draft,
 )
 from api.hermes.routes import validate_draft as validate_draft_route
+
+
+@pytest.fixture
+def running_file_watcher(monkeypatch):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()
+    monkeypatch.setattr(watcher, "_load_and_start_watchers", AsyncMock())
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    asyncio.run_coroutine_threadsafe(watcher.start(), loop).result(timeout=5)
+    try:
+        yield watcher
+    finally:
+        asyncio.run_coroutine_threadsafe(watcher.stop(), loop).result(timeout=10)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+
+def _automation_draft(session, artifact_type, **payload):
+    workflow = WorkflowProfile(name="Hermes automation parent", configuration={})
+    session.add(workflow)
+    session.commit()
+    return create_draft(
+        session,
+        artifact_type=artifact_type,
+        title="Hermes automation",
+        payload_json={"workflow_id": workflow.id, **payload},
+    )
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_hermes_schedule_initializes_next_run_and_respects_enabled(enabled):
+    import pytz
+
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "schedule", cron_expression="0 9 * * *",
+            timezone="America/Los_Angeles", enabled=enabled,
+        )
+        result = apply_draft(session, draft)
+        session.expire_all()
+        schedule = session.get(WorkflowSchedule, result["schedule_id"])
+        assert schedule.enabled is enabled
+        assert schedule.next_run_at is not None
+        # SQLite drops the timezone marker; the API/scheduler contract stores UTC.
+        next_run = schedule.next_run_at.replace(tzinfo=timezone.utc)
+        assert next_run > datetime.now(timezone.utc)
+        assert next_run.astimezone(pytz.timezone(schedule.timezone)).hour == 9
+        due = session.query(WorkflowSchedule).filter(
+            WorkflowSchedule.enabled.is_(True),
+            WorkflowSchedule.next_run_at.is_not(None),
+            WorkflowSchedule.next_run_at <= next_run + timedelta(seconds=1),
+        ).all()
+        assert [item.id for item in due] == ([schedule.id] if enabled else [])
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("cron_expression", "schedule_timezone"),
+    [("not a cron", "UTC"), ("0 9 * * *", "Invalid/Timezone")],
+)
+def test_hermes_schedule_rejects_invalid_cron_or_timezone(cron_expression, schedule_timezone):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "schedule", cron_expression=cron_expression, timezone=schedule_timezone,
+        )
+        assert draft.status == "validation_failed"
+        with pytest.raises(HermesApplyError, match="validation failed"):
+            apply_draft(session, draft)
+        session.expire_all()
+        assert session.query(WorkflowSchedule).count() == 0
+        assert session.get(HermesDraft, draft.id).status == "validation_failed"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_starts_after_commit_and_consumes_real_event(
+    tmp_path, monkeypatch, running_file_watcher,
+):
+    from core.task_queue import task_queue
+    from db import database
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'watcher.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+    queued = threading.Event()
+    captured = []
+
+    async def enqueue(task_name, payload, **kwargs):
+        captured.append((task_name, payload))
+        queued.set()
+        return None
+
+    monkeypatch.setattr(task_queue, "enqueue", enqueue)
+    watch_path = tmp_path / "input"
+    watch_path.mkdir()
+    session = sessions()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch",
+            config={"watch_path": str(watch_path), "events": ["created"]},
+        )
+        draft_id = draft.id
+        original_start = running_file_watcher._start_watcher
+        owner_threads = []
+
+        def checked_start(trigger_id, workflow_id, config):
+            with sessions() as observer_session:
+                stored = observer_session.get(WorkflowTrigger, trigger_id)
+                assert stored is not None
+                assert stored.enabled is False
+                assert observer_session.get(HermesDraft, draft_id).status == "applied"
+            owner_threads.append(asyncio.get_running_loop())
+            return original_start(trigger_id, workflow_id, config)
+
+        monkeypatch.setattr(running_file_watcher, "_start_watcher", checked_start)
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "active"
+        assert result["trigger_id"] in running_file_watcher.observers
+        assert owner_threads == [running_file_watcher._event_loop]
+        with sessions() as observer_session:
+            assert observer_session.get(WorkflowTrigger, result["trigger_id"]).enabled is True
+        (watch_path / "created.txt").write_text("event", encoding="utf-8")
+        assert queued.wait(timeout=10), "Active observer did not enqueue a real filesystem event"
+        assert captured[0][0] == "execute_triggered_workflow"
+        assert captured[0][1]["trigger_id"] == result["trigger_id"]
+        assert captured[0][1]["input_data"]["context"]["file_name"] == "created.txt"
+    finally:
+        asyncio.run_coroutine_threadsafe(
+            running_file_watcher.stop(), running_file_watcher._event_loop,
+        ).result(timeout=10)
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_hermes_file_watch_disabled_or_failed_activation_is_persisted(tmp_path, monkeypatch, enabled):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()  # Service has no running owner loop.
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", enabled=enabled,
+            config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        session.expire_all()
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        stored = session.get(HermesDraft, draft.id)
+        assert stored.status == "applied"
+        assert stored.apply_result["activation"]["status"] == ("failed" if enabled else "disabled")
+        assert stored.apply_result["activation"]["message"]
+        assert watcher.observers == {}
+        with pytest.raises(HermesApplyError, match="already been applied"):
+            apply_draft(session, stored)
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_never_activates_on_commit_failure(tmp_path, monkeypatch, running_file_watcher):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+
+        def fail_commit():
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(session, "commit", fail_commit)
+        with pytest.raises(RuntimeError, match="commit failed"):
+            apply_draft(session, draft)
+        session.expire_all()
+        assert session.query(WorkflowTrigger).count() == 0
+        assert session.get(HermesDraft, draft.id).status == "validated"
+        assert running_file_watcher.observers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_hermes_file_watch_apply_on_owner_loop_does_not_deadlock(tmp_path, monkeypatch):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()
+    watcher._is_running = True
+    watcher._event_loop = asyncio.get_running_loop()
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "active"
+        assert result["trigger_id"] in watcher.observers
+    finally:
+        await watcher.stop()
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_start_failure_is_visible(tmp_path, running_file_watcher):
+    invalid_path = tmp_path / "not-a-directory.txt"
+    invalid_path.write_text("file", encoding="utf-8")
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(invalid_path)},
+        )
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "failed"
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        assert draft.status == "applied"
+        assert running_file_watcher.observers == {}
+        assert running_file_watcher.handlers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_finalization_failure_stops_observer(tmp_path, monkeypatch, running_file_watcher):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+        original_commit = session.commit
+        commit_calls = 0
+
+        def fail_activation_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 2:
+                raise RuntimeError("activation status commit failed")
+            return original_commit()
+
+        monkeypatch.setattr(session, "commit", fail_activation_commit)
+        result = apply_draft(session, draft)
+        session.expire_all()
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        assert session.get(HermesDraft, draft.id).status == "applied"
+        assert result["activation"]["status"] == "failed"
+        assert "activation status commit failed" in result["activation"]["message"]
+        assert running_file_watcher.observers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_file_watch_activation_timeout_cleans_up_late_observer(tmp_path, monkeypatch, running_file_watcher):
+    watcher = running_file_watcher
+    original_start = watcher._start_watcher
+    original_bridge = watcher._on_owner_loop
+    release_start = threading.Event()
+    entered_start = threading.Event()
+
+    def delayed_start(*args):
+        entered_start.set()
+        assert release_start.wait(timeout=3)
+        return original_start(*args)
+
+    monkeypatch.setattr(watcher, "_start_watcher", delayed_start)
+    monkeypatch.setattr(watcher, "_on_owner_loop", lambda callback: original_bridge(callback, timeout=0.1))
+    try:
+        with pytest.raises(RuntimeError, match="activation timeout"):
+            watcher.activate_watcher(123, 456, {"watch_path": str(tmp_path)})
+        assert entered_start.is_set()
+    finally:
+        release_start.set()
+        # This barrier runs after the timed-out startup and its queued cleanup.
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), watcher._event_loop).result(timeout=5)
+    assert watcher.observers == {}
+    assert watcher.handlers == {}
+
+
+@pytest.mark.asyncio
+async def test_file_watch_consumer_does_not_run_disabled_trigger(monkeypatch, tmp_path):
+    from core.task_queue import task_queue
+    from db import database
+    from models.workflow_trigger import TriggerLog
+    from services.triggers.file_watcher import FileWatchHandler, FileWatcherService
+
+    engine, session = _db_session()
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=engine))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(task_queue, "enqueue", enqueue)
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", enabled=False,
+            config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        trigger = session.get(WorkflowTrigger, result["trigger_id"])
+        handler = FileWatchHandler(trigger.id, trigger.workflow_id, trigger.config)
+        await FileWatcherService()._trigger_workflow(handler, str(tmp_path / "test.txt"), {})
+        enqueue.assert_not_awaited()
+        assert session.query(TriggerLog).count() == 0
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def _db_session():

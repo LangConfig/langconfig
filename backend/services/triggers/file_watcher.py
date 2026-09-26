@@ -19,11 +19,11 @@ Features:
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone, timedelta
+from concurrent.futures import Future, TimeoutError
+from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Dict, Optional, Any
-from threading import Thread
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ class FileWatcherService:
         try:
             triggers = db.query(WorkflowTrigger).filter(
                 WorkflowTrigger.trigger_type == TriggerType.FILE_WATCH.value,
-                WorkflowTrigger.enabled == True
+                WorkflowTrigger.enabled.is_(True)
             ).all()
 
             logger.info(f"Found {len(triggers)} enabled file watch trigger(s)")
@@ -221,8 +221,64 @@ class FileWatcherService:
         finally:
             db.close()
 
+    def _on_owner_loop(self, callback, *, timeout: float = 5):
+        """Run observer mutations on the service loop, including sync callers."""
+        loop = self._event_loop
+        if not self._is_running or loop is None or not loop.is_running():
+            raise RuntimeError("File watcher service is not running")
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if current_loop is loop:
+            # Native async tools can call the synchronous Hermes service here.
+            # Waiting on a future for this same loop would deadlock it.
+            return callback()
+
+        future = Future()
+
+        def invoke():
+            if not future.set_running_or_notify_cancel():
+                return
+            try:
+                if not self._is_running:
+                    raise RuntimeError("File watcher service is stopping")
+                future.set_result(callback())
+            except Exception as exc:
+                future.set_exception(exc)
+
+        loop.call_soon_threadsafe(invoke)
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            future.cancel()
+            raise RuntimeError("File watcher service did not respond before the activation timeout") from None
+
+    def activate_watcher(self, trigger_id: int, workflow_id: int, config: dict):
+        """Confirm startup for a committed trigger without blocking its owner loop."""
+        try:
+            started = self._on_owner_loop(lambda: self._start_watcher(trigger_id, workflow_id, config))
+            if not started:
+                raise RuntimeError("File watcher could not start; check its path and backend logs")
+        except Exception:
+            # A timed-out registration may already be running. Queue cleanup on
+            # the same loop so it cannot leave a late observer behind.
+            loop = self._event_loop
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(self._stop_watcher, trigger_id)
+            raise
+
+    def deactivate_watcher(self, trigger_id: int):
+        self._on_owner_loop(lambda: self._stop_watcher(trigger_id))
+
     async def start_watcher(self, trigger_id: int, workflow_id: int, config: dict):
+        return self._start_watcher(trigger_id, workflow_id, config)
+
+    def _start_watcher(self, trigger_id: int, workflow_id: int, config: dict) -> bool:
         """Start a file watcher for a specific trigger."""
+        if trigger_id in self.observers:
+            return True
+        observer = None
         try:
             from watchdog.observers import Observer
             from watchdog.events import FileSystemEventHandler
@@ -230,7 +286,7 @@ class FileWatcherService:
             watch_path = config.get("watch_path")
             if not watch_path:
                 logger.error(f"Trigger {trigger_id}: No watch_path configured")
-                return
+                return False
 
             # Verify path exists
             if not os.path.exists(watch_path):
@@ -241,7 +297,11 @@ class FileWatcherService:
                     logger.info(f"Created watch directory: {watch_path}")
                 except Exception as e:
                     logger.error(f"Could not create watch directory: {e}")
-                    return
+                    return False
+
+            if not os.path.isdir(watch_path):
+                logger.error(f"Trigger {trigger_id}: Watch path is not a directory: {watch_path}")
+                return False
 
             # Create handler
             handler = FileWatchHandler(trigger_id, workflow_id, config)
@@ -282,6 +342,7 @@ class FileWatcherService:
                 f"Started file watcher for trigger {trigger_id}: "
                 f"path={watch_path}, patterns={handler.patterns}, events={handler.events}"
             )
+            return True
 
         except ImportError:
             logger.error(
@@ -290,8 +351,17 @@ class FileWatcherService:
             )
         except Exception as e:
             logger.error(f"Error starting file watcher for trigger {trigger_id}: {e}", exc_info=True)
+        self.handlers.pop(trigger_id, None)
+        if observer is not None:
+            observer.stop()
+            if observer.is_alive():
+                observer.join(timeout=5)
+        return False
 
     async def stop_watcher(self, trigger_id: int):
+        self._stop_watcher(trigger_id)
+
+    def _stop_watcher(self, trigger_id: int):
         """Stop a specific file watcher."""
         if trigger_id in self.observers:
             try:
@@ -345,8 +415,8 @@ class FileWatcherService:
                 WorkflowTrigger.id == handler.trigger_id
             ).first()
 
-            if not trigger:
-                logger.warning(f"Trigger {handler.trigger_id} not found")
+            if not trigger or not trigger.enabled:
+                logger.debug(f"Trigger {handler.trigger_id} is missing or disabled")
                 return
 
             # Create trigger log

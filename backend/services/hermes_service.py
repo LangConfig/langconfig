@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -224,14 +225,20 @@ def apply_draft(
             "approval_note": approval_note,
         }
         db.commit()
-        db.refresh(locked_draft)
-        return locked_draft.apply_result or {}
     except IntegrityError as exc:
         db.rollback()
         raise HermesApplyError(f"Artifact could not be saved: {exc.orig}") from exc
     except Exception:
         db.rollback()
         raise
+
+    # External observers must not see an uncommitted artifact. Pending file
+    # watches are saved disabled, so a crash or activation failure cannot leave
+    # a trigger claiming to be enabled without a corresponding observer.
+    if result.get("activation", {}).get("status") == "pending":
+        return _activate_applied_file_watch(db, locked_draft, result, payload)
+    db.refresh(locked_draft)
+    return locked_draft.apply_result or {}
 
 
 def reject_draft(db: Session, draft: HermesDraft, reason: Optional[str] = None) -> HermesDraft:
@@ -350,6 +357,12 @@ def _validate_schedule_payload(
         issues.append({"path": "$.workflow_id", "message": f"workflow {workflow_id} was not found"})
     if not payload.get("cron_expression"):
         issues.append({"path": "$.cron_expression", "message": "cron_expression is required"})
+    else:
+        from api.schedules.routes import validate_cron_internal
+
+        validation = validate_cron_internal(payload["cron_expression"], payload.get("timezone") or "UTC")
+        if not validation["valid"]:
+            issues.append({"path": "$.cron_expression", "message": validation["error"]})
     if not payload.get("timezone"):
         warnings.append({"path": "$.timezone", "message": "timezone omitted; UTC will be used"})
 
@@ -515,6 +528,11 @@ def _apply_custom_tool(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _apply_schedule(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
+    from api.schedules.routes import validate_cron_internal
+
+    validation = validate_cron_internal(payload["cron_expression"], payload.get("timezone") or "UTC")
+    if not validation["valid"] or not validation["next_runs"]:
+        raise HermesApplyError(f"Invalid schedule: {validation['error']}")
     schedule = WorkflowSchedule(
         workflow_id=payload["workflow_id"],
         name=payload.get("name"),
@@ -525,6 +543,7 @@ def _apply_schedule(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
         max_concurrent_runs=int(payload.get("max_concurrent_runs", 1)),
         timeout_minutes=int(payload.get("timeout_minutes", 60)),
         idempotency_key_template=payload.get("idempotency_key_template"),
+        next_run_at=datetime.fromisoformat(validation["next_runs"][0].replace("Z", "+00:00")),
     )
     db.add(schedule)
     db.flush()
@@ -534,11 +553,12 @@ def _apply_schedule(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _apply_trigger(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
     trigger_type = TriggerType(payload["trigger_type"])
+    requested_enabled = bool(payload.get("enabled", True))
     trigger = WorkflowTrigger(
         workflow_id=payload["workflow_id"],
         trigger_type=trigger_type.value,
         name=payload.get("name"),
-        enabled=bool(payload.get("enabled", True)),
+        enabled=requested_enabled if trigger_type == TriggerType.WEBHOOK else False,
         config=payload.get("config") or {},
     )
     if trigger_type == TriggerType.WEBHOOK:
@@ -546,7 +566,51 @@ def _apply_trigger(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
     db.add(trigger)
     db.flush()
     db.refresh(trigger)
-    return {"artifact_type": "trigger", "action": "created", "trigger_id": trigger.id}
+    result = {"artifact_type": "trigger", "action": "created", "trigger_id": trigger.id}
+    if trigger_type == TriggerType.FILE_WATCH:
+        result["activation"] = {
+            "status": "pending" if requested_enabled else "disabled",
+            "message": "Waiting for file watcher activation" if requested_enabled else "Created disabled",
+        }
+    return result
+
+
+def _activate_applied_file_watch(
+    db: Session, draft: HermesDraft, result: Dict[str, Any], payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    from services.triggers.file_watcher import get_file_watcher
+
+    trigger_id = result["trigger_id"]
+    watcher = get_file_watcher()
+    try:
+        watcher.activate_watcher(trigger_id, payload["workflow_id"], payload.get("config") or {})
+        trigger = db.get(WorkflowTrigger, trigger_id)
+        trigger.enabled = True
+        draft.apply_result = {
+            **draft.apply_result,
+            "activation": {"status": "active", "message": "File watcher started"},
+        }
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        # The initial transaction is already committed and the draft remains
+        # applied. Keep its one artifact disabled and expose the failed startup;
+        # retrying Apply must not create a second trigger.
+        try:
+            watcher.deactivate_watcher(trigger_id)
+        except Exception:
+            # No running loop (or a timed-out loop) is already handled by the
+            # activation bridge; its queued cleanup runs before later events.
+            pass
+        trigger = db.get(WorkflowTrigger, trigger_id)
+        trigger.enabled = False
+        draft.apply_result = {
+            **draft.apply_result,
+            "activation": {"status": "failed", "message": f"Saved disabled: {exc}"},
+        }
+        db.commit()
+    db.refresh(draft)
+    return draft.apply_result or {}
 
 
 def _slugify(value: str) -> str:
