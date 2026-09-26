@@ -3,6 +3,11 @@
 Status: implemented
 Date: 2026-06-29
 
+> Historical implementation record. The dependency and "Current State" sections
+> below describe the pre-implementation baseline, not fresh-clone setup. Use
+> [docs/SETUP.md](docs/SETUP.md) and the current `backend/requirements.txt` for
+> installation.
+
 ## Summary
 
 LangChain's new dynamic subagents pattern lets a Deep Agent write JavaScript orchestration code in a QuickJS interpreter and call `task()` from code. For LangConfig, this creates a product opportunity to support inspectable dynamic workflows: loops, branches, parallel fan-out, typed subagent results, verification passes, tournament patterns, and recursive analysis.
@@ -17,9 +22,9 @@ LangConfig is already close architecturally. It has DeepAgents, a LangGraph runt
 - Changelog: https://docs.langchain.com/oss/python/releases/changelog
 - Package metadata checked from PyPI for `deepagents==0.6.12`, `langchain==1.3.11`, `langgraph==1.2.6`, and `langchain-quickjs==0.3.2`.
 
-## Current State
+## Historical Pre-Implementation State
 
-Installed backend package versions:
+Package versions observed before implementation:
 
 - `deepagents 0.6.8`
 - `langchain 1.3.7`

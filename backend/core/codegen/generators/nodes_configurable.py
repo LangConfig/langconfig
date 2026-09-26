@@ -49,6 +49,12 @@ AVAILABLE_MODELS = {
         "import": "from langchain_anthropic import ChatAnthropic",
         "api_key_env": "ANTHROPIC_API_KEY"
     },
+    "claude-sonnet-5": {
+        "provider": "anthropic",
+        "class": "ChatAnthropic",
+        "import": "from langchain_anthropic import ChatAnthropic",
+        "api_key_env": "ANTHROPIC_API_KEY"
+    },
     "claude-opus-4-8": {
         "provider": "anthropic",
         "class": "ChatAnthropic",
@@ -488,6 +494,7 @@ AVAILABLE_MODELS = {
     "gpt-5.4": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
     "gpt-5.4-mini": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
     "claude-fable-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
+    "claude-sonnet-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
     "claude-opus-4-8": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
     "claude-sonnet-4-6": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},
     "claude-haiku-4-5": {"provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"},

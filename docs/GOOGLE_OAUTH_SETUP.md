@@ -76,13 +76,13 @@ Before creating credentials, you must configure the OAuth consent screen:
 
 **Authorized JavaScript origins:**
 ```
-http://localhost:1420
-http://localhost:8765
+http://localhost:1425
+http://localhost:8780
 ```
 
 **Authorized redirect URIs:**
 ```
-http://localhost:8765/api/auth/google/callback
+http://localhost:8780/api/auth/google/callback
 ```
 
 5. Click "Create"
@@ -93,18 +93,13 @@ After creating the OAuth client, you'll see:
 - **Client ID** - looks like: `123456789-abcdefg.apps.googleusercontent.com`
 - **Client Secret** - looks like: `GOCSPX-xxxxxxxxxxxxx`
 
-Copy these values to your environment files:
+Copy these values to the root `.env` file:
 
 ### Root `.env` file:
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
-```
-
-### Backend `.env` file (`backend/.env`):
-```env
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8780/api/auth/google/callback
 ```
 
 **Important:** Never commit these credentials to version control!
@@ -137,7 +132,7 @@ This is normal for development. Click "Advanced" > "Go to [App Name] (unsafe)" t
 
 Ensure the redirect URI in your OAuth credentials exactly matches:
 ```
-http://localhost:8765/api/auth/google/callback
+http://localhost:8780/api/auth/google/callback
 ```
 
 Check for:
@@ -175,6 +170,7 @@ For production use:
 ## Security Notes
 
 - OAuth tokens are encrypted at rest using Fernet encryption
-- The encryption key is auto-generated and stored in `backend/encryption.key`
-- Never share or commit the encryption key
+- OAuth tokens use the root `.env` value `APP_ENCRYPTION_KEY`; generate a Fernet
+  key before storing real credentials
+- Never share or commit the encryption key or OAuth credentials
 - Tokens can be revoked via the "Disconnect" button in the app

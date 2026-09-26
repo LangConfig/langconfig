@@ -59,10 +59,17 @@ def test_production_rejects_missing_key(monkeypatch, reset_singleton):
     with pytest.raises(RuntimeError, match="APP_ENCRYPTION_KEY must be set to a non-default value in production"):
         EncryptionService()
 
-def test_production_rejects_default_key(monkeypatch, reset_singleton):
-    """Production must refuse to initialize when APP_ENCRYPTION_KEY is the known default."""
+@pytest.mark.parametrize(
+    "insecure_key",
+    [
+        "langconfig-default-insecure-key-change-me",
+        "replace-with-a-generated-fernet-key",
+    ],
+)
+def test_production_rejects_default_key(monkeypatch, reset_singleton, insecure_key):
+    """Production must refuse known default or shipped-placeholder keys."""
     monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("APP_ENCRYPTION_KEY", "langconfig-default-insecure-key-change-me")
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", insecure_key)
     with pytest.raises(RuntimeError, match="APP_ENCRYPTION_KEY must be set to a non-default value in production"):
         EncryptionService()
 

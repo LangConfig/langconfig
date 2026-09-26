@@ -1,0 +1,942 @@
+import asyncio
+import os
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import sessionmaker
+
+import models  # noqa: F401 - registers SQLAlchemy models
+import services.hermes_service as hermes_service
+from core.templates.deep_agent import DeepAgentTemplateRegistry, create_hermes_platform_builder
+from services.deepagent_factory import DeepAgentFactory
+from db.database import Base
+from models.custom_tool import CustomTool
+from models.deep_agent import DeepAgentTemplate
+from models.hermes import HermesDraft
+from models.workflow import WorkflowProfile
+from models.workflow_schedule import WorkflowSchedule
+from models.workflow_trigger import WorkflowTrigger
+from services.hermes_service import (
+    HermesApplyError,
+    apply_draft,
+    create_draft,
+    reject_draft,
+    validate_draft_payload,
+    validate_existing_draft,
+)
+from api.hermes.routes import validate_draft as validate_draft_route
+
+
+@pytest.fixture
+def running_file_watcher(monkeypatch):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()
+    monkeypatch.setattr(watcher, "_load_and_start_watchers", AsyncMock())
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    asyncio.run_coroutine_threadsafe(watcher.start(), loop).result(timeout=5)
+    try:
+        yield watcher
+    finally:
+        asyncio.run_coroutine_threadsafe(watcher.stop(), loop).result(timeout=10)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+
+
+def _automation_draft(session, artifact_type, **payload):
+    workflow = WorkflowProfile(name="Hermes automation parent", configuration={})
+    session.add(workflow)
+    session.commit()
+    return create_draft(
+        session,
+        artifact_type=artifact_type,
+        title="Hermes automation",
+        payload_json={"workflow_id": workflow.id, **payload},
+    )
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_hermes_schedule_initializes_next_run_and_respects_enabled(enabled):
+    import pytz
+
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "schedule", cron_expression="0 9 * * *",
+            timezone="America/Los_Angeles", enabled=enabled,
+        )
+        result = apply_draft(session, draft)
+        session.expire_all()
+        schedule = session.get(WorkflowSchedule, result["schedule_id"])
+        assert schedule.enabled is enabled
+        assert schedule.next_run_at is not None
+        # SQLite drops the timezone marker; the API/scheduler contract stores UTC.
+        next_run = schedule.next_run_at.replace(tzinfo=timezone.utc)
+        assert next_run > datetime.now(timezone.utc)
+        assert next_run.astimezone(pytz.timezone(schedule.timezone)).hour == 9
+        due = session.query(WorkflowSchedule).filter(
+            WorkflowSchedule.enabled.is_(True),
+            WorkflowSchedule.next_run_at.is_not(None),
+            WorkflowSchedule.next_run_at <= next_run + timedelta(seconds=1),
+        ).all()
+        assert [item.id for item in due] == ([schedule.id] if enabled else [])
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("cron_expression", "schedule_timezone"),
+    [("not a cron", "UTC"), ("0 9 * * *", "Invalid/Timezone")],
+)
+def test_hermes_schedule_rejects_invalid_cron_or_timezone(cron_expression, schedule_timezone):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "schedule", cron_expression=cron_expression, timezone=schedule_timezone,
+        )
+        assert draft.status == "validation_failed"
+        with pytest.raises(HermesApplyError, match="validation failed"):
+            apply_draft(session, draft)
+        session.expire_all()
+        assert session.query(WorkflowSchedule).count() == 0
+        assert session.get(HermesDraft, draft.id).status == "validation_failed"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_starts_after_commit_and_consumes_real_event(
+    tmp_path, monkeypatch, running_file_watcher,
+):
+    from core.task_queue import task_queue
+    from db import database
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'watcher.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+    queued = threading.Event()
+    captured = []
+
+    async def enqueue(task_name, payload, **kwargs):
+        captured.append((task_name, payload))
+        queued.set()
+        return None
+
+    monkeypatch.setattr(task_queue, "enqueue", enqueue)
+    watch_path = tmp_path / "input"
+    watch_path.mkdir()
+    session = sessions()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch",
+            config={"watch_path": str(watch_path), "events": ["created"]},
+        )
+        draft_id = draft.id
+        original_start = running_file_watcher._start_watcher
+        owner_threads = []
+
+        def checked_start(trigger_id, workflow_id, config):
+            with sessions() as observer_session:
+                stored = observer_session.get(WorkflowTrigger, trigger_id)
+                assert stored is not None
+                assert stored.enabled is False
+                assert observer_session.get(HermesDraft, draft_id).status == "applied"
+            owner_threads.append(asyncio.get_running_loop())
+            return original_start(trigger_id, workflow_id, config)
+
+        monkeypatch.setattr(running_file_watcher, "_start_watcher", checked_start)
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "active"
+        assert result["trigger_id"] in running_file_watcher.observers
+        assert owner_threads == [running_file_watcher._event_loop]
+        with sessions() as observer_session:
+            assert observer_session.get(WorkflowTrigger, result["trigger_id"]).enabled is True
+        (watch_path / "created.txt").write_text("event", encoding="utf-8")
+        assert queued.wait(timeout=10), "Active observer did not enqueue a real filesystem event"
+        assert captured[0][0] == "execute_triggered_workflow"
+        assert captured[0][1]["trigger_id"] == result["trigger_id"]
+        assert captured[0][1]["input_data"]["context"]["file_name"] == "created.txt"
+    finally:
+        asyncio.run_coroutine_threadsafe(
+            running_file_watcher.stop(), running_file_watcher._event_loop,
+        ).result(timeout=10)
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_hermes_file_watch_disabled_or_failed_activation_is_persisted(tmp_path, monkeypatch, enabled):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()  # Service has no running owner loop.
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", enabled=enabled,
+            config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        session.expire_all()
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        stored = session.get(HermesDraft, draft.id)
+        assert stored.status == "applied"
+        assert stored.apply_result["activation"]["status"] == ("failed" if enabled else "disabled")
+        assert stored.apply_result["activation"]["message"]
+        assert watcher.observers == {}
+        with pytest.raises(HermesApplyError, match="already been applied"):
+            apply_draft(session, stored)
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_never_activates_on_commit_failure(tmp_path, monkeypatch, running_file_watcher):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+
+        def fail_commit():
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(session, "commit", fail_commit)
+        with pytest.raises(RuntimeError, match="commit failed"):
+            apply_draft(session, draft)
+        session.expire_all()
+        assert session.query(WorkflowTrigger).count() == 0
+        assert session.get(HermesDraft, draft.id).status == "validated"
+        assert running_file_watcher.observers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_hermes_file_watch_apply_on_owner_loop_does_not_deadlock(tmp_path, monkeypatch):
+    from services.triggers import file_watcher
+
+    watcher = file_watcher.FileWatcherService()
+    watcher._is_running = True
+    watcher._event_loop = asyncio.get_running_loop()
+    monkeypatch.setattr(file_watcher, "get_file_watcher", lambda: watcher)
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "active"
+        assert result["trigger_id"] in watcher.observers
+    finally:
+        await watcher.stop()
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_start_failure_is_visible(tmp_path, running_file_watcher):
+    invalid_path = tmp_path / "not-a-directory.txt"
+    invalid_path.write_text("file", encoding="utf-8")
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(invalid_path)},
+        )
+        result = apply_draft(session, draft)
+        assert result["activation"]["status"] == "failed"
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        assert draft.status == "applied"
+        assert running_file_watcher.observers == {}
+        assert running_file_watcher.handlers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_file_watch_finalization_failure_stops_observer(tmp_path, monkeypatch, running_file_watcher):
+    engine, session = _db_session()
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", config={"watch_path": str(tmp_path)},
+        )
+        original_commit = session.commit
+        commit_calls = 0
+
+        def fail_activation_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 2:
+                raise RuntimeError("activation status commit failed")
+            return original_commit()
+
+        monkeypatch.setattr(session, "commit", fail_activation_commit)
+        result = apply_draft(session, draft)
+        session.expire_all()
+        assert session.get(WorkflowTrigger, result["trigger_id"]).enabled is False
+        assert session.get(HermesDraft, draft.id).status == "applied"
+        assert result["activation"]["status"] == "failed"
+        assert "activation status commit failed" in result["activation"]["message"]
+        assert running_file_watcher.observers == {}
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_file_watch_activation_timeout_cleans_up_late_observer(tmp_path, monkeypatch, running_file_watcher):
+    watcher = running_file_watcher
+    original_start = watcher._start_watcher
+    original_bridge = watcher._on_owner_loop
+    release_start = threading.Event()
+    entered_start = threading.Event()
+
+    def delayed_start(*args):
+        entered_start.set()
+        assert release_start.wait(timeout=3)
+        return original_start(*args)
+
+    monkeypatch.setattr(watcher, "_start_watcher", delayed_start)
+    monkeypatch.setattr(watcher, "_on_owner_loop", lambda callback: original_bridge(callback, timeout=0.1))
+    try:
+        with pytest.raises(RuntimeError, match="activation timeout"):
+            watcher.activate_watcher(123, 456, {"watch_path": str(tmp_path)})
+        assert entered_start.is_set()
+    finally:
+        release_start.set()
+        # This barrier runs after the timed-out startup and its queued cleanup.
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), watcher._event_loop).result(timeout=5)
+    assert watcher.observers == {}
+    assert watcher.handlers == {}
+
+
+@pytest.mark.asyncio
+async def test_file_watch_consumer_does_not_run_disabled_trigger(monkeypatch, tmp_path):
+    from core.task_queue import task_queue
+    from db import database
+    from models.workflow_trigger import TriggerLog
+    from services.triggers.file_watcher import FileWatchHandler, FileWatcherService
+
+    engine, session = _db_session()
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=engine))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(task_queue, "enqueue", enqueue)
+    try:
+        draft = _automation_draft(
+            session, "trigger", trigger_type="file_watch", enabled=False,
+            config={"watch_path": str(tmp_path)},
+        )
+        result = apply_draft(session, draft)
+        trigger = session.get(WorkflowTrigger, result["trigger_id"])
+        handler = FileWatchHandler(trigger.id, trigger.workflow_id, trigger.config)
+        await FileWatcherService()._trigger_workflow(handler, str(tmp_path / "test.txt"), {})
+        enqueue.assert_not_awaited()
+        assert session.query(TriggerLog).count() == 0
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def _db_session():
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    return engine, session
+
+
+def _workflow_payload(name="Hermes Test Workflow"):
+    return {
+        "name": name,
+        "configuration": {
+            "nodes": [
+                {"id": "start", "type": "START", "config": {}, "data": {"agentType": "START"}},
+                {"id": "end", "type": "END", "config": {}, "data": {"agentType": "END"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        },
+        "blueprint": {
+            "nodes": [
+                {"id": "start", "type": "custom", "config": {}, "data": {"agentType": "START"}},
+                {"id": "end", "type": "custom", "config": {}, "data": {"agentType": "END"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        },
+    }
+
+
+def _deep_agent_payload(name="Hermes Test Agent"):
+    return {
+        "name": name,
+        "description": "Created by a Hermes service test",
+        "config": {
+            "system_prompt": "You are a focused test agent.",
+            "native_tools": ["get_current_time"],
+        },
+    }
+
+
+def _custom_tool_payload(name="Hermes Test Tool"):
+    return {
+        "name": name,
+        "description": "A deterministic test tool",
+        "tool_type": "api",
+        "implementation_config": {"url": "https://example.invalid/test"},
+        "input_schema": {"type": "object", "properties": {}},
+    }
+
+
+def test_hermes_validates_workflow_payload():
+    valid = validate_draft_payload("workflow", _workflow_payload())
+    invalid = validate_draft_payload("workflow", {"configuration": {"nodes": [], "edges": []}})
+
+    assert valid["valid"] is True
+    assert invalid["valid"] is False
+    assert invalid["issues"][0]["path"] == "$.configuration.nodes"
+
+
+def test_hermes_standalone_validation_still_persists_status():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Validate Separately",
+            payload_json=_workflow_payload("Validate Separately"),
+            validate_on_create=False,
+        )
+
+        validation = validate_existing_draft(session, draft)
+
+        session.expire_all()
+        assert validation["valid"] is True
+        assert session.get(HermesDraft, draft.id).status == "validated"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_validation_does_not_reopen_applied_draft():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Applied Terminal Draft",
+            payload_json=_workflow_payload("Applied Terminal Draft"),
+        )
+        apply_draft(session, draft)
+
+        with pytest.raises(HermesApplyError, match="Applied drafts cannot be revalidated"):
+            validate_existing_draft(session, draft)
+
+        session.expire_all()
+        assert session.get(HermesDraft, draft.id).status == "applied"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_validate_route_reports_terminal_state_as_bad_request():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Applied Route Draft",
+            payload_json=_workflow_payload("Applied Route Draft"),
+        )
+        apply_draft(session, draft)
+
+        with pytest.raises(HTTPException) as exc_info:
+            validate_draft_route(draft.id, db=session)
+
+        assert exc_info.value.status_code == 400
+        assert "cannot be revalidated" in exc_info.value.detail
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_validation_does_not_reopen_rejected_draft():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Rejected Terminal Draft",
+            payload_json=_workflow_payload("Rejected Terminal Draft"),
+        )
+        reject_draft(session, draft, "not approved")
+
+        with pytest.raises(HermesApplyError, match="Rejected drafts cannot be revalidated"):
+            validate_existing_draft(session, draft)
+
+        session.expire_all()
+        assert session.get(HermesDraft, draft.id).status == "rejected"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_create_apply_and_reject_workflow_drafts():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Apply Me",
+            payload_json=_workflow_payload("Apply Me"),
+        )
+        result = apply_draft(session, draft, approval_note="approved")
+
+        workflow = session.query(WorkflowProfile).filter(WorkflowProfile.id == result["workflow_id"]).first()
+        assert draft.status == "applied"
+        assert workflow is not None
+        assert workflow.name == "Apply Me"
+
+        rejected = HermesDraft(
+            artifact_type="workflow",
+            title="Reject Me",
+            payload_json=_workflow_payload("Reject Me"),
+            status="validated",
+            validation_result={"valid": True},
+        )
+        session.add(rejected)
+        session.commit()
+        reject_draft(session, rejected, "not needed")
+        assert rejected.status == "rejected"
+        assert rejected.rejection_reason == "not needed"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_creates_and_applies_every_supported_artifact_type():
+    engine, session = _db_session()
+    try:
+        workflow_draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Artifact Parent Workflow",
+            payload_json=_workflow_payload("Artifact Parent Workflow"),
+        )
+        workflow_result = apply_draft(session, workflow_draft)
+        workflow_id = workflow_result["workflow_id"]
+
+        artifact_cases = [
+            (
+                "deep_agent",
+                _deep_agent_payload(),
+                DeepAgentTemplate,
+                "agent_id",
+            ),
+            (
+                "custom_tool",
+                _custom_tool_payload(),
+                CustomTool,
+                "tool_id",
+            ),
+            (
+                "schedule",
+                {
+                    "workflow_id": workflow_id,
+                    "name": "Hermes Test Schedule",
+                    "cron_expression": "0 9 * * *",
+                },
+                WorkflowSchedule,
+                "schedule_id",
+            ),
+            (
+                "trigger",
+                {
+                    "workflow_id": workflow_id,
+                    "name": "Hermes Test Trigger",
+                    "trigger_type": "webhook",
+                    "config": {"require_signature": True},
+                },
+                WorkflowTrigger,
+                "trigger_id",
+            ),
+        ]
+
+        for artifact_type, payload, model, result_id_key in artifact_cases:
+            draft = create_draft(
+                session,
+                artifact_type=artifact_type,
+                title=f"Apply {artifact_type}",
+                payload_json=payload,
+            )
+
+            result = apply_draft(session, draft, approval_note="approved in test")
+
+            assert result["artifact_type"] == artifact_type
+            assert result["action"] == "created"
+            assert session.get(model, result[result_id_key]) is not None
+            assert draft.status == "applied"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("artifact_type", "initial_payload", "updated_payload", "result_id_key"),
+    [
+        (
+            "workflow",
+            _workflow_payload("Workflow Before Update"),
+            _workflow_payload("Workflow After Update"),
+            "workflow_id",
+        ),
+        (
+            "deep_agent",
+            _deep_agent_payload("Agent Before Update"),
+            _deep_agent_payload("Agent After Update"),
+            "agent_id",
+        ),
+    ],
+)
+def test_hermes_update_guards_and_successful_update(
+    artifact_type,
+    initial_payload,
+    updated_payload,
+    result_id_key,
+):
+    engine, session = _db_session()
+    try:
+        initial_draft = create_draft(
+            session,
+            artifact_type=artifact_type,
+            title=f"Create {artifact_type}",
+            payload_json=initial_payload,
+        )
+        initial_result = apply_draft(session, initial_draft)
+        target_id = initial_result[result_id_key]
+        target_model = WorkflowProfile if artifact_type == "workflow" else DeepAgentTemplate
+        current_lock_version = session.get(target_model, target_id).lock_version
+
+        update_draft = create_draft(
+            session,
+            artifact_type=artifact_type,
+            title=f"Update {artifact_type}",
+            payload_json=updated_payload,
+        )
+
+        with pytest.raises(HermesApplyError, match="not found"):
+            apply_draft(
+                session,
+                update_draft,
+                target_id=target_id + 100_000,
+                lock_version=current_lock_version,
+            )
+
+        with pytest.raises(HermesApplyError, match="lock_version is required"):
+            apply_draft(session, update_draft, target_id=target_id)
+
+        with pytest.raises(HermesApplyError, match="modified since the draft was created"):
+            apply_draft(
+                session,
+                update_draft,
+                target_id=target_id,
+                lock_version=current_lock_version + 1,
+            )
+
+        result = apply_draft(
+            session,
+            update_draft,
+            target_id=target_id,
+            lock_version=current_lock_version,
+        )
+
+        assert result["action"] == "updated"
+        assert session.get(target_model, target_id).name.endswith("After Update")
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.slow
+def test_concurrent_postgres_apply_vs_reject_has_one_terminal_winner():
+    test_database_url = os.getenv("TEST_DATABASE_URL")
+    if not test_database_url:
+        pytest.skip("Set TEST_DATABASE_URL to run the PostgreSQL concurrency regression")
+    test_database_url = test_database_url.replace("postgresql+asyncpg://", "postgresql://")
+    if make_url(test_database_url).get_backend_name() != "postgresql":
+        pytest.skip("Concurrency regression requires PostgreSQL row locks")
+    if "test" not in (make_url(test_database_url).database or "").lower():
+        pytest.skip("Concurrency test requires a disposable PostgreSQL test database")
+
+    engine = create_engine(test_database_url, pool_pre_ping=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("SELECT 1"))
+            connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        Base.metadata.create_all(engine)
+    except Exception as exc:
+        engine.dispose()
+        pytest.skip(f"PostgreSQL test database is unavailable: {exc}")
+
+    SessionLocal = sessionmaker(bind=engine)
+    suffix = uuid.uuid4().hex[:10]
+    workflow_name = f"Hermes Concurrent {suffix}"
+    setup_session = SessionLocal()
+    try:
+        draft = create_draft(
+            setup_session,
+            artifact_type="workflow",
+            title=workflow_name,
+            payload_json=_workflow_payload(workflow_name),
+        )
+        draft_id = draft.id
+    finally:
+        setup_session.close()
+
+    start_barrier = threading.Barrier(2)
+
+    def transition_from_independent_session(action):
+        session = SessionLocal()
+        try:
+            local_draft = session.get(HermesDraft, draft_id)
+            start_barrier.wait(timeout=10)
+            try:
+                if action == "apply":
+                    apply_draft(session, local_draft)
+                    return "applied", None
+                reject_draft(session, local_draft, "concurrent rejection")
+                return "rejected", None
+            except HermesApplyError as exc:
+                return "error", str(exc)
+        finally:
+            session.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(transition_from_independent_session, ("apply", "reject")))
+
+        verification_session = SessionLocal()
+        try:
+            persisted_draft = verification_session.get(HermesDraft, draft_id)
+            successful_statuses = [status for status, error in results if error is None]
+            errors = [error for status, error in results if status == "error"]
+
+            assert successful_statuses in (["applied"], ["rejected"])
+            assert len(errors) == 1
+            assert persisted_draft.status == successful_statuses[0]
+
+            workflow_count = (
+                verification_session.query(WorkflowProfile)
+                .filter(WorkflowProfile.name == workflow_name)
+                .count()
+            )
+            if persisted_draft.status == "applied":
+                assert workflow_count == 1
+                assert "already been applied" in errors[0]
+            else:
+                assert workflow_count == 0
+                assert "Rejected drafts cannot be applied" in errors[0]
+        finally:
+            verification_session.close()
+    finally:
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_session.query(WorkflowProfile).filter(
+                WorkflowProfile.name == workflow_name
+            ).delete(synchronize_session=False)
+            cleanup_session.query(HermesDraft).filter(HermesDraft.id == draft_id).delete(
+                synchronize_session=False
+            )
+            cleanup_session.commit()
+        finally:
+            cleanup_session.close()
+            engine.dispose()
+
+
+def test_hermes_apply_tool_requires_runtime_approval_interrupt():
+    config = create_hermes_platform_builder()
+    registry_config = DeepAgentTemplateRegistry.get_template("HERMES_PLATFORM_BUILDER")
+
+    assert config.interrupt_on["langconfig_apply_draft"] is True
+    assert config.interrupt_on["codex_run_task"] is True
+    assert registry_config.interrupt_on["langconfig_apply_draft"] is True
+    assert registry_config.interrupt_on["codex_run_task"] is True
+    codex_subagent = next(subagent for subagent in config.subagents if subagent.name == "codex_engineer")
+    assert codex_subagent.interrupt_on["codex_run_task"] is True
+
+
+def test_regular_agent_factory_excludes_privileged_hermes_tools():
+    from core.agents.factory import AgentFactory
+
+    selected_tools = AgentFactory._filter_regular_agent_native_tools(
+        [
+            "langconfig_search",
+            "langconfig_apply_draft",
+            "codex_run_task",
+            "codex_get_status",
+        ]
+    )
+
+    assert selected_tools == ["langconfig_search", "codex_get_status"]
+
+
+@pytest.mark.asyncio
+async def test_hermes_approval_interrupt_is_forwarded_to_deepagents(monkeypatch):
+    import sys
+    import types
+
+    import core.workflows.checkpointing.manager as checkpoint_manager
+    from core.agents.factory import AgentFactory
+    from core.middleware.deep import DeepAgentsMiddlewareFactory
+
+    captured_kwargs = {}
+
+    def fake_create_deep_agent(**kwargs):
+        captured_kwargs.update(kwargs)
+        return object()
+
+    fake_deepagents = types.ModuleType("deepagents")
+    fake_deepagents.create_deep_agent = fake_create_deep_agent
+
+    async def no_callbacks(*args, **kwargs):
+        return []
+
+    async def no_tools(*args, **kwargs):
+        return []
+
+    async def no_subagents(*args, **kwargs):
+        return []
+
+    async def fake_model(*args, **kwargs):
+        return "test-model"
+
+    monkeypatch.setitem(sys.modules, "deepagents", fake_deepagents)
+    monkeypatch.setattr(DeepAgentFactory, "_setup_callbacks", no_callbacks)
+    monkeypatch.setattr(DeepAgentFactory, "_load_base_tools", no_tools)
+    monkeypatch.setattr(DeepAgentFactory, "_prepare_subagents", no_subagents)
+    monkeypatch.setattr(DeepAgentsMiddlewareFactory, "create_all_tools", no_tools)
+    monkeypatch.setattr(AgentFactory, "_create_llm", fake_model)
+    monkeypatch.setattr(checkpoint_manager, "get_checkpointer", lambda: None)
+    monkeypatch.setattr(checkpoint_manager, "get_store", lambda: None)
+
+    config = create_hermes_platform_builder()
+    config.interrupt_on = {
+        "langconfig_apply_draft": False,
+        "codex_run_task": False,
+    }
+
+    await DeepAgentFactory.create_deep_agent(
+        config=config,
+        project_id=0,
+        task_id=0,
+        context="",
+    )
+
+    assert captured_kwargs["interrupt_on"]["langconfig_apply_draft"] is True
+    assert captured_kwargs["interrupt_on"]["codex_run_task"] is True
+
+
+def test_hermes_apply_is_idempotent_and_rejects_terminal_states():
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Apply Once",
+            payload_json=_workflow_payload("Apply Once"),
+        )
+        apply_draft(session, draft, approval_note="approved")
+
+        with pytest.raises(HermesApplyError, match="already been applied"):
+            apply_draft(session, draft, approval_note="approved again")
+        with pytest.raises(HermesApplyError, match="already been applied"):
+            reject_draft(session, draft, "too late")
+
+        assert session.query(WorkflowProfile).count() == 1
+
+        rejected = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Never Apply",
+            payload_json=_workflow_payload("Never Apply"),
+        )
+        reject_draft(session, rejected, "not approved")
+
+        with pytest.raises(HermesApplyError, match="already been rejected"):
+            reject_draft(session, rejected, "different reason")
+
+        with pytest.raises(HermesApplyError, match="Rejected drafts"):
+            apply_draft(session, rejected)
+
+        assert session.query(WorkflowProfile).count() == 1
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_apply_commits_once(monkeypatch):
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Single Transaction",
+            payload_json=_workflow_payload("Single Transaction"),
+        )
+        original_commit = session.commit
+        commit_calls = 0
+
+        def counting_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            return original_commit()
+
+        monkeypatch.setattr(session, "commit", counting_commit)
+
+        apply_draft(session, draft, approval_note="approved")
+
+        assert commit_calls == 1
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_hermes_apply_rolls_back_artifact_when_finalization_fails(monkeypatch):
+    engine, session = _db_session()
+    try:
+        draft = create_draft(
+            session,
+            artifact_type="workflow",
+            title="Atomic Apply",
+            payload_json=_workflow_payload("Atomic Apply"),
+        )
+
+        def fail_after_artifact_flush(db, payload, *, target_id, lock_version):
+            db.add(WorkflowProfile(name="Partial Artifact", configuration=payload["configuration"]))
+            db.flush()
+            raise RuntimeError("simulated finalization failure")
+
+        monkeypatch.setattr(hermes_service, "_apply_workflow", fail_after_artifact_flush)
+
+        with pytest.raises(RuntimeError, match="simulated finalization failure"):
+            apply_draft(session, draft, approval_note="approved")
+
+        session.expire_all()
+        persisted_draft = session.get(HermesDraft, draft.id)
+        assert persisted_draft.status == "validated"
+        assert persisted_draft.apply_result in (None, {})
+        assert session.query(WorkflowProfile).count() == 0
+    finally:
+        session.close()
+        engine.dispose()

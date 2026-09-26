@@ -254,9 +254,9 @@ class DeepAgentConfig(BaseModel):
         default=None,
         description="Modalities for multimodal models (e.g., ['image', 'text'] for Gemini image generation)"
     )
-    enable_thinking: bool = Field(
-        default=False,
-        description="Enable adaptive thinking for Claude models (claude-opus-4-8/claude-sonnet-4-6; always on for claude-fable-5)"
+    enable_thinking: Optional[bool] = Field(
+        default=None,
+        description="Override adaptive thinking for Claude models; unset preserves the provider default, while true/false explicitly enables/disables it where supported"
     )
     thinking_display: str = Field(
         default="summarized",

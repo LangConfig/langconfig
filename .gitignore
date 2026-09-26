@@ -58,6 +58,7 @@ update_*.py
 # Backend storage
 backend/backups/
 backend/storage/
+backend/data/codex_runs/
 
 # Personal AI assistant folders (not for public repo)
 .agent/
@@ -106,6 +107,9 @@ token.json
 client_secret*.json
 
 # Backend outputs
+/python-advisories.json
+/test-results/
+/playwright-report/
 /backend/outputs/
 /backend/workspace/
 
@@ -114,8 +118,16 @@ docs/*
 !docs/.gitkeep
 !docs/GOOGLE_OAUTH_SETUP.md
 !docs/SETUP.md
+!docs/DEPENDENCY_SECURITY.md
 langconfig/
 
 # Private/unreleased features (uncomment before pushing to public)
 # backend/core/codegen/generators/streamlit_configurable.py
 langconfig/
+
+# Public branch preparation and contributor guides
+!docs/QUALITY_GATES.md
+!docs/BRANCH_PLAN_2026-09.md
+!docs/BRANCH_INVENTORY_2026-09.json
+!docs/MIDDLEWARE_COMPATIBILITY.md
+!docs/RUNTIME_SCHEMA.md

@@ -21,12 +21,14 @@ import logging
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import asyncio
+import json
 import sys
 
 from langchain_core.tools import StructuredTool, tool
 from langchain_community.tools import DuckDuckGoSearchRun
 import httpx
 import os
+from tools.public_http import public_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +116,20 @@ TOOL_NAME_MAP = {
     "current_time": "get_current_time",
     "datetime": "get_current_time",
     "time": "get_current_time",
+
+    # Hermes / LangConfig platform tools
+    "langconfig_search": "langconfig_search",
+    "langconfig_validate_workflow": "langconfig_validate_workflow",
+    "langconfig_create_draft": "langconfig_create_draft",
+    "langconfig_apply_draft": "langconfig_apply_draft",
+    "langconfig_export_workflow": "langconfig_export_workflow",
+    "codex_run_task": "codex_run_task",
+    "codex_get_status": "codex_get_status",
 }
+
+# These tools mutate LangConfig state or launch local code. They may only be
+# loaded by runtimes that enforce an approval interrupt for each invocation.
+PRIVILEGED_NATIVE_TOOL_NAMES = frozenset({"langconfig_apply_draft", "codex_run_task"})
 
 
 # =============================================================================
@@ -309,6 +324,9 @@ async def web_fetch(url: str, timeout: int = 10) -> str:
     Fetch the content of a webpage.
 
     Useful for reading articles, documentation, and web pages.
+    Only public HTTP(S) destinations are allowed, including after redirects.
+    Local/private addresses, URL credentials, and unresolved hosts return an
+    explicit error; this tool cannot call local LangConfig APIs.
 
     Args:
         url: The URL to fetch
@@ -323,7 +341,7 @@ async def web_fetch(url: str, timeout: int = 10) -> str:
     try:
         logger.info(f"Fetching URL: {url}")
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with _get_http_client(timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
 
@@ -1475,12 +1493,12 @@ _HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}
 
 def _get_http_client(timeout: float) -> httpx.AsyncClient:
     """
-    Create the AsyncClient used by http_request.
+    Create the public-network-only client used by http_request and web_fetch.
 
     Module-level factory so tests can monkeypatch it with an
     httpx.MockTransport-backed client instead of hitting the network.
     """
-    return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+    return public_http_client(timeout)
 
 
 @tool
@@ -1530,6 +1548,9 @@ async def http_request(
 
     Use this for calling REST/JSON APIs with full control over method,
     headers, and body. For reading regular web pages, prefer web_fetch.
+    Only public destinations are allowed, including after redirects. Local or
+    private addresses, URL credentials, and unresolved hosts return an explicit
+    error; use the dedicated approval-gated tools for local LangConfig actions.
 
     Args:
         url: Full URL including scheme. Only http:// and https:// are allowed.
@@ -1616,10 +1637,210 @@ async def http_request(
 
 
 # =============================================================================
+# Hermes / LangConfig Platform Tools
+# =============================================================================
+
+def _json_tool_result(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _parse_json_arg(value: str, arg_name: str) -> Dict[str, Any]:
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{arg_name} must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{arg_name} must be a JSON object")
+    return parsed
+
+
+@tool
+def langconfig_search(query: str, top_k: int = 8, project_id: Optional[int] = None) -> str:
+    """
+    Search LangConfig's Platform Brain for docs, routes, recipes, tools,
+    project-scoped workflows, traces, and relevant chat history.
+    """
+    from db.database import SessionLocal
+    from services.platform_brain_service import platform_brain_service
+
+    db = SessionLocal()
+    try:
+        result = platform_brain_service.query(query, db, top_k=top_k, project_id=project_id)
+        return _json_tool_result(result)
+    except Exception as exc:
+        logger.error(f"langconfig_search failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+    finally:
+        db.close()
+
+
+@tool
+def langconfig_validate_workflow(payload_json: str) -> str:
+    """
+    Validate a workflow draft payload against LangConfig workflow shape rules.
+
+    Args:
+        payload_json: JSON object containing WorkflowProfileCreate-compatible
+            fields, especially configuration and optional blueprint.
+    """
+    from db.database import SessionLocal
+    from services.hermes_service import validate_draft_payload
+
+    db = SessionLocal()
+    try:
+        payload = _parse_json_arg(payload_json, "payload_json")
+        return _json_tool_result(validate_draft_payload("workflow", payload, db))
+    except Exception as exc:
+        logger.error(f"langconfig_validate_workflow failed: {exc}", exc_info=True)
+        return _json_tool_result({"valid": False, "issues": [{"path": "$", "message": str(exc)}]})
+    finally:
+        db.close()
+
+
+@tool
+def langconfig_create_draft(
+    artifact_type: str,
+    title: str,
+    payload_json: str,
+    project_id: Optional[int] = None,
+    source_session_id: Optional[str] = None,
+    codex_run_id: Optional[str] = None,
+) -> str:
+    """
+    Create an approval-gated Hermes draft for a workflow, DeepAgent, custom
+    tool, schedule, or trigger. This does not publish the artifact.
+    """
+    from db.database import SessionLocal
+    from services.hermes_service import create_draft, serialize_draft
+
+    db = SessionLocal()
+    try:
+        payload = _parse_json_arg(payload_json, "payload_json")
+        draft = create_draft(
+            db,
+            artifact_type=artifact_type,
+            title=title,
+            payload_json=payload,
+            project_id=project_id,
+            source_session_id=source_session_id,
+            codex_run_id=codex_run_id,
+            validate_on_create=True,
+        )
+        return _json_tool_result(serialize_draft(draft))
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"langconfig_create_draft failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+    finally:
+        db.close()
+
+
+@tool
+def langconfig_apply_draft(
+    draft_id: int,
+    target_id: Optional[int] = None,
+    lock_version: Optional[int] = None,
+    approval_note: str = "",
+) -> str:
+    """
+    Apply an approved Hermes draft. Existing workflow/DeepAgent updates require
+    the current lock_version for optimistic locking.
+    """
+    from db.database import SessionLocal
+    from models.hermes import HermesDraft
+    from services.hermes_service import apply_draft, serialize_draft
+
+    db = SessionLocal()
+    try:
+        draft = db.query(HermesDraft).filter(HermesDraft.id == draft_id).first()
+        if not draft:
+            return _json_tool_result({"error": "Hermes draft not found"})
+        result = apply_draft(
+            db,
+            draft,
+            target_id=target_id,
+            lock_version=lock_version,
+            approval_note=approval_note or None,
+        )
+        return _json_tool_result({"draft": serialize_draft(draft), "apply_result": result})
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"langconfig_apply_draft failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+    finally:
+        db.close()
+
+
+@tool
+def langconfig_export_workflow(workflow_id: int, export_mode: str = "standard") -> str:
+    """
+    Return LangConfig export endpoints for a workflow package and config.
+
+    Hermes can use these URLs after applying a workflow draft; the actual file
+    export is served by the workflow export API.
+    """
+    from db.database import SessionLocal
+    from models.workflow import WorkflowProfile
+
+    db = SessionLocal()
+    try:
+        workflow = db.query(WorkflowProfile).filter(WorkflowProfile.id == workflow_id).first()
+        if not workflow:
+            return _json_tool_result({"error": "Workflow not found"})
+        return _json_tool_result({
+            "workflow_id": workflow_id,
+            "name": workflow.name,
+            "package_endpoint": f"/api/workflows/{workflow_id}/export/package?export_mode={export_mode}",
+            "config_endpoint": f"/api/workflows/{workflow_id}/export/config",
+            "preview_endpoint": f"/api/workflows/{workflow_id}/export/config/preview",
+        })
+    except Exception as exc:
+        logger.error(f"langconfig_export_workflow failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+    finally:
+        db.close()
+
+
+@tool
+def codex_run_task(prompt: str, model: Optional[str] = None) -> str:
+    """
+    Delegate a bounded code-heavy task to local Codex CLI in an isolated
+    workspace-write sandbox.
+    """
+    from services.codex_harness import codex_harness
+
+    try:
+        run = codex_harness.start_exec_run(prompt, model=model)
+        return _json_tool_result(codex_harness.serialize_run(run))
+    except Exception as exc:
+        logger.error(f"codex_run_task failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+
+
+@tool
+def codex_get_status() -> str:
+    """
+    Check local Codex CLI availability, ChatGPT login status, exec support,
+    and experimental mcp-server availability.
+    """
+    from services.codex_harness import codex_harness
+
+    try:
+        return _json_tool_result(codex_harness.status())
+    except Exception as exc:
+        logger.error(f"codex_get_status failed: {exc}", exc_info=True)
+        return _json_tool_result({"error": str(exc)})
+
+
+# =============================================================================
 # Tool Loading Functions
 # =============================================================================
 
-def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
+def load_native_tools(
+    tool_names: List[str],
+    *,
+    allow_privileged: bool = False,
+) -> List[StructuredTool]:
     """
     Load native Python tools by name.
 
@@ -1627,6 +1848,8 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
 
     Args:
         tool_names: List of tool names to load (e.g., ['web', 'memory', 'filesystem'])
+        allow_privileged: Permit approval-gated local mutation/execution tools.
+            This must only be true in a runtime that enforces HITL interrupts.
 
     Returns:
         List of LangChain StructuredTool objects ready for agent binding
@@ -1638,6 +1861,17 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
     if not tool_names:
         logger.debug("No tools requested")
         return []
+
+    if not allow_privileged:
+        blocked = [name for name in tool_names if name in PRIVILEGED_NATIVE_TOOL_NAMES]
+        if blocked:
+            logger.warning(
+                "Ignoring approval-gated native tools outside a protected runtime: %s",
+                ", ".join(blocked),
+            )
+        tool_names = [name for name in tool_names if name not in PRIVILEGED_NATIVE_TOOL_NAMES]
+        if not tool_names:
+            return []
 
     logger.info(f"Loading native tools: {tool_names}")
 
@@ -1675,6 +1909,14 @@ def load_native_tools(tool_names: List[str]) -> List[StructuredTool]:
         "get_current_time": get_current_time,
         "current_time": get_current_time,  # Alias for get_current_time
         "datetime": get_current_time,  # Alias for get_current_time
+        # Hermes / LangConfig platform tools
+        "langconfig_search": langconfig_search,
+        "langconfig_validate_workflow": langconfig_validate_workflow,
+        "langconfig_create_draft": langconfig_create_draft,
+        "langconfig_apply_draft": langconfig_apply_draft,
+        "langconfig_export_workflow": langconfig_export_workflow,
+        "codex_run_task": codex_run_task,
+        "codex_get_status": codex_get_status,
         # Note: Playwright tools are loaded separately via get_playwright_tools()
         # because they require async initialization
     }
@@ -1769,6 +2011,14 @@ def get_available_tool_names() -> List[str]:
         # Network/utility tools
         "http_request",
         "get_current_time",
+        # Hermes / LangConfig platform tools
+        "langconfig_search",
+        "langconfig_validate_workflow",
+        "langconfig_create_draft",
+        "langconfig_apply_draft",
+        "langconfig_export_workflow",
+        "codex_run_task",
+        "codex_get_status",
     ]
 
 

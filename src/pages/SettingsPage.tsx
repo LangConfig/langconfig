@@ -647,7 +647,7 @@ export default function SettingsView() {
                     }}
                   />
                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                    Required for Claude models (claude-sonnet-4-6, claude-opus-4-8, etc.)
+                    Required for Claude models (claude-sonnet-5, claude-opus-4-8, etc.)
                   </p>
                 </div>
 

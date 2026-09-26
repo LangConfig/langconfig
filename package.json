@@ -1,15 +1,27 @@
 {
-  "name": "tauri-app",
+  "name": "langconfig",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0",
+    "npm": ">=10"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run typecheck && vite build && node scripts/check-build.mjs",
+    "lint": "biome lint",
+    "typecheck": "tsc --noEmit",
+    "test:hermes": "playwright test --config playwright.hermes.config.ts",
+    "format:check": "biome format",
+    "format": "biome format --write",
+    "check:interfaces": "npm run lint && npm run format:check && npm run typecheck",
+    "format:interfaces": "npm run format",
     "preview": "vite preview",
     "tauri": "tauri",
-    "start:docker": "docker-compose up -d postgres",
-    "start:backend": "cd backend && uvicorn main:app --reload --port 8765",
+    "start:docker": "docker compose up -d postgres",
+    "start:backend": "cd backend && python -m uvicorn main:app --reload --port 8780",
     "start:all": "npm run start:docker && concurrently --names \"BACKEND,FRONTEND\" -c \"bgBlue,bgGreen\" \"npm run start:backend\" \"npm run dev\""
   },
   "dependencies": {
@@ -45,6 +57,8 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/postcss": "^4.1.16",
     "@tauri-apps/cli": "^2",

@@ -1,20 +1,18 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: langconfig-postgres
     environment:
-      POSTGRES_USER: langconfig
-      POSTGRES_PASSWORD: langconfig_dev
-      POSTGRES_DB: langconfig
+      POSTGRES_USER: ${POSTGRES_USER:-langconfig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-langconfig_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-langconfig}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/init_postgres.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langconfig"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-langconfig} -d ${POSTGRES_DB:-langconfig}"]
       interval: 10s
       timeout: 5s
       retries: 5

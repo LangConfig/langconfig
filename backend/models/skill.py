@@ -9,7 +9,7 @@ Skill Models - Modular, context-aware capabilities for agents.
 Skills are inspired by Claude Code's skills system - they package expertise
 into discoverable, reusable components that agents can automatically leverage.
 """
-from sqlalchemy import Column, Integer, String, JSON, Enum as SQLEnum, DateTime, Text, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, JSON, Enum as SQLEnum, DateTime, Text, ForeignKey, Float, Index, text
 from sqlalchemy.orm import validates, relationship
 from db.database import Base
 from enum import Enum
@@ -38,11 +38,15 @@ class Skill(Base):
     The database provides fast lookup, semantic search, and usage metrics.
     """
     __tablename__ = "skills"
+    __table_args__ = (
+        Index("uq_skills_global_name", "skill_id", unique=True, postgresql_where=text("project_id IS NULL"), sqlite_where=text("project_id IS NULL")),
+        Index("uq_skills_project_name", "project_id", "skill_id", unique=True, postgresql_where=text("project_id IS NOT NULL"), sqlite_where=text("project_id IS NOT NULL")),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
     # Identity (from SKILL.md frontmatter)
-    skill_id = Column(String(100), unique=True, nullable=False, index=True)  # kebab-case name
+    skill_id = Column(String(100), nullable=False, index=True)  # kebab-case name within a scope
     name = Column(String(200), nullable=False)  # Human-readable name
     description = Column(Text, nullable=False)  # For semantic search and matching
     version = Column(String(20), nullable=False, default="1.0.0")
