@@ -19,6 +19,7 @@ Run these commands from the repository root unless stated otherwise.
 | `npm run format:interfaces` | Compatibility alias for `npm run format`. |
 | `npm run build` | Runs application type checking, the Vite production build, and the static-import guard. |
 | `npm run test:hermes` | Runs the real Hermes React component in Chromium with mocked API responses. Checks saved-draft approval identity, in-flight edits, and Codex stream ownership. Uses only `tests/hermes` and its isolated Vite fixture. |
+| `npm audit --audit-level=low` | Audits the committed npm dependency tree, including development dependencies. Any reported vulnerability fails CI; the complete JSON report is retained. |
 | `python -m ruff check .` | Checks the runtime envelope, database safety helper, schema migrations 023–026, subagent-job model, advisory gate, embedding compatibility, setup, local CLI lifecycle, public HTTP transport, and Hermes/trigger activation with their regression tests using `E4`, `E7`, `E9`, and `F`. The exact paths are in `ruff.toml`. |
 
 The build guard traverses every application entry's static imports, including
@@ -43,6 +44,7 @@ the focused Python lint check.
 
 ```bash
 npm ci
+npm audit --audit-level=low
 python -m pip install -r backend/requirements-dev.txt
 python -m ruff check .
 npm run check:interfaces
@@ -107,6 +109,10 @@ Playwright file is a manual browser-tool smoke script, matching existing CI.
 CI runs for pushes to `main` and `codex/**`, all pull requests, and manual
 dispatches. Concurrency is grouped by workflow and ref, so a new run cancels
 an obsolete run on the same ref. A PR and a branch push may each start a run.
+
+The frontend job also enforces a full npm audit, including development
+dependencies, and retains its JSON report as the `npm-advisories` artifact.
+There are no ignored npm advisories or permitted severity levels.
 
 The bootstrap adds a Python lint job and frontend lint/format checks. The
 frontend build also checks application types and lazy vendor imports. The main
