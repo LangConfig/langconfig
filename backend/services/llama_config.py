@@ -19,22 +19,27 @@ from config import settings as app_settings
 
 logger = logging.getLogger(__name__)
 
-# Try to import LlamaIndex - it's optional
+# Try to import LlamaIndex - it's optional. Keep imports granular so an
+# optional fallback embedding package cannot disable the whole integration.
 try:
     from llama_index.core import Settings
-    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.embeddings.openai import OpenAIEmbedding
     from llama_index.llms.openai import OpenAI
     from llama_index.vector_stores.postgres import PGVectorStore
     LLAMAINDEX_AVAILABLE = True
-except ImportError:
-    logger.warning("LlamaIndex not available. Vector store features will be disabled.")
+except ImportError as e:
+    logger.warning("LlamaIndex core integration not available. Vector store features will be disabled: %s", e)
     LLAMAINDEX_AVAILABLE = False
     Settings = None
-    HuggingFaceEmbedding = None
     OpenAIEmbedding = None
     OpenAI = None
     PGVectorStore = None
+
+try:
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+except ImportError as e:
+    logger.warning("HuggingFace LlamaIndex embeddings unavailable. Text-only fallback is disabled: %s", e)
+    HuggingFaceEmbedding = None
 
 # Global flag to track initialization
 _initialized = False
@@ -58,12 +63,15 @@ def initialize_llama_index_settings(
     if _initialized:
         logger.info("LlamaIndex settings already initialized")
         return
-    
+
+    if not LLAMAINDEX_AVAILABLE or Settings is None:
+        raise RuntimeError("LlamaIndex integration is not available")
+
     try:
         # Check if OpenAI API key is available for multimodal embeddings
         openai_api_key = app_settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
 
-        if enable_multimodal and openai_api_key:
+        if enable_multimodal and openai_api_key and OpenAIEmbedding is not None:
             logger.info("Initializing OpenAI multimodal embedding model")
             Settings.embed_model = OpenAIEmbedding(
                 model="text-embedding-3-large",
@@ -75,6 +83,8 @@ def initialize_llama_index_settings(
         else:
             if enable_multimodal:
                 logger.warning("Multimodal requested but OpenAI API key not available, falling back to text-only")
+            if HuggingFaceEmbedding is None:
+                raise RuntimeError("HuggingFace embeddings are unavailable and no OpenAI embedding model is configured")
             logger.info("Initializing HuggingFace text-only embedding model")
             Settings.embed_model = HuggingFaceEmbedding(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"

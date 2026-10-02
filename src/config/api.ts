@@ -17,7 +17,7 @@
 // - Production / Tauri builds: there is no proxy, so default to the local
 //   backend (http://localhost:8780) unless VITE_API_BASE_URL overrides it.
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:8780');
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8780');
 
 /**
  * API Endpoints

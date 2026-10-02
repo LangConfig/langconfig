@@ -36,7 +36,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 # Assuming these modules exist in your project structure
 # MIGRATED: Using native Python tools instead of MCP subprocess servers
-from tools.native_tools import load_native_tools
+from tools.native_tools import PRIVILEGED_NATIVE_TOOL_NAMES, load_native_tools
 from core.agents.memory import AgentMemorySystem
 from config import settings
 
@@ -76,16 +76,34 @@ from constants.models import ModelChoice
 
 SUPPORTED_MODELS = {m.value for m in ModelChoice}
 
-# Models that reject sampling parameters (temperature/top_p/top_k return 400)
-NO_SAMPLING_PARAM_MODELS = {"claude-fable-5"}
+# These tools mutate platform state or execute local code and therefore require
+# DeepAgent/Hermes approval interrupts. Regular AgentFactory agents do not have
+# that enforcement layer and must never receive them.
+REGULAR_AGENT_PRIVILEGED_TOOLS = PRIVILEGED_NATIVE_TOOL_NAMES
+
+# Models with adaptive thinking on by default that reject sampling parameters
+# (temperature/top_p/top_k return 400).
+NO_SAMPLING_PARAM_MODELS = {"claude-fable-5", "claude-sonnet-5"}
+
+# Fable cannot disable adaptive thinking. Sonnet 5 defaults to adaptive
+# thinking, but accepts an explicit {"type": "disabled"} override.
+ALWAYS_ADAPTIVE_THINKING_MODELS = {"claude-fable-5"}
+DEFAULT_ADAPTIVE_THINKING_MODELS = {"claude-sonnet-5"}
 
 # Claude models that support opt-in adaptive thinking ({"type": "adaptive"}).
-# claude-fable-5 is NOT listed here: thinking is always on for it and only the
-# display mode may be overridden (sending {"type": "disabled"} returns a 400).
+# Models in NO_SAMPLING_PARAM_MODELS are not listed here because adaptive
+# thinking is already on for them.
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-8", "claude-sonnet-4-6"}
 
-# Anthropic effort parameter values accepted by the API
-ANTHROPIC_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+# ChatAnthropic currently accepts low/medium/high. LangConfig's provider-neutral
+# xhigh/max choices degrade to high instead of failing model construction.
+ANTHROPIC_EFFORT_MAP = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
+}
 
 # Anthropic server-side tools (executed on Anthropic infrastructure).
 # Current GA versions; no beta header required.
@@ -184,6 +202,17 @@ class AgentFactory:
     """
     Factory for creating fully configured LangGraph tool-calling agents with resilience.
     """
+
+    @staticmethod
+    def _filter_regular_agent_native_tools(tool_names: List[str]) -> List[str]:
+        blocked = [name for name in tool_names if name in REGULAR_AGENT_PRIVILEGED_TOOLS]
+        if blocked:
+            logger.warning(
+                "Ignoring approval-gated tools on a regular agent: %s. "
+                "Use a DeepAgent/Hermes configuration with approval interrupts instead.",
+                ", ".join(blocked),
+            )
+        return [name for name in tool_names if name not in REGULAR_AGENT_PRIVILEGED_TOOLS]
 
     @staticmethod
     def _validate_agent_config(agent_config: Dict[str, Any]) -> List[str]:
@@ -328,6 +357,7 @@ class AgentFactory:
                     combined_tools.append(tool)
             native_tool_names = combined_tools
             logger.debug(f"Merged native_tools and mcp_tools: {native_tool_names}")
+        native_tool_names = AgentFactory._filter_regular_agent_native_tools(native_tool_names)
         # Added fallback support
         fallback_models = agent_config.get("fallback_models", [])
         # Memory configuration
@@ -1277,7 +1307,7 @@ You have been equipped with the following tools: {', '.join(tool_names)}
                 "api_key": settings.ANTHROPIC_API_KEY,
                 "streaming": streaming,
             }
-            # claude-fable-5 rejects temperature/top_p/top_k with a 400
+            # Always-adaptive models reject temperature/top_p/top_k with a 400.
             if model_name not in NO_SAMPLING_PARAM_MODELS:
                 anthropic_kwargs["temperature"] = temperature
 
@@ -1287,10 +1317,14 @@ You have been equipped with the following tools: {', '.join(tool_names)}
             if thinking_display not in ("summarized", "omitted"):
                 thinking_display = "summarized"
 
-            if model_name in NO_SAMPLING_PARAM_MODELS:
-                # claude-fable-5: thinking is always on. Only the display mode
-                # may be overridden - NEVER send {"type": "disabled"} (400).
+            if model_name in ALWAYS_ADAPTIVE_THINKING_MODELS:
+                # Fable thinking is always on. NEVER send disabled (400).
                 anthropic_kwargs["thinking"] = {"type": "adaptive", "display": thinking_display}
+            elif model_name in DEFAULT_ADAPTIVE_THINKING_MODELS:
+                if "enable_thinking" in config and not enable_thinking:
+                    anthropic_kwargs["thinking"] = {"type": "disabled"}
+                else:
+                    anthropic_kwargs["thinking"] = {"type": "adaptive", "display": thinking_display}
             elif model_name in ADAPTIVE_THINKING_MODELS and enable_thinking:
                 anthropic_kwargs["thinking"] = {"type": "adaptive", "display": thinking_display}
                 # Sampling params are rejected alongside adaptive thinking on
@@ -1299,15 +1333,15 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 
             # --- Effort (thinking depth / token spend) ---
             # Only sent for models known to support it (fable-5, opus-4-8,
-            # sonnet-4-6). "none" or absent -> omit (API default is high).
+            # sonnet-5, sonnet-4-6). "none" or absent -> omit (API default is high).
             reasoning_effort = config.get("reasoning_effort")
             effort_value = getattr(reasoning_effort, "value", reasoning_effort)
             if (
                 effort_value
-                and effort_value in ANTHROPIC_EFFORT_LEVELS
+                and effort_value in ANTHROPIC_EFFORT_MAP
                 and model_name in (NO_SAMPLING_PARAM_MODELS | ADAPTIVE_THINKING_MODELS)
             ):
-                anthropic_kwargs["effort"] = effort_value
+                anthropic_kwargs["effort"] = ANTHROPIC_EFFORT_MAP[effort_value]
 
             # --- Prompt caching ---
             # Top-level cache_control auto-places a breakpoint on the last
@@ -1430,7 +1464,8 @@ You have been equipped with the following tools: {', '.join(tool_names)}
     async def _load_native_tools(
         native_tool_names: List[str],
         workspace_context: Optional[Dict[str, Any]] = None,
-        agent_context: Optional[Dict[str, Any]] = None
+        agent_context: Optional[Dict[str, Any]] = None,
+        allow_privileged: bool = False,
     ) -> List[BaseTool]:
         """
         Helper to load native Python tools.
@@ -1454,7 +1489,10 @@ You have been equipped with the following tools: {', '.join(tool_names)}
 
             # Load regular native tools (synchronous)
             if non_browser_tools:
-                native_tools = load_native_tools(non_browser_tools)
+                native_tools = load_native_tools(
+                    non_browser_tools,
+                    allow_privileged=allow_privileged,
+                )
 
                 # Wrap write_file tool with context for file metadata tracking
                 if workspace_context or agent_context:

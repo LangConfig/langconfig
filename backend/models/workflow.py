@@ -6,7 +6,7 @@
 """
 Workflow Models - Simplified for LangConfig
 """
-from sqlalchemy import Column, Integer, String, JSON, Enum as SQLEnum, DateTime, Text, ForeignKey, Boolean, Float
+from sqlalchemy import Column, Integer, String, JSON, Enum as SQLEnum, DateTime, Text, ForeignKey, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import validates, relationship
 from db.database import Base
 from core.versioning import OptimisticLockMixin
@@ -202,6 +202,9 @@ class WorkflowVersion(Base):
 
     # Complete workflow configuration snapshot (includes nodes, edges, settings)
     config_snapshot = Column(JSON, nullable=False)
+    # Separate runtime fields are required to reproduce a version's behavior.
+    # Legacy graph-only versions remain inspectable but are not evaluable.
+    runtime_snapshot = Column(JSON, nullable=True)
 
     # User notes about this version (optional)
     notes = Column(Text, nullable=True)
@@ -231,12 +234,16 @@ class WorkflowExecution(Base):
     This allows comparing outputs and performance across different workflow versions.
     """
     __tablename__ = "workflow_executions"
+    __table_args__ = (UniqueConstraint('task_id', 'dispatch_generation', name='uq_workflow_execution_dispatch'),)
 
     id = Column(Integer, primary_key=True, index=True)
 
     # Reference to workflow and version
     workflow_id = Column(Integer, ForeignKey("workflow_profiles.id"), nullable=False, index=True)
     version_id = Column(Integer, ForeignKey("workflow_versions.id"), nullable=False, index=True)
+    task_id = Column(Integer, ForeignKey('tasks.id', name='fk_execution_task', ondelete='SET NULL'), nullable=True, index=True)
+    dispatch_generation = Column(Integer, nullable=True)
+    checkpoint_ref = Column(JSON, nullable=True)
 
     # Execution results (complete output from the workflow)
     execution_results = Column(JSON, nullable=False)
@@ -259,3 +266,49 @@ class WorkflowExecution(Base):
 
     def __repr__(self):
         return f"<WorkflowExecution(id={self.id}, workflow_id={self.workflow_id}, version_id={self.version_id}, status={self.status})>"
+
+
+class WorkflowEvaluation(Base):
+    """A saved fixture set applied to an immutable workflow version."""
+    __tablename__ = 'workflow_evaluations'
+    id = Column(Integer, primary_key=True)
+    comparison_id = Column(String(36), nullable=False, index=True)
+    workflow_id = Column(Integer, ForeignKey('workflow_profiles.id'), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey('workflow_versions.id'), nullable=False, index=True)
+    fixture_version = Column(String(100), nullable=False)
+    fixture_hash = Column(String(64), nullable=False)
+    fixture_snapshot = Column(JSON, nullable=False)
+    configuration_snapshot = Column(JSON, nullable=False)
+    mode = Column(String(20), nullable=False)
+    seed = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=False)
+    budget_usd = Column(Float, nullable=True)
+    reserved_usd = Column(Float, nullable=False, default=0)
+    max_cases = Column(Integer, nullable=False)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    cases = relationship('WorkflowEvaluationCase', cascade='all, delete-orphan', order_by='WorkflowEvaluationCase.id')
+
+
+class WorkflowEvaluationCase(Base):
+    """Independent measurements; correctness is never replaced by a cost score."""
+    __tablename__ = 'workflow_evaluation_cases'
+    id = Column(Integer, primary_key=True)
+    evaluation_id = Column(Integer, ForeignKey('workflow_evaluations.id', ondelete='CASCADE'), nullable=False, index=True)
+    execution_id = Column(Integer, ForeignKey('workflow_executions.id'), nullable=False)
+    fixture_case_id = Column(String(100), nullable=False)
+    input_snapshot = Column(JSON, nullable=False)
+    status = Column(String(20), nullable=False)
+    output_correct = Column(Boolean, nullable=True)
+    schema_correct = Column(Boolean, nullable=True)
+    tool_correct = Column(Boolean, nullable=True)
+    branch_correct = Column(Boolean, nullable=True)
+    approval_correct = Column(Boolean, nullable=True)
+    recovery_correct = Column(Boolean, nullable=True)
+    token_usage = Column(JSON, nullable=True)
+    estimated_cost_usd = Column(Float, nullable=True)
+    latency_seconds = Column(Float, nullable=False)
+    model_ids = Column(JSON, nullable=False)
+    raw_result = Column(JSON, nullable=False)
+    error_message = Column(Text, nullable=True)

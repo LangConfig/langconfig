@@ -26,7 +26,7 @@ pub async fn start_python_backend(state: State<'_, PythonBackend>) -> Result<Str
         }
     }
 
-    // NOTE: Requires Python 3.10+ installed on the system.
+    // NOTE: Requires Python 3.11+ installed on the system.
     // This is acceptable for opensource repo where developers have Python.
     // For production app store distributions, see docs/future-enhancements/python-bundling-guide.md
 
@@ -91,7 +91,7 @@ pub async fn check_backend_health() -> Result<String, String> {
     let client = reqwest::Client::new();
 
     match client
-        .get("http://127.0.0.1:8765/health")
+        .get("http://127.0.0.1:8780/health/")
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
@@ -109,5 +109,5 @@ pub async fn check_backend_health() -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_backend_url() -> String {
-    "http://127.0.0.1:8765".to_string()
+    "http://127.0.0.1:8780".to_string()
 }

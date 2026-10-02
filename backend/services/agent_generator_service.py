@@ -49,6 +49,7 @@ async def generate_agent_config(request: GenerateAgentRequest) -> dict:
     available_models = [
         "gpt-5.4",
         "gpt-5.4-mini",
+        "claude-sonnet-5",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
         "gemini-2.5-flash"
@@ -105,6 +106,7 @@ INSTRUCTIONS:
 1. Select the best model for this task:
    - gpt-5.4: Complex reasoning, code generation, architecture
    - gpt-5.4-mini: Simple tasks, cost-effective
+   - claude-sonnet-5: Latest Claude Sonnet, long context, detailed analysis
    - claude-sonnet-4-6: Long context, detailed analysis
    - claude-haiku-4-5: Fast, simple tasks
    - gemini-2.5-flash: Multimodal, fast and cost-effective

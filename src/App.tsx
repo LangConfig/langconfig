@@ -24,12 +24,13 @@ const SettingsView = lazy(() => import('./pages/SettingsPage'));
 const KnowledgeView = lazy(() => import('./features/knowledge/ui/KnowledgeView'));
 const AgentLoadouts = lazy(() => import('./features/agents/ui/AgentLoadouts'));
 const SkillLibrary = lazy(() => import('./features/skills/ui/SkillLibrary'));
+const HermesWorkspace = lazy(() => import('./features/hermes/ui/HermesWorkspace'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
 const GlobalChatModal = lazy(() => import('./features/chat/ui/GlobalChatModal'));
 const SpatialView = lazy(() => import('./features/workflows/spatial/SpatialWorkflowView'));
 
-type View = 'studio' | 'spatial' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'home' | 'community';
+type View = 'studio' | 'spatial' | 'library' | 'settings' | 'knowledge' | 'agents' | 'skills' | 'hermes' | 'home' | 'community';
 type WorkflowStatus = 'draft' | 'saved' | 'running' | 'completed' | 'failed';
 
 interface Agent {
@@ -197,6 +198,7 @@ function AppContent() {
     if (path === '/agents' || path === '/deepagents') return 'agents';
     if (path === '/knowledge') return 'knowledge';
     if (path === '/skills') return 'skills';
+    if (path === '/hermes') return 'hermes';
     if (path === '/community') return 'community';
     if (path === '/settings') return 'settings';
     return 'home';
@@ -246,6 +248,7 @@ function AppContent() {
       library: '/library',
       agents: '/agents',
       skills: '/skills',
+      hermes: '/hermes',
       knowledge: '/knowledge',
       community: '/community',
       settings: '/settings'
@@ -459,6 +462,7 @@ function AppContent() {
             )}
             {currentView === 'agents' && <AgentLoadouts />}
             {currentView === 'skills' && <SkillLibrary />}
+            {currentView === 'hermes' && <HermesWorkspace />}
             {currentView === 'knowledge' && <KnowledgeView />}
             {currentView === 'community' && <CommunityPage />}
             {currentView === 'settings' && <SettingsView />}

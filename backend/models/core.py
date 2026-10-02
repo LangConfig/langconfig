@@ -6,7 +6,7 @@
 """
 Core Database Models - Simplified for LangConfig
 """
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON, Enum, DateTime, Text, Boolean, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, Enum, DateTime, Text, Boolean, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from db.database import Base
 import enum
@@ -93,6 +93,7 @@ class Project(Base):
 # Task Model (Simplified)
 class Task(Base):
     __tablename__ = 'tasks'
+    __table_args__ = (UniqueConstraint('dispatch_key', name='uq_tasks_dispatch_key'),)
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey('projects.id'), nullable=True)  # Optional - for standalone workflow execution
@@ -103,6 +104,21 @@ class Task(Base):
     # Workflow tracking
     workflow_id = Column(String, nullable=True, index=True)
     workflow_profile_id = Column(Integer, ForeignKey('workflow_profiles.id'), nullable=True)
+
+    # Durable dispatch is separate from the user-facing legacy status enum.
+    workflow_version_id = Column(Integer, ForeignKey('workflow_versions.id', name='fk_task_workflow_version'), nullable=True)
+    checkpoint_thread_id = Column(String, nullable=True)
+    dispatch_key = Column(String(255), nullable=True)
+    dispatch_state = Column(String(32), nullable=True, index=True)
+    dispatch_generation = Column(Integer, nullable=False, default=0, server_default='0')
+    dispatch_payload = Column(JSON, nullable=True)
+    lease_owner = Column(String(100), nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_requested = Column(Boolean, nullable=False, default=False, server_default='false')
+    runtime_compatibility = Column(JSON, nullable=True)
+    call_counts = Column(JSON, nullable=True)
+    last_checkpoint = Column(JSON, nullable=True)
+    parent_checkpoint = Column(JSON, nullable=True)
 
     # Execution logs
     execution_logs = Column(JSON, default=lambda: {"entries": []})

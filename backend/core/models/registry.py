@@ -157,6 +157,28 @@ class ModelRegistry:
         ))
 
         self.register(ModelInfo(
+            model_id="claude-sonnet-5",
+            provider=ModelProvider.ANTHROPIC,
+            display_name="Claude Sonnet 5",
+            capabilities={
+                ModelCapability.STREAMING,
+                ModelCapability.TOOLS,
+                ModelCapability.STRUCTURED_OUTPUT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.PARALLEL_TOOLS,
+                ModelCapability.VISION,
+                ModelCapability.REASONING
+            },
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+            cost_per_1m_input=2.0,
+            cost_per_1m_output=10.0,
+            speed_rating=4,
+            quality_rating=5,
+            notes="Latest Claude Sonnet model. Intro API pricing through 2026-08-31; standard pricing is $3/$15 per 1M tokens afterward"
+        ))
+
+        self.register(ModelInfo(
             model_id="claude-opus-4-8",
             provider=ModelProvider.ANTHROPIC,
             display_name="Claude Opus 4.8",

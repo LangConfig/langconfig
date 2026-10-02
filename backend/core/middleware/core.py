@@ -43,6 +43,7 @@ from functools import wraps
 
 # v1.0 imports
 from langchain.agents import AgentState
+from langchain.agents.middleware import AgentMiddleware as LangChainAgentMiddleware
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langchain.chat_models import init_chat_model
@@ -55,7 +56,7 @@ logger = logging.getLogger(__name__)
 # Base Middleware Classes (v1.0 Pattern)
 # =============================================================================
 
-class AgentMiddleware(ABC):
+class AgentMiddleware(LangChainAgentMiddleware, ABC):
     """
     Base class for LangGraph v1.0 middleware.
 

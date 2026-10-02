@@ -6,7 +6,9 @@
  */
 
 /**
- * Complete tool list from backend/tools/native_tools.py with DeepAgents standard naming.
+ * Tools that may be selected for regular agents, with DeepAgents standard naming.
+ * Approval-gated tools such as `langconfig_apply_draft` and `codex_run_task`
+ * are intentionally configured only by protected Hermes/DeepAgent templates.
  * See: https://docs.langchain.com/oss/python/deepagents/harness
  */
 export interface AgentTool {
@@ -48,4 +50,10 @@ export const AVAILABLE_TOOLS: AgentTool[] = [
   { id: 'pii_detect', name: 'PII Detect', description: 'Scan text for PII without modifying it', category: 'security' },
   // Audio tools
   { id: 'audio_transcribe', name: 'Audio Transcribe', description: 'Local speech-to-text transcription (Whisper, on-device)', category: 'audio' },
+  // Hermes / LangConfig platform tools
+  { id: 'langconfig_search', name: 'LangConfig Search', description: 'Search Platform Brain sources', category: 'hermes' },
+  { id: 'langconfig_validate_workflow', name: 'Validate Workflow', description: 'Validate workflow draft payloads', category: 'hermes' },
+  { id: 'langconfig_create_draft', name: 'Create Draft', description: 'Create approval-gated Hermes drafts', category: 'hermes' },
+  { id: 'langconfig_export_workflow', name: 'Export Workflow', description: 'Return workflow export endpoints', category: 'hermes' },
+  { id: 'codex_get_status', name: 'Codex Status', description: 'Check local Codex CLI state', category: 'hermes' },
 ];

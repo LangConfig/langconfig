@@ -1,10 +1,10 @@
 # LangConfig
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Node](https://img.shields.io/badge/Node-18+-green.svg)](https://nodejs.org/)
+[![Python](https://img.shields.io/badge/Python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
+[![Node](https://img.shields.io/badge/Node-%5E20.19.0%20%7C%7C%20%3E%3D22.12.0-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
-[![LangChain](https://img.shields.io/badge/LangChain-v1.3-orange.svg)](https://langchain.com/)
+[![LangChain](https://img.shields.io/badge/LangChain-v1.x-orange.svg)](https://langchain.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-v1.2-orange.svg)](https://langchain-ai.github.io/langgraph/)
 
 
@@ -36,7 +36,7 @@ LangConfig ships with 8 out-of-box workflow templates spanning research, coding,
 - **Interactive Chat Testing** - Test agents with live streaming, tool execution visibility, and document upload
 - **RAG Knowledge Base** - Upload documents (PDF, DOCX, code) for semantic search with pgvector
 - **Repository Browser** - Clone git repositories read-only, browse with syntax-highlighted previews, and ingest files or folders into the knowledge base
-- **Multi-Model Support** - OpenAI (GPT-5.5, GPT-5.4 series), Anthropic (Claude Fable 5, Opus 4.8, Sonnet 4.6, Haiku 4.5), Google (Gemini 3.1 Pro, Gemini 2.5 Flash), local models (Ollama, LM Studio)
+- **Multi-Model Support** - OpenAI (GPT-5.5, GPT-5.4 series), Anthropic (Claude Fable 5, Sonnet 5, Opus 4.8, Sonnet 4.6, Haiku 4.5), Google (Gemini 3.1 Pro, Gemini 2.5 Flash), local models (Ollama, LM Studio)
 - **Deep Agents v0.6 Support** - Build long-running agents with filesystem, todo, subagent, checkpoint, and store-backed workflows
 - **Multi-Agent Patterns** - Supervisor (hierarchical delegation) and Swarm (peer-to-peer handoffs) strategies via `langgraph-supervisor` and `langgraph-swarm`
 - **Node-Level Caching** - Per-node `CachePolicy` with configurable TTL and backend (in-memory or Redis) to skip redundant re-execution
@@ -57,8 +57,11 @@ LangConfig ships with 8 out-of-box workflow templates spanning research, coding,
 - **Export to Code** - Generate standalone Python packages with Streamlit UI, FastAPI server, or raw LangGraph code
 - **LangGraph Subgraph Streaming** - Nested subgraph execution with real-time SSE streaming
 - **Human-in-the-Loop** - Add approval checkpoints for critical decisions - Still Experimental
+- **Experimental Automation Workspace** - Hermes validates approval-gated drafts before applying workflows, agents, tools, schedules, or triggers
+- **Experimental Platform Brain** - In-memory lexical search over public docs, API routes, recipes, tools, and selected database entities
+- **Experimental Local Codex Harness** - Run a separately installed, locally authenticated Codex CLI in bounded workspaces without storing its credentials in LangConfig
 - **Advanced Memory** - Short-term (LangGraph checkpoints) and long-term (pgvector + LangGraph Store) persistence
-- **Local-First** - All data stays on your machine
+- **Local-First Storage** - Projects and run history stay in your local database; configured hosted model providers and the optional Codex CLI can send prompts and tool context to their external services
 
 <img width="1872" height="930" alt="image" src="https://github.com/user-attachments/assets/a4c3ad34-39ee-4792-9f1d-77e563c6e3f3" />
 
@@ -68,8 +71,8 @@ LangConfig ships with 8 out-of-box workflow templates spanning research, coding,
 
 ### Prerequisites
 
-- **Node.js** 18+ ([Download](https://nodejs.org/))
-- **Python** 3.10+ ([Download](https://www.python.org/downloads/))
+- **Node.js** `^20.19.0` or `>=22.12.0`, with npm 10+ ([Download](https://nodejs.org/))
+- **Python** 3.11-3.13; Python 3.12 is regularly tested ([Download](https://www.python.org/downloads/))
 - **Docker Desktop** ([Download](https://www.docker.com/products/docker-desktop/))
 
 ### Installation
@@ -80,9 +83,11 @@ git clone https://github.com/langconfig/langconfig.git
 cd langconfig
 ```
 
-**2. Install Frontend Dependencies**
+**2. Create an Isolated Python Environment and Install Frontend Dependencies**
 ```bash
-npm install
+python -m venv .venv
+# Activate .venv using the command for your shell; see docs/SETUP.md
+npm ci
 ```
 
 **3. Run Backend Setup Script**
@@ -91,12 +96,16 @@ python backend/scripts/setup.py
 ```
 
 This automated script will:
-- Check Python 3.11+ and Docker prerequisites
+- Check Python 3.11-3.13 and Docker prerequisites
 - Create `.env` from `.env.example`
 - Install backend Python dependencies
 - Start PostgreSQL via Docker
 - Initialize the database and seed agent templates
 - Seed **8 ready-to-run template workflows** (Deep Research, Learning Research, Research & Content Editor, Code Review Panel, Plan-Build-Verify Coder, Privacy-First Document Analyst, Competitive Intel Sweep, Content Studio Pipeline)
+
+See the [complete setup guide](docs/SETUP.md) for shell-specific virtual
+environment commands, existing-clone upgrades, test database setup, and optional
+features.
 
 After upgrading LangConfig, re-sync the seeded template workflows with the latest recipe definitions:
 
@@ -106,14 +115,18 @@ python backend/db/seed_langconfig_dev.py --refresh-templates
 
 This only updates rows marked as templates (`is_template = true`) — your own workflows are never touched.
 
-**4. Add Your API Keys**
+**4. Configure Your Model Provider**
 
-Edit `.env` and add your API keys:
+For hosted models, add the key for the provider you use to `.env`:
 ```env
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AIza...
 ```
+
+Local models through Ollama or LM Studio do not require these provider keys.
+The optional Codex harness uses `codex login`; GitHub branch and PR operations
+use your GitHub authentication and do not require an LLM API key.
 
 ---
 
@@ -138,7 +151,11 @@ Frontend runs at: `http://localhost:1425`
 
 Open your browser to `http://localhost:1425`
 
-### Desktop App Mode (Advanced)
+### Experimental Desktop Shell (Not End-to-End Tested)
+
+The supported development path is the web app above. The Tauri shell has not
+been used or tested end-to-end and should not be treated as a release-ready
+desktop application or onboarding requirement.
 
 Requires **Rust** ([Install](https://rustup.rs/))
 
@@ -153,7 +170,11 @@ python main.py
 npm run tauri dev
 ```
 
-This opens a native desktop window instead of a browser.
+For contributors working on the experiment, this is intended to open a native
+desktop window instead of a browser.
+
+The desktop shell currently uses the system Python installation; production
+installers do not bundle Python or backend dependencies yet.
 
 ---
 
@@ -185,7 +206,7 @@ langconfig/
 │   │   ├── triggers/         # Event-driven workflow triggers
 │   │   ├── webhooks/         # Incoming webhook endpoints
 │   │   ├── presentations/    # Presentation generation (Slides, PDF, Reveal.js)
-│   │   └── settings/         # API keys & configuration
+│   │   └── system/           # Settings and system API routes
 │   ├── core/
 │   │   ├── workflows/        # LangGraph orchestration engine (caching, deferred nodes, supervisor/swarm)
 │   │   ├── agents/           # Agent factory, base classes, model profiles
@@ -228,16 +249,17 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 
 **Setup Steps:**
 
-1. **Docker starts PostgreSQL** - `docker-compose up -d postgres`
+1. **Docker starts PostgreSQL** - `docker compose up -d postgres`
    - Automatically runs `backend/db/init_postgres.sql`
    - Creates `vector` extension (pgvector)
    - Creates initial `vector_documents` table
 
-2. **Alembic creates all tables** - `alembic upgrade head`
-   - Runs migrations in `backend/alembic/versions/`
-   - Creates: workflows, projects, agents, chat_sessions, session_documents, checkpoints, etc.
+2. **The setup script creates the current schema on a fresh database**
+   - SQLAlchemy creates all current application tables
+   - Alembic is stamped at the current head for future upgrades
+   - Existing LangConfig databases are preserved and upgraded with Alembic
 
-3. **Seed agent templates (optional)** - `python db/init_deepagents.py`  **Experimental**
+3. **Seed agent templates (optional)** - `cd backend && python db/init_deepagents.py`  **Experimental**
    - Populates `deep_agent_templates` table with pre-built agents
    - Adds templates like Research Agent, Code Reviewer, etc.
 
@@ -309,18 +331,16 @@ LangConfig uses a single PostgreSQL database with pgvector for:
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and configure:
-
-```bash
-cp .env.example .env
-```
+The setup script creates a new `.env` with a unique encryption key. Edit that
+file to configure the application. Existing `.env` files are preserved; see
+[setup and key preservation](docs/SETUP.md) before changing a key used by saved credentials.
 
 **Required:**
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string (default: `postgresql://langconfig:langconfig_dev@localhost:5433/langconfig`) |
 
-**LLM API Keys** (at least one required):
+**LLM API Keys** (required only for the corresponding hosted provider):
 | Variable | Description |
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key for GPT models |
@@ -330,19 +350,16 @@ cp .env.example .env
 **Optional:**
 | Variable | Description | Default |
 |----------|-------------|--------|
-| `DEEPSEEK_API_KEY` | DeepSeek API key | - |
-| `GITHUB_PAT` | GitHub Personal Access Token | - |
-| `GITLAB_PAT` | GitLab Personal Access Token | - |
-| `LOCAL_LLM_HOST` | Local model server URL | `http://localhost:11434` |
-| `SECRET_KEY` | App secret key | Auto-generated |
+| `GITHUB_TOKEN` | GitHub token for private repository access | - |
+| `GITLAB_TOKEN` | GitLab token for GitLab MCP tools | - |
+| `APP_ENCRYPTION_KEY` | Key used to encrypt credentials saved in Settings | Generated when setup creates a new `.env`; existing keys preserved; required in production |
 | `ENVIRONMENT` | `development` or `production` | `development` |
-| `LOG_LEVEL` | Logging level | `INFO` |
+| `DEBUG` | Enable verbose backend logging (`true` or `false`) | `true` in development |
+| `ENABLE_EXPERIMENTAL_LOCAL_APIS` | Enable loopback-only Hermes, Platform Brain, and Codex APIs; see [setup](docs/SETUP.md#local-codex-harness-experimental) | `false` |
 
 **Workflow Execution:**
 | Variable | Description | Default |
 |----------|-------------|--------|
-| `MAX_WORKFLOW_TIMEOUT` | Max workflow runtime (seconds) | `300` |
-| `MAX_CONCURRENT_WORKFLOWS` | Parallel workflow limit | `5` |
 | `MAX_EXECUTION_HISTORY_PER_WORKFLOW` | History entries to keep | `100` |
 | `EXECUTION_HISTORY_RETENTION_DAYS` | Days to retain history | `90` |
 
@@ -364,7 +381,7 @@ Run models locally with zero API costs:
 
 **Native Python Tools** (no external dependencies):
 - `web_search` - Web search via DuckDuckGo (free, no API key)
-- `web_fetch` - Fetch webpage content
+- `web_fetch` - Fetch public HTTP(S) webpage content; private and loopback destinations are blocked
 - `file_read` / `file_write` / `file_list` - File system operations
 - `memory_store` / `memory_recall` - Long-term memory (PostgreSQL-backed)
 - `reasoning_chain` - Break down complex tasks into logical steps
@@ -399,9 +416,9 @@ Run models locally with zero API costs:
 - Tauri 2.0 (optional desktop app)
 
 **Backend:**
-- Python 3.11+
-- FastAPI 0.115
-- LangChain 1.3.x (full ecosystem)
+- Python 3.11-3.13 (3.12 regularly tested)
+- FastAPI 0.136
+- LangChain 1.x (`>=1.3.11,<2`; integrations have their own ranges)
 - LangGraph 1.2.x (with checkpoint-postgres, supervisor, swarm, bigtool)
 - Deep Agents 0.6.x
 - LlamaIndex (document indexing & RAG)
@@ -414,9 +431,8 @@ Run models locally with zero API costs:
 
 **AI/ML:**
 - OpenAI (GPT-5.5, GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano, GPT Image 2)
-- Anthropic (Claude Fable 5, Claude Opus 4.8, Claude Sonnet 4.6, Claude Haiku 4.5)
+- Anthropic (Claude Fable 5, Claude Sonnet 5, Claude Opus 4.8, Claude Sonnet 4.6, Claude Haiku 4.5)
 - Google (Gemini 3.1 Pro Preview, Gemini 2.5 Flash, Gemini 2.5 Flash Lite)
-- DeepSeek (DeepSeek Chat, DeepSeek Reasoner)
 - Local models via Ollama/LM Studio
 - Sentence Transformers (embeddings)
 - Unstructured (document processing)
@@ -467,47 +483,53 @@ File watchers support recursive directory monitoring.
 ### Port Already in Use
 
 ```bash
-# Windows
-taskkill /F /IM node.exe
+# Windows PowerShell: identify the owning process before stopping it
+Get-NetTCPConnection -LocalPort 1425,8780 -ErrorAction SilentlyContinue
 
-# macOS/Linux
-lsof -ti:1425 | xargs kill -9
+# macOS/Linux: identify the owning process before stopping it
+lsof -i :1425 -i :8780
 ```
 
 ### PostgreSQL Connection Failed
 
 ```bash
 # Check Docker is running
-docker-compose ps
+docker compose ps
 
 # Restart PostgreSQL
-docker-compose restart postgres
+docker compose restart postgres
 
 # Check logs
-docker-compose logs postgres
+docker compose logs postgres
 ```
 
 ### Database Migration Issues
 
 ```bash
-# Reset migrations (WARNING: deletes all data)
+# Record the current revision and complete error before changing data
 cd backend
-alembic downgrade base
-alembic upgrade head
+python -m alembic current
+python -m alembic upgrade head
 ```
+
+For a brand-new database, use `python backend/scripts/setup.py`. Do not use
+`alembic downgrade base` as a routine reset; it can destroy application data.
 
 ### Python Dependencies Issues
 
 ```bash
 # Reinstall all dependencies
 cd backend
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install --upgrade -r requirements.txt
 ```
 
 ---
 
-## Building Desktop Installers (Optional)
+## Experimental Desktop Packaging (Unverified)
+
+Desktop packaging has not been tested end-to-end or used for a release. The web
+app is the supported way to run LangConfig.
 
 **Prerequisites:**
 - Rust installed ([Install](https://rustup.rs/))
@@ -517,12 +539,14 @@ pip install -r requirements.txt
 npm run tauri build
 ```
 
-Generates platform-specific installers:
+The Tauri configuration declares these intended targets, but successful release
+artifacts have not been verified:
 - **Windows**: `.exe`, `.msi`
 - **macOS**: `.app`, `.dmg`
 - **Linux**: `.AppImage`, `.deb`
 
-Total size: ~250MB (includes Python runtime and dependencies)
+The generated desktop package still requires a compatible system Python and an
+installed backend environment.
 
 ---
 
@@ -530,13 +554,21 @@ Total size: ~250MB (includes Python runtime and dependencies)
 
 ### Running Tests
 
+First create a disposable test database and set both `DATABASE_URL` and
+`TEST_DATABASE_URL` as described in [Quality gates](docs/QUALITY_GATES.md#backend-tests-use-a-disposable-database).
+Test fixtures rebuild that database's schema.
+
 ```bash
 # Backend tests
 cd backend
-pytest
+python -m pytest -q --ignore=tests/test_playwright_tools.py
 
-# Frontend tests
-npm test
+# Frontend checks and focused Hermes browser regressions
+cd ..
+npm run check:interfaces
+npm run build
+npx playwright install chromium
+npm run test:hermes
 ```
 
 ### Database Migrations
@@ -545,13 +577,13 @@ npm test
 cd backend
 
 # Create new migration
-alembic revision --autogenerate -m "Description of changes"
+python -m alembic revision --autogenerate -m "Description of changes"
 
 # Apply migration
-alembic upgrade head
+python -m alembic upgrade head
 
 # Rollback migration
-alembic downgrade -1
+python -m alembic downgrade -1
 ```
 
 ### Adding Custom Agent Templates
@@ -572,6 +604,11 @@ python db/init_deepagents.py
 
 ## Documentation
 
+- **[Development Setup](./docs/SETUP.md)** - Canonical fresh-clone and upgrade instructions
+- **[Quality Gates](./docs/QUALITY_GATES.md)** - Current lint, type, build, browser, and backend test commands
+- **[Runtime Schema](./docs/RUNTIME_SCHEMA.md)** - Migration 023–026 scope and upgrade guidance
+- **[Branch Plan](./docs/BRANCH_PLAN_2026-09.md)** - Completed first wave and remaining feature queue
+- **[Google OAuth Setup](./docs/GOOGLE_OAUTH_SETUP.md)** - Google Slides export credentials
 - **[Chat API Documentation](./backend/api/chat/README.md)** - Interactive chat testing API
 - **[GitHub Issues](https://github.com/langconfig/langconfig/issues)** - Report bugs and request features
 
@@ -589,10 +626,10 @@ We welcome contributions! Whether you're:
 **How to Contribute:**
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
+2. Create a feature branch: `git checkout -b codex/amazing-feature`
 3. Make your changes and add tests
 4. Commit: `git commit -m 'Add amazing feature'`
-5. Push: `git push origin feature/amazing-feature`
+5. Push: `git push origin codex/amazing-feature`
 6. Open a Pull Request
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.

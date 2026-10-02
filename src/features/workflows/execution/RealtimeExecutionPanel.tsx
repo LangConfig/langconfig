@@ -709,7 +709,7 @@ export default function RealtimeExecutionPanel({
     { title: 'Multi-Model Support', tip: 'Use OpenAI, Anthropic, Google, or local models. Each agent can use a different model, and automatic fallbacks can reduce costs by 40-60%.' },
     { title: 'Real-time Streaming', tip: 'Watch agents think in real-time. The panel displays agent reasoning, tool calls, and outputs as they happen with zero artificial delay.' },
     { title: 'Visual LangGraph', tip: 'Every workflow is a LangGraph state graph. The visual canvas helps you understand agent orchestration patterns before writing code.' },
-    { title: 'Local-First Privacy', tip: 'All data stays on your machine. PostgreSQL runs locally via Docker, and only LLM API calls reach external servers. You control everything.' }
+    { title: 'Local-First Storage', tip: 'Projects and run history stay in your local PostgreSQL database. Configured model providers, Codex, browser tools, and integrations may send task context to their external services.' }
   ];
 
   // Track last processed event index for incremental processing

@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     # Environment configuration
     environment: str = os.getenv("ENVIRONMENT", "development")  # development, production, or testing
     debug: bool = os.getenv("DEBUG", "true").lower() in ("true", "1", "yes")
+    enable_experimental_local_apis: bool = False
 
     # Database - PostgreSQL for LangGraph checkpointing support
     database_url: str = os.getenv(

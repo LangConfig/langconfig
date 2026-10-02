@@ -28,6 +28,19 @@ from core.agents.factory import AgentFactory
 
 logger = logging.getLogger(__name__)
 
+MANDATORY_APPROVAL_TOOLS = {"langconfig_apply_draft", "codex_run_task"}
+
+
+def _with_mandatory_approval_interrupts(
+    configured: Optional[Dict[str, Any]],
+    tool_names: set[str],
+) -> Dict[str, Any]:
+    """Return interrupts with privileged platform tools forced to approval."""
+    interrupts = dict(configured or {})
+    for tool_name in MANDATORY_APPROVAL_TOOLS & tool_names:
+        interrupts[tool_name] = True
+    return interrupts
+
 
 class DeepAgentFactory:
     """
@@ -358,10 +371,11 @@ class DeepAgentFactory:
         if config.model.startswith("claude"):
             llm_config: Dict[str, Any] = {
                 "streaming": True,
-                "enable_thinking": config.enable_thinking,
                 "thinking_display": config.thinking_display,
                 "enable_prompt_caching": config.enable_prompt_caching,
             }
+            if config.enable_thinking is not None:
+                llm_config["enable_thinking"] = config.enable_thinking
             # reasoning_effort defaults to LOW for the Gemini path; only
             # forward it to Anthropic when it was explicitly configured.
             if "reasoning_effort" in config.model_fields_set and config.reasoning_effort:
@@ -418,7 +432,15 @@ class DeepAgentFactory:
             except Exception:
                 pass
 
-            interrupt_on = dict(getattr(config, 'interrupt_on', {}) or {})
+            loaded_tool_names = {
+                tool.get("name") if isinstance(tool, dict) else getattr(tool, "name", None)
+                for tool in all_tools
+            }
+            configured_tool_names = set(getattr(config, "native_tools", []) or [])
+            interrupt_on = _with_mandatory_approval_interrupts(
+                getattr(config, "interrupt_on", {}),
+                loaded_tool_names | configured_tool_names,
+            )
             if (
                 getattr(config, "interpreter", None)
                 and config.interpreter.enabled
@@ -523,7 +545,8 @@ class DeepAgentFactory:
                 from core.agents.factory import AgentFactory
                 native_tools = await AgentFactory._load_native_tools(
                     config.native_tools,
-                    workspace_context=workspace_context
+                    workspace_context=workspace_context,
+                    allow_privileged=True,
                 )
                 tools.extend(native_tools)
                 logger.info(f"Loaded {len(native_tools)} native tools with workspace_context")
@@ -609,7 +632,8 @@ class DeepAgentFactory:
                         # Load native tools by name (with workspace context for file writes)
                         subagent_tools = await AgentFactory._load_native_tools(
                             sub_config.tools,
-                            workspace_context=workspace_context
+                            workspace_context=workspace_context,
+                            allow_privileged=True,
                         )
                         logger.info(f"Loaded {len(subagent_tools)} tools for subagent '{sub_config.name}': {sub_config.tools}")
                     except Exception as e:
@@ -625,8 +649,12 @@ class DeepAgentFactory:
                 if sub_config.model:
                     subagent["model"] = sub_config.model
 
-                if sub_config.interrupt_on:
-                    subagent["interrupt_on"] = sub_config.interrupt_on
+                subagent_interrupts = _with_mandatory_approval_interrupts(
+                    sub_config.interrupt_on,
+                    set(sub_config.tools or []),
+                )
+                if subagent_interrupts:
+                    subagent["interrupt_on"] = subagent_interrupts
 
                 response_format = DeepAgentFactory._resolve_subagent_response_format(sub_config)
                 if response_format is not None:
@@ -811,11 +839,12 @@ class DeepAgentFactory:
             "enable_memory": False,
             "enable_rag": False,
             # Anthropic feature passthrough
-            "enable_thinking": config.enable_thinking,
             "thinking_display": config.thinking_display,
             "enable_prompt_caching": config.enable_prompt_caching,
             "anthropic_server_tools": config.anthropic_server_tools,
         }
+        if config.enable_thinking is not None:
+            agent_config["enable_thinking"] = config.enable_thinking
         # reasoning_effort defaults to LOW for the Gemini path; only forward
         # when explicitly configured so Claude models don't get effort="low".
         if "reasoning_effort" in config.model_fields_set and config.reasoning_effort:

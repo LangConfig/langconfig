@@ -10,11 +10,11 @@
  *
  * Accurate per-token pricing for different AI models.
  * Prices are per 1M tokens (input and output separately).
- * Updated June 2026.
+ * Updated June 30, 2026.
  *
  * Sources:
  * - OpenAI: https://openai.com/api/pricing/
- * - Anthropic: https://docs.anthropic.com/en/docs/about-claude/models/overview
+ * - Anthropic: https://www.anthropic.com/pricing
  * - Google: https://ai.google.dev/pricing
  */
 
@@ -32,6 +32,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 
   // Anthropic Claude current generation
   'claude-fable-5': { input: 10.00, output: 50.00 },
+  // Intro pricing through 2026-08-31; standard pricing is $3/$15 per 1M afterward.
+  'claude-sonnet-5': { input: 2.00, output: 10.00 },
   'claude-opus-4-8': { input: 5.00, output: 25.00 },
   'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
   'claude-haiku-4-5': { input: 1.00, output: 5.00 },

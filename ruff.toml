@@ -1,0 +1,27 @@
+target-version = "py312"
+line-length = 120
+include = [
+    "backend/core/runtimes/base.py",
+    "backend/tests/database_safety.py",
+    "backend/alembic/versions/023_durable_workflow_dispatch.py",
+    "backend/alembic/versions/024_scope_skills.py",
+    "backend/alembic/versions/025_workflow_evaluations.py",
+    "backend/alembic/versions/026_subagent_jobs.py",
+    "backend/models/subagent_job.py",
+    "backend/tests/test_runtime_schema_migrations.py",
+    "scripts/check-python-advisories.py",
+    "backend/tests/test_python_advisory_policy.py",
+    "backend/tests/test_embedding_compatibility.py",
+    "backend/scripts/setup.py",
+    "backend/tests/test_setup_script.py",
+    "backend/services/codex_harness.py",
+    "backend/tests/test_codex_harness.py",
+    "backend/tools/public_http.py",
+    "backend/tests/test_public_http_tools.py",
+    "backend/services/hermes_service.py",
+    "backend/services/triggers/file_watcher.py",
+    "backend/tests/test_hermes_service.py",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

@@ -5,13 +5,13 @@
 
 """
 Model constants for LangConfig
-Updated June 10, 2026
+Updated June 30, 2026
 """
 from enum import Enum
 
 
 class ModelChoice(str, Enum):
-    """Selectable AI models - updated June 10, 2026."""
+    """Selectable AI models - updated June 30, 2026."""
 
     # OpenAI - GPT-5 frontier series
     GPT_5_5 = "gpt-5.5"
@@ -21,6 +21,7 @@ class ModelChoice(str, Enum):
 
     # Anthropic - Claude current generation
     CLAUDE_FABLE_5 = "claude-fable-5"  # Frontier tier above Opus; no temperature/top_p, thinking always on
+    CLAUDE_SONNET_5 = "claude-sonnet-5"
     CLAUDE_OPUS_4_8 = "claude-opus-4-8"
     CLAUDE_SONNET_4_6 = "claude-sonnet-4-6"
     CLAUDE_HAIKU_4_5 = "claude-haiku-4-5"

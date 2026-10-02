@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL database initialized successfully")
     except Exception as e:
         logger.error(f"PostgreSQL initialization failed: {e}")
-        logger.error("Make sure PostgreSQL is running: docker-compose up -d postgres")
+        logger.error("Make sure PostgreSQL is running: docker compose up -d postgres")
         logger.warning("Continuing without database - most features will be unavailable")
 
     # Initialize LangGraph checkpointing for workflow persistence and HITL
@@ -128,6 +128,14 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down LangConfig API...")
 
+    # Stop local Codex subprocesses before tearing down shared services.
+    try:
+        from services.codex_harness import codex_harness
+        await asyncio.to_thread(codex_harness.shutdown)
+        logger.info("Codex harness stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Codex harness: {e}")
+
     # Shutdown file watcher service
     try:
         from services.triggers.file_watcher import stop_file_watchers
@@ -173,7 +181,7 @@ async def lifespan(app: FastAPI):
         # Get the manager instance if it was initialized
         from services.mcp_manager import _mcp_manager
         if _mcp_manager:
-            await _mcp_manager.stop()
+            await _mcp_manager.shutdown()
             logger.info("MCP Manager stopped")
     except Exception as e:
         logger.error(f"Error stopping MCP Manager: {e}")
@@ -205,7 +213,7 @@ app = FastAPI(
     - Fast and lightweight (no external dependencies except PostgreSQL)
     - Secure by default (SSRF protection, validation, error handling)
     - Production-ready (monitoring, logging, health checks)
-    - Self-hosted (all data stays on your server)
+    - Self-hosted storage (configured hosted model providers may receive prompts and tool context)
     """,
     version="0.1.0",
     lifespan=lifespan,
@@ -288,6 +296,9 @@ from api.webhooks import router as webhooks
 from api.audio import routes as audio
 from api.pii_profiles import routes as pii_profiles
 from api.repositories import routes as repositories
+from api.codex import routes as codex
+from api.hermes import routes as hermes
+from api.platform_brain import routes as platform_brain
 
 # Health check endpoints
 app.include_router(health.router)
@@ -326,6 +337,9 @@ app.include_router(webhooks)  # Webhook receiver endpoints
 app.include_router(audio.router)  # Local audio upload/transcription
 app.include_router(pii_profiles.router)  # PII redaction profiles
 app.include_router(repositories.router)  # Git repository browser (read-only) + knowledge-base ingestion
+app.include_router(codex.router)  # Local Codex CLI harness
+app.include_router(hermes.router)  # Hermes approval-gated drafts
+app.include_router(platform_brain.router)  # Platform Brain source catalog
 
 if __name__ == "__main__":
     import sys
