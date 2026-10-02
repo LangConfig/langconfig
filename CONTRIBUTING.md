@@ -98,6 +98,7 @@ npm run dev
    npm run format:check
    npm run typecheck
    npm run build
+   npm audit --audit-level=low
    npx playwright install chromium
    npm run test:hermes
    ```

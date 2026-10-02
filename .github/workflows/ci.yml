@@ -120,6 +120,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit runtime and development npm dependencies
+        run: npm audit --audit-level=low --json > npm-advisories.json
+
+      - name: Retain complete npm advisory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-advisories
+          path: npm-advisories.json
+          if-no-files-found: error
+
       - name: Lint scoped JavaScript and check formatting
         run: |
           npm run lint
