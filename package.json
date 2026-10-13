@@ -68,7 +68,7 @@
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.21",
-    "concurrently": "^10.0.5",
+    "concurrently": "^10.0.6",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.1.16",
     "typescript": "~5.8.3",
